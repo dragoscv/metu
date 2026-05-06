@@ -1,13 +1,10 @@
 name: release-companion
 
 on:
-  push:
-    tags:
-      - 'companion-v*'
   workflow_dispatch:
     inputs:
-      tag:
-        description: 'Tag to release (e.g. companion-v0.1.0). Leave empty to use HEAD.'
+      version:
+        description: 'Version to release (e.g. 0.1.0). Reads from apps/companion/package.json if empty.'
         required: false
 
 concurrency:
@@ -85,10 +82,8 @@ jobs:
         id: ver
         shell: bash
         run: |
-          REF="${GITHUB_REF_NAME}"
-          if [[ "$REF" == companion-v* ]]; then
-            VERSION="${REF#companion-v}"
-          else
+          VERSION="${{ github.event.inputs.version }}"
+          if [[ -z "$VERSION" ]]; then
             VERSION=$(node -p "require('./apps/companion/package.json').version")
           fi
           echo "version=$VERSION" >> "$GITHUB_OUTPUT"

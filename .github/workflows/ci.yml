@@ -26,4 +26,13 @@ jobs:
         env:
           TURBO_TOKEN: ${{ secrets.TURBO_TOKEN }}
           TURBO_TEAM: ${{ vars.TURBO_TEAM }}
+          # Dummy values just so module-level env validation passes during
+          # Next.js build/page-data collection. Real values are injected in
+          # deploy-* workflows or at runtime.
+          DATABASE_URL: postgresql://ci:ci@localhost:5432/ci
+          DIRECT_URL: postgresql://ci:ci@localhost:5432/ci
+          AUTH_SECRET: ci-dummy-secret-not-used
+          AUTH_URL: http://localhost:3000
+          ENCRYPTION_KEY: AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=
+          NEXT_TELEMETRY_DISABLED: '1'
       - run: pnpm turbo run test --concurrency=2
