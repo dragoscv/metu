@@ -1,11 +1,25 @@
 name: release-companion
 
 on:
+  push:
+    branches: [main]
+    paths:
+      - 'apps/companion/**'
+      - 'packages/protocol/**'
+      - 'packages/sdk/**'
+      - 'packages/types/**'
+      - 'scripts/ensure-companion-icon.mjs'
+      - 'scripts/release-companion.mjs'
+      - '.github/workflows/release-companion.yml'
   workflow_dispatch:
     inputs:
       version:
         description: 'Version to release (e.g. 0.1.0). Reads from apps/companion/package.json if empty.'
         required: false
+      force:
+        description: 'Rebuild even if the tag already exists'
+        type: boolean
+        default: false
 
 concurrency:
   group: release-companion-${{ github.ref }}
@@ -15,7 +29,45 @@ permissions:
   contents: write
 
 jobs:
+  # ── Gate: read the desired version and check whether it's already a tag.
+  # If it is, skip the matrix entirely (so casual companion edits without a
+  # version bump don't trigger a rebuild).
+  resolve:
+    runs-on: ubuntu-latest
+    outputs:
+      version: ${{ steps.ver.outputs.version }}
+      tag: ${{ steps.ver.outputs.tag }}
+      should_release: ${{ steps.ver.outputs.should_release }}
+    steps:
+      - uses: actions/checkout@v4
+        with: { fetch-depth: 0 }
+      - id: ver
+        shell: bash
+        env:
+          INPUT_VERSION: ${{ github.event.inputs.version }}
+          FORCE: ${{ github.event.inputs.force }}
+        run: |
+          VERSION="$INPUT_VERSION"
+          if [[ -z "$VERSION" ]]; then
+            VERSION=$(node -p "require('./apps/companion/package.json').version")
+          fi
+          TAG="companion-v$VERSION"
+          echo "version=$VERSION" >> "$GITHUB_OUTPUT"
+          echo "tag=$TAG" >> "$GITHUB_OUTPUT"
+          if [[ "$FORCE" == "true" ]]; then
+            echo "should_release=true" >> "$GITHUB_OUTPUT"
+            echo "Forced rebuild requested."
+          elif git rev-parse "refs/tags/$TAG" >/dev/null 2>&1; then
+            echo "should_release=false" >> "$GITHUB_OUTPUT"
+            echo "Tag $TAG already exists — skipping. Bump apps/companion/package.json (run \`pnpm release:companion\`) to publish a new version."
+          else
+            echo "should_release=true" >> "$GITHUB_OUTPUT"
+            echo "Tag $TAG is new — proceeding with release."
+          fi
+
   release:
+    needs: resolve
+    if: needs.resolve.outputs.should_release == 'true'
     strategy:
       fail-fast: false
       matrix:
@@ -78,25 +130,14 @@ jobs:
       - name: Typecheck companion
         run: pnpm --filter @metu/companion typecheck
 
-      - name: Resolve release version
-        id: ver
-        shell: bash
-        run: |
-          VERSION="${{ github.event.inputs.version }}"
-          if [[ -z "$VERSION" ]]; then
-            VERSION=$(node -p "require('./apps/companion/package.json').version")
-          fi
-          echo "version=$VERSION" >> "$GITHUB_OUTPUT"
-          echo "tag=companion-v$VERSION" >> "$GITHUB_OUTPUT"
-
       - name: Build & publish Tauri release
         uses: tauri-apps/tauri-action@v0
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         with:
           projectPath: apps/companion
-          tagName: ${{ steps.ver.outputs.tag }}
-          releaseName: 'METU Companion v${{ steps.ver.outputs.version }}'
+          tagName: ${{ needs.resolve.outputs.tag }}
+          releaseName: 'METU Companion v${{ needs.resolve.outputs.version }}'
           releaseBody: |
             See [CHANGELOG](https://github.com/${{ github.repository }}/blob/main/apps/companion/CHANGELOG.md) for details.
 

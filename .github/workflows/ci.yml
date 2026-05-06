@@ -3,7 +3,32 @@ name: ci
 on:
   push:
     branches: [main]
+    # Run only when files that affect web/worker/hub/mcp-server change.
+    # Companion-only / mobile-only / docs-only pushes are handled by their
+    # own workflows (or skipped entirely).
+    paths:
+      - 'apps/web/**'
+      - 'apps/worker/**'
+      - 'apps/hub/**'
+      - 'apps/mcp-server/**'
+      - 'packages/**'
+      - 'package.json'
+      - 'pnpm-lock.yaml'
+      - 'pnpm-workspace.yaml'
+      - 'turbo.json'
+      - '.github/workflows/ci.yml'
   pull_request:
+    paths:
+      - 'apps/web/**'
+      - 'apps/worker/**'
+      - 'apps/hub/**'
+      - 'apps/mcp-server/**'
+      - 'packages/**'
+      - 'package.json'
+      - 'pnpm-lock.yaml'
+      - 'pnpm-workspace.yaml'
+      - 'turbo.json'
+      - '.github/workflows/ci.yml'
 
 concurrency:
   group: ci-${{ github.ref }}
@@ -26,9 +51,6 @@ jobs:
         env:
           TURBO_TOKEN: ${{ secrets.TURBO_TOKEN }}
           TURBO_TEAM: ${{ vars.TURBO_TEAM }}
-          # Dummy values just so module-level env validation passes during
-          # Next.js build/page-data collection. Real values are injected in
-          # deploy-* workflows or at runtime.
           DATABASE_URL: postgresql://ci:ci@localhost:5432/ci
           DIRECT_URL: postgresql://ci:ci@localhost:5432/ci
           AUTH_SECRET: ci-dummy-secret-not-used

@@ -5,8 +5,7 @@
  *   2. Generates a CHANGELOG.md entry from conventional commits since the last
  *      `companion-v*` tag (only commits touching apps/companion or
  *      packages/* used by it are included)
- *   3. Stages, commits ("chore(companion): release vX.Y.Z"), tags
- *      `companion-vX.Y.Z`
+ *   3. Stages and commits ("chore(companion): release vX.Y.Z")
  *
  * Usage:
  *   node scripts/release-companion.mjs patch   (default)
@@ -17,7 +16,9 @@
  * The pre-commit hook will run on the resulting commit, so lint/typecheck
  * must be clean before this script will succeed.
  *
- * Push the tag with: `git push origin main --follow-tags`
+ * Push with: `git push origin main`. The release-companion GitHub workflow
+ * detects the new version (via apps/companion/package.json), creates the
+ * `companion-vX.Y.Z` tag, and publishes the multi-OS Release.
  */
 import { execSync } from 'node:child_process';
 import { readFileSync, writeFileSync, existsSync } from 'node:fs';
@@ -141,14 +142,14 @@ const tauriConf = JSON.parse(readFileSync(tauriConfPath, 'utf8'));
 tauriConf.version = next;
 writeFileSync(tauriConfPath, JSON.stringify(tauriConf, null, 2) + '\n');
 
-// ── Commit + tag ─────────────────────────────────────────────────────────
+// ── Commit (no tag — the GitHub workflow creates the tag/release on push) ─
 shInherit(`git add "${pkgPath}" "${cargoPath}" "${tauriConfPath}" "${changelogPath}"`);
 shInherit(`git commit -m "chore(companion): release v${next}"`);
-shInherit(`git tag -a ${tag} -m "METU Companion v${next}"`);
 
 console.log('');
-console.log(`Tagged ${tag}.`);
-console.log('Push with:  git push origin main --follow-tags');
+console.log(`Bumped to ${next} and committed.`);
+console.log('Push with:  git push origin main');
+console.log(`The release-companion workflow will detect the new version and publish ${tag}.`);
 
 // ─────────────────────────────────────────────────────────────────────────
 function bumpVersion(curr, kind) {
