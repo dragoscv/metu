@@ -1,0 +1,29 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1024 1024" role="img" aria-label="METU">
+  <title>METU</title>
+  <defs>
+    <linearGradient id="metuBg" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0%" stop-color="#4f46ff" />
+      <stop offset="100%" stop-color="#a855f7" />
+    </linearGradient>
+    <linearGradient id="metuMark" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0%" stop-color="#ffffff" />
+      <stop offset="100%" stop-color="#e9e6ff" />
+    </linearGradient>
+  </defs>
+
+  <!-- Rounded-square background (iOS-friendly mask). -->
+  <rect width="1024" height="1024" rx="224" ry="224" fill="url(#metuBg)" />
+
+  <!-- Stylised "M": two outer pillars + inner valley, rounded joins.
+       Read as "memory" — the two columns are short-term + long-term,
+       meeting at the central node. -->
+  <g fill="none" stroke="url(#metuMark)" stroke-width="128"
+     stroke-linecap="round" stroke-linejoin="round">
+    <polyline points="232,792 232,256 512,560 792,256 792,792" />
+  </g>
+
+  <!-- Memory node: small circle riding on top of the valley, suggesting
+       a thought/spark held by the two columns. -->
+  <circle cx="512" cy="468" r="60" fill="#ffffff" />
+  <circle cx="512" cy="468" r="22" fill="#4f46ff" />
+</svg>

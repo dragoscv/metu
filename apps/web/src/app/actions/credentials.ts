@@ -1,0 +1,64 @@
+'use server';
+import { revalidatePath } from 'next/cache';
+import { and, eq } from 'drizzle-orm';
+import { auth } from '@metu/auth';
+import { getDb } from '@metu/db';
+import { providerCredential } from '@metu/db/schema';
+import { seal } from '@metu/ai';
+import { upsertProviderCredentialSchema, type UpsertProviderCredentialInput } from '@metu/types';
+
+export async function upsertProviderCredentialAction(input: UpsertProviderCredentialInput) {
+  const session = await auth();
+  if (!session) return { ok: false as const, error: 'Unauthenticated' };
+  const parsed = upsertProviderCredentialSchema.safeParse(input);
+  if (!parsed.success) {
+    return { ok: false as const, error: parsed.error.issues[0]?.message ?? 'Invalid' };
+  }
+
+  const sealed = seal(parsed.data.apiKey);
+  const db = getDb();
+
+  // Try update existing (workspace + provider + label) else insert
+  const existing = await db
+    .select({ id: providerCredential.id })
+    .from(providerCredential)
+    .where(
+      and(
+        eq(providerCredential.workspaceId, session.user.workspaceId),
+        eq(providerCredential.provider, parsed.data.provider),
+        eq(providerCredential.label, parsed.data.label),
+      ),
+    )
+    .limit(1);
+
+  if (existing[0]) {
+    await db
+      .update(providerCredential)
+      .set({
+        apiKeyCiphertext: sealed.ciphertext,
+        apiKeyIv: sealed.iv,
+        apiKeyTag: sealed.tag,
+        endpoint: parsed.data.endpoint ?? null,
+        defaultModel: parsed.data.defaultModel ?? null,
+        config: parsed.data.config,
+        isDefault: parsed.data.isDefault ? 1 : 0,
+      })
+      .where(eq(providerCredential.id, existing[0].id));
+  } else {
+    await db.insert(providerCredential).values({
+      workspaceId: session.user.workspaceId,
+      provider: parsed.data.provider,
+      label: parsed.data.label,
+      apiKeyCiphertext: sealed.ciphertext,
+      apiKeyIv: sealed.iv,
+      apiKeyTag: sealed.tag,
+      endpoint: parsed.data.endpoint ?? null,
+      defaultModel: parsed.data.defaultModel ?? null,
+      config: parsed.data.config,
+      isDefault: parsed.data.isDefault ? 1 : 0,
+    });
+  }
+
+  revalidatePath('/settings');
+  return { ok: true as const };
+}

@@ -1,0 +1,24 @@
+{
+  "expo": {
+    "name": "metu",
+    "slug": "metu",
+    "scheme": "metu",
+    "version": "0.0.1",
+    "orientation": "portrait",
+    "userInterfaceStyle": "automatic",
+    "newArchEnabled": true,
+    "experiments": { "typedRoutes": true },
+    "ios": {
+      "supportsTablet": true,
+      "bundleIdentifier": "ro.metu.app",
+      "infoPlist": {
+        "NSMicrophoneUsageDescription": "metu records voice notes for your second brain."
+      }
+    },
+    "android": {
+      "package": "ro.metu.app",
+      "permissions": ["RECORD_AUDIO"]
+    },
+    "plugins": ["expo-router", "expo-secure-store"]
+  }
+}

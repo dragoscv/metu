@@ -1,0 +1,30 @@
+{
+  "name": "@metu/ai",
+  "version": "0.0.1",
+  "private": true,
+  "type": "module",
+  "exports": {
+    ".": "./src/index.ts",
+    "./crypto": "./src/crypto.ts",
+    "./registry": "./src/registry.ts",
+    "./prompts": "./src/prompts/index.ts",
+    "./copilot": "./src/copilot.ts",
+    "./models": "./src/models.ts"
+  },
+  "dependencies": {
+    "@metu/db": "workspace:*",
+    "@metu/types": "workspace:*",
+    "ai": "catalog:",
+    "@ai-sdk/anthropic": "catalog:",
+    "@ai-sdk/openai": "catalog:",
+    "@ai-sdk/google": "catalog:",
+    "@ai-sdk/azure": "catalog:",
+    "drizzle-orm": "catalog:",
+    "zod": "catalog:"
+  },
+  "devDependencies": {
+    "@metu/config": "workspace:*",
+    "typescript": "catalog:",
+    "@types/node": "catalog:"
+  }
+}

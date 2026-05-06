@@ -1,0 +1,34 @@
+{
+  "name": "@metu/db",
+  "version": "0.0.1",
+  "private": true,
+  "type": "module",
+  "exports": {
+    ".": "./src/index.ts",
+    "./schema": "./src/schema/index.ts",
+    "./queries": "./src/queries/index.ts",
+    "./client": "./src/client.ts"
+  },
+  "scripts": {
+    "generate": "drizzle-kit generate",
+    "push": "drizzle-kit push",
+    "migrate": "tsx src/migrate.ts",
+    "studio": "drizzle-kit studio",
+    "seed": "tsx src/seed.ts",
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "@neondatabase/serverless": "catalog:",
+    "drizzle-orm": "catalog:",
+    "postgres": "catalog:",
+    "zod": "catalog:"
+  },
+  "devDependencies": {
+    "@metu/config": "workspace:*",
+    "@types/node": "catalog:",
+    "dotenv": "^17.4.2",
+    "drizzle-kit": "catalog:",
+    "tsx": "catalog:",
+    "typescript": "catalog:"
+  }
+}

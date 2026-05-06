@@ -1,0 +1,35 @@
+{
+  "name": "@metu/integrations",
+  "version": "0.0.1",
+  "private": true,
+  "type": "module",
+  "exports": {
+    ".": "./src/index.ts",
+    "./github": "./src/github/index.ts",
+    "./google": "./src/google/index.ts",
+    "./telegram": "./src/telegram/index.ts",
+    "./stripe": "./src/stripe/index.ts",
+    "./vercel": "./src/vercel/index.ts",
+    "./gcs": "./src/gcs/index.ts",
+    "./mcp": "./src/mcp/index.ts"
+  },
+  "dependencies": {
+    "@metu/ai": "workspace:*",
+    "@metu/db": "workspace:*",
+    "@metu/types": "workspace:*",
+    "@google-cloud/storage": "catalog:",
+    "@google-cloud/secret-manager": "catalog:",
+    "@google-cloud/speech": "catalog:",
+    "octokit": "catalog:",
+    "googleapis": "catalog:",
+    "stripe": "catalog:",
+    "telegraf": "catalog:",
+    "zod": "catalog:",
+    "@modelcontextprotocol/sdk": "catalog:"
+  },
+  "devDependencies": {
+    "@metu/config": "workspace:*",
+    "typescript": "catalog:",
+    "@types/node": "catalog:"
+  }
+}

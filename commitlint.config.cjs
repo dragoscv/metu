@@ -1,0 +1,37 @@
+/** @type {import('@commitlint/types').UserConfig} */
+module.exports = {
+  extends: ['@commitlint/config-conventional'],
+  rules: {
+    'subject-case': [0],
+    'body-max-line-length': [0],
+    'footer-max-line-length': [0],
+    'scope-enum': [
+      1,
+      'always',
+      [
+        'companion',
+        'web',
+        'worker',
+        'hub',
+        'mobile',
+        'mcp',
+        'browser-ext',
+        'vscode-ext',
+        'db',
+        'auth',
+        'ai',
+        'core',
+        'protocol',
+        'sdk',
+        'types',
+        'ui',
+        'integrations',
+        'config',
+        'infra',
+        'ci',
+        'release',
+        'deps',
+      ],
+    ],
+  },
+};

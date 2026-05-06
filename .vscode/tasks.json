@@ -1,0 +1,101 @@
+{
+  "version": "2.0.0",
+  "tasks": [
+    {
+      "label": "metu: ⚡ start everything",
+      "dependsOrder": "sequence",
+      "dependsOn": ["metu: infra up", "metu: dev (web + worker + inngest)"],
+      "group": { "kind": "build", "isDefault": true },
+      "problemMatcher": []
+    },
+    {
+      "label": "metu: infra up",
+      "type": "shell",
+      "command": "docker compose up -d --wait; docker compose --profile init up minio-init",
+      "presentation": { "reveal": "always", "panel": "shared", "clear": true },
+      "problemMatcher": []
+    },
+    {
+      "label": "metu: infra down",
+      "type": "shell",
+      "command": "docker compose down",
+      "presentation": { "reveal": "always", "panel": "shared" },
+      "problemMatcher": []
+    },
+    {
+      "label": "metu: infra reset (DESTROYS data)",
+      "type": "shell",
+      "command": "docker compose down -v",
+      "presentation": { "reveal": "always", "panel": "shared" },
+      "problemMatcher": []
+    },
+    {
+      "label": "metu: infra logs",
+      "type": "shell",
+      "command": "docker compose logs -f",
+      "presentation": { "reveal": "always", "panel": "dedicated" },
+      "isBackground": true,
+      "problemMatcher": []
+    },
+    {
+      "label": "metu: db studio",
+      "type": "shell",
+      "command": "pnpm --filter @metu/db studio",
+      "isBackground": true,
+      "presentation": { "reveal": "always", "panel": "dedicated" },
+      "problemMatcher": []
+    },
+    {
+      "label": "metu: dev (web + worker + inngest)",
+      "dependsOn": ["metu: web dev", "metu: worker dev"],
+      "problemMatcher": []
+    },
+    {
+      "label": "metu: web dev",
+      "type": "shell",
+      "command": "pnpm --filter @metu/web dev",
+      "isBackground": true,
+      "presentation": { "reveal": "always", "panel": "dedicated", "group": "dev" },
+      "problemMatcher": {
+        "owner": "next",
+        "pattern": [{ "regexp": "." }],
+        "background": {
+          "activeOnStart": true,
+          "beginsPattern": ".",
+          "endsPattern": "Ready in|started server on|Local:"
+        }
+      }
+    },
+    {
+      "label": "metu: worker dev",
+      "type": "shell",
+      "command": "pnpm --filter @metu/worker dev",
+      "isBackground": true,
+      "presentation": { "reveal": "always", "panel": "dedicated", "group": "dev" },
+      "problemMatcher": {
+        "owner": "tsx",
+        "pattern": [{ "regexp": "." }],
+        "background": {
+          "activeOnStart": true,
+          "beginsPattern": ".",
+          "endsPattern": "listening on"
+        }
+      }
+    },
+    {
+      "label": "metu: mobile (Expo)",
+      "type": "shell",
+      "command": "pnpm --filter @metu/mobile start",
+      "isBackground": true,
+      "presentation": { "reveal": "always", "panel": "dedicated" },
+      "problemMatcher": []
+    },
+    {
+      "label": "metu: open services",
+      "type": "shell",
+      "command": "Start-Process http://localhost:3000; Start-Process http://localhost:8288; Start-Process http://localhost:9001; Start-Process http://localhost:8025",
+      "presentation": { "reveal": "silent", "panel": "shared" },
+      "problemMatcher": []
+    }
+  ]
+}

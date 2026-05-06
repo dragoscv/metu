@@ -1,0 +1,28 @@
+{
+  "name": "@metu/core",
+  "version": "0.0.1",
+  "private": true,
+  "type": "module",
+  "exports": {
+    ".": "./src/index.ts",
+    "./memory": "./src/memory/index.ts",
+    "./focus": "./src/focus/index.ts",
+    "./project": "./src/project/index.ts",
+    "./continuity": "./src/continuity/index.ts",
+    "./agent": "./src/agent/index.ts"
+  },
+  "dependencies": {
+    "@metu/ai": "workspace:*",
+    "@metu/db": "workspace:*",
+    "@metu/integrations": "workspace:*",
+    "@metu/types": "workspace:*",
+    "ai": "catalog:",
+    "drizzle-orm": "catalog:",
+    "zod": "catalog:"
+  },
+  "devDependencies": {
+    "@metu/config": "workspace:*",
+    "typescript": "catalog:",
+    "@types/node": "catalog:"
+  }
+}

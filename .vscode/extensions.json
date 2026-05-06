@@ -1,0 +1,13 @@
+{
+  "recommendations": [
+    "dbaeumer.vscode-eslint",
+    "esbenp.prettier-vscode",
+    "bradlc.vscode-tailwindcss",
+    "ms-azuretools.vscode-docker",
+    "ms-azuretools.vscode-containers",
+    "GitHub.copilot",
+    "GitHub.copilot-chat",
+    "expo.vscode-expo-tools",
+    "vivaxy.vscode-conventional-commits"
+  ]
+}

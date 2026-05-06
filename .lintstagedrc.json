@@ -1,0 +1,5 @@
+{
+  "*.{ts,tsx,js,jsx,mjs,cjs}": ["prettier --write"],
+  "*.{json,md,yml,yaml}": ["prettier --write"],
+  "apps/companion/src-tauri/**/*.rs": ["rustfmt --edition 2021"]
+}

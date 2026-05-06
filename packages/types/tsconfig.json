@@ -1,0 +1,4 @@
+{
+  "extends": "@metu/config/tsconfig.node.json",
+  "include": ["src/**/*"]
+}

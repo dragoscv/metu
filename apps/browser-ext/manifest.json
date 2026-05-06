@@ -1,0 +1,26 @@
+{
+  "manifest_version": 3,
+  "name": "metu",
+  "version": "0.0.1",
+  "description": "Capture into your second brain from any tab.",
+  "action": {
+    "default_popup": "popup.html",
+    "default_title": "Capture to metu"
+  },
+  "permissions": ["storage", "contextMenus", "activeTab", "scripting"],
+  "host_permissions": ["https://app.metu.ro/*"],
+  "background": { "service_worker": "background.js", "type": "module" },
+  "content_scripts": [
+    {
+      "matches": ["<all_urls>"],
+      "js": ["content.js"],
+      "run_at": "document_idle"
+    }
+  ],
+  "commands": {
+    "capture-selection": {
+      "suggested_key": { "default": "Ctrl+Shift+M", "mac": "Command+Shift+M" },
+      "description": "Capture selection into metu"
+    }
+  }
+}

@@ -1,0 +1,131 @@
+# =============================================================================
+# metu — local development stack
+# =============================================================================
+# Provides production-equivalent services locally:
+#   - postgres (with pgvector) — replaces Neon for local dev
+#   - redis                    — replaces Upstash Redis for local dev
+#   - minio                    — S3-compatible, replaces GCS for local dev
+#   - inngest-dev              — Inngest dev server (workflow execution)
+#   - mailpit                  — captures outbound email (SMTP + web UI)
+#
+# Bring up:    pnpm dev:infra:up   (or VS Code task "metu: infra up")
+# Tear down:   pnpm dev:infra:down
+# Wipe:        pnpm dev:infra:reset
+#
+# All services are reachable from the host on the ports below; the web app
+# reads them via .env.local (run `pnpm bootstrap:env` to generate).
+# =============================================================================
+
+name: metu
+
+services:
+  postgres:
+    image: pgvector/pgvector:pg16
+    container_name: metu-postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: metu
+      POSTGRES_PASSWORD: metu
+      POSTGRES_DB: metu
+    ports:
+      - '5433:5432'
+    volumes:
+      - postgres-data:/var/lib/postgresql/data
+      - ./infra/docker/postgres-init.sql:/docker-entrypoint-initdb.d/01-init.sql:ro
+    healthcheck:
+      test: ['CMD-SHELL', 'pg_isready -U metu -d metu']
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+  redis:
+    image: redis:7-alpine
+    container_name: metu-redis
+    restart: unless-stopped
+    command: ['redis-server', '--appendonly', 'yes']
+    ports:
+      - '6379:6379'
+    volumes:
+      - redis-data:/data
+    healthcheck:
+      test: ['CMD', 'redis-cli', 'ping']
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+  # Upstash Redis-compatible REST proxy (so @upstash/redis works locally
+  # against the plain redis container above).
+  upstash-proxy:
+    image: hiett/serverless-redis-http:latest
+    container_name: metu-upstash-proxy
+    restart: unless-stopped
+    environment:
+      SRH_MODE: env
+      SRH_TOKEN: metu-local-token
+      SRH_CONNECTION_STRING: redis://redis:6379
+    ports:
+      - '8079:80'
+    depends_on:
+      redis:
+        condition: service_healthy
+
+  minio:
+    image: minio/minio:latest
+    container_name: metu-minio
+    restart: unless-stopped
+    command: server /data --console-address ":9001"
+    environment:
+      MINIO_ROOT_USER: metu
+      MINIO_ROOT_PASSWORD: metu-local-password
+    ports:
+      - '9000:9000' # S3 API
+      - '9001:9001' # Web console
+    volumes:
+      - minio-data:/data
+    healthcheck:
+      test: ['CMD', 'mc', 'ready', 'local']
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+  # Pre-creates the uploads bucket on MinIO startup. Runs once and exits.
+  minio-init:
+    image: minio/mc:latest
+    container_name: metu-minio-init
+    restart: 'no'
+    profiles: ['init']
+    depends_on:
+      minio:
+        condition: service_healthy
+    entrypoint:
+      - /bin/sh
+      - -c
+      - |
+        mc alias set local http://minio:9000 metu metu-local-password &&
+        mc mb -p local/metu-uploads || true &&
+        mc anonymous set download local/metu-uploads || true &&
+        echo "minio-init: bucket ready"
+
+  inngest:
+    image: inngest/inngest:latest
+    container_name: metu-inngest
+    restart: unless-stopped
+    command:
+      ['inngest', 'dev', '-u', 'http://host.docker.internal:3000/api/inngest', '--no-discovery']
+    ports:
+      - '8288:8288' # Dev UI + event API
+    extra_hosts:
+      - 'host.docker.internal:host-gateway'
+
+  mailpit:
+    image: axllent/mailpit:latest
+    container_name: metu-mailpit
+    restart: unless-stopped
+    ports:
+      - '1025:1025' # SMTP
+      - '8025:8025' # Web UI
+
+volumes:
+  postgres-data:
+  redis-data:
+  minio-data:

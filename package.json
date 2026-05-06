@@ -1,0 +1,53 @@
+{
+  "name": "metu",
+  "private": true,
+  "version": "0.1.0",
+  "description": "Personal AI Operating System — external RAM for AI-native founders",
+  "packageManager": "pnpm@9.15.0",
+  "engines": {
+    "node": ">=22",
+    "pnpm": ">=9"
+  },
+  "scripts": {
+    "build": "turbo run build",
+    "dev": "turbo run dev --parallel",
+    "lint": "turbo run lint",
+    "typecheck": "turbo run typecheck",
+    "test": "turbo run test",
+    "clean": "turbo run clean && rimraf node_modules .turbo",
+    "format": "prettier --write \"**/*.{ts,tsx,md,json,yml}\"",
+    "prepare": "husky",
+    "db:generate": "pnpm --filter @metu/db generate",
+    "db:push": "pnpm --filter @metu/db push",
+    "db:studio": "pnpm --filter @metu/db studio",
+    "db:seed": "pnpm --filter @metu/db seed",
+    "tf:plan": "cd infra/terraform && terraform plan",
+    "tf:apply": "cd infra/terraform && terraform apply",
+    "bootstrap:env": "node scripts/bootstrap-env.mjs",
+    "bootstrap:env:force": "node scripts/bootstrap-env.mjs --force",
+    "bootstrap:gcp": "pwsh -NoProfile -File ./scripts/bootstrap-gcp.ps1",
+    "infra:up": "docker compose up -d --wait && docker compose --profile init up minio-init",
+    "infra:down": "docker compose down",
+    "infra:reset": "docker compose down -v",
+    "infra:logs": "docker compose logs -f",
+    "companion:icons": "node scripts/ensure-companion-icon.mjs",
+    "companion:build": "pnpm companion:icons && pnpm --filter @metu/companion tauri:build",
+    "release:companion": "node scripts/release-companion.mjs",
+    "release:companion:minor": "node scripts/release-companion.mjs minor",
+    "release:companion:major": "node scripts/release-companion.mjs major"
+  },
+  "devDependencies": {
+    "turbo": "catalog:",
+    "typescript": "catalog:",
+    "prettier": "catalog:",
+    "rimraf": "catalog:",
+    "@types/node": "catalog:",
+    "@resvg/resvg-js": "^2.6.2",
+    "husky": "^9.1.7",
+    "lint-staged": "^15.2.10",
+    "prettier-plugin-tailwindcss": "^0.6.9",
+    "@commitlint/cli": "^19.6.1",
+    "@commitlint/config-conventional": "^19.6.0",
+    "@commitlint/types": "^19.5.0"
+  }
+}

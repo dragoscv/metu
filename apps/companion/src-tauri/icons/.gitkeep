@@ -1,0 +1,2 @@
+# Icons live here. Regenerate with `pnpm tauri icon path/to/source.png`.
+# The build expects: 32x32.png, 128x128.png, 128x128@2x.png, icon.icns, icon.ico

@@ -1,0 +1,30 @@
+{
+  "name": "@metu/worker",
+  "version": "0.0.1",
+  "private": true,
+  "type": "module",
+  "main": "dist/index.js",
+  "scripts": {
+    "dev": "tsx watch src/index.ts",
+    "build": "tsc -p tsconfig.json",
+    "start": "node dist/index.js",
+    "lint": "eslint .",
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "@metu/ai": "workspace:*",
+    "@metu/db": "workspace:*",
+    "@metu/integrations": "workspace:*",
+    "@metu/types": "workspace:*",
+    "@metu/core": "workspace:*",
+    "@google-cloud/speech": "catalog:",
+    "ai": "catalog:",
+    "zod": "catalog:"
+  },
+  "devDependencies": {
+    "@metu/config": "workspace:*",
+    "@types/node": "catalog:",
+    "tsx": "catalog:",
+    "typescript": "catalog:"
+  }
+}

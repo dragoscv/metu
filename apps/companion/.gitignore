@@ -1,0 +1,4 @@
+# Vite build output.
+dist/
+
+# Tauri artefacts handled separately in src-tauri/.gitignore.

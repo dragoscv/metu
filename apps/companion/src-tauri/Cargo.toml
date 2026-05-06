@@ -1,0 +1,30 @@
+[package]
+name = "metu-companion"
+version = "0.0.1"
+description = "METU desktop companion"
+authors = ["Dragos Catalin Vladulescu"]
+edition = "2021"
+rust-version = "1.77"
+
+[lib]
+name = "metu_companion_lib"
+crate-type = ["staticlib", "cdylib", "rlib"]
+
+[build-dependencies]
+tauri-build = { version = "2.0", features = [] }
+
+[dependencies]
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+tauri = { version = "2.1", features = ["tray-icon"] }
+tauri-plugin-shell = "2.2"
+tauri-plugin-notification = "2.2"
+tauri-plugin-store = "2.2"
+tauri-plugin-os = "2.2"
+tauri-plugin-deep-link = "2.2"
+tauri-plugin-global-shortcut = "2.2"
+tauri-plugin-single-instance = "2.2"
+
+[features]
+default = []
+custom-protocol = ["tauri/custom-protocol"]

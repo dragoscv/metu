@@ -1,0 +1,2 @@
+pnpm exec lint-staged
+pnpm turbo run lint typecheck --concurrency=4

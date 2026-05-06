@@ -1,0 +1,21 @@
+{
+  "name": "@metu/sdk",
+  "version": "0.0.1",
+  "private": true,
+  "type": "module",
+  "description": "Typed client for METU — auth, capture, recall, notify, devices, conversations, WS hub.",
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "scripts": {
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "@metu/protocol": "workspace:*",
+    "zod": "catalog:"
+  },
+  "devDependencies": {
+    "@metu/config": "workspace:*",
+    "typescript": "catalog:"
+  }
+}

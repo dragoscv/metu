@@ -1,0 +1,100 @@
+<!doctype html>
+<html>
+
+<head>
+  <meta charset="utf-8" />
+  <style>
+    :root {
+      --brand: oklch(0.71 0.18 290);
+      --bg: oklch(0.18 0.02 280);
+      --fg: oklch(0.96 0.01 280);
+      --muted: oklch(0.65 0.02 280);
+      --border: oklch(0.28 0.02 280);
+    }
+
+    body {
+      font: 13px/1.4 system-ui;
+      margin: 0;
+      padding: 12px;
+      width: 320px;
+      background: var(--bg);
+      color: var(--fg);
+    }
+
+    h1 {
+      font-size: 14px;
+      margin: 0 0 8px;
+    }
+
+    textarea {
+      width: 100%;
+      min-height: 90px;
+      background: oklch(0.22 0.02 280);
+      color: var(--fg);
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      padding: 8px;
+      box-sizing: border-box;
+      resize: vertical;
+    }
+
+    input {
+      width: 100%;
+      background: oklch(0.22 0.02 280);
+      color: var(--fg);
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      padding: 6px 8px;
+      box-sizing: border-box;
+      font: inherit;
+    }
+
+    button {
+      margin-top: 8px;
+      width: 100%;
+      background: var(--brand);
+      color: white;
+      border: 0;
+      border-radius: 8px;
+      padding: 8px;
+      font-weight: 600;
+      cursor: pointer;
+    }
+
+    .row {
+      display: flex;
+      gap: 6px;
+      margin-top: 8px;
+    }
+
+    .muted {
+      color: var(--muted);
+      font-size: 11px;
+    }
+
+    details {
+      margin-top: 10px;
+    }
+
+    summary {
+      cursor: pointer;
+      color: var(--muted);
+    }
+  </style>
+</head>
+
+<body>
+  <h1>Capture to metu</h1>
+  <textarea id="content" placeholder="What's on your mind?"></textarea>
+  <button id="save">Capture</button>
+  <details>
+    <summary>Settings</summary>
+    <div class="row"><input id="apiUrl" placeholder="https://app.metu.ro" /></div>
+    <div class="row"><input id="token" placeholder="API token" /></div>
+    <button id="saveCfg">Save config</button>
+    <p class="muted">Generate a token at app.metu.ro/settings.</p>
+  </details>
+  <script src="popup.js"></script>
+</body>
+
+</html>

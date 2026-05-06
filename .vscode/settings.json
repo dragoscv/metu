@@ -1,0 +1,42 @@
+{
+  "typescript.tsdk": "node_modules/typescript/lib",
+  "typescript.enablePromptUseWorkspaceTsdk": true,
+  "editor.formatOnSave": true,
+  "editor.defaultFormatter": "esbenp.prettier-vscode",
+  "[typescript]": { "editor.defaultFormatter": "esbenp.prettier-vscode" },
+  "[typescriptreact]": { "editor.defaultFormatter": "esbenp.prettier-vscode" },
+  "[json]": { "editor.defaultFormatter": "esbenp.prettier-vscode" },
+  "[jsonc]": { "editor.defaultFormatter": "esbenp.prettier-vscode" },
+  "eslint.useFlatConfig": true,
+  "eslint.workingDirectories": [{ "pattern": "apps/*" }, { "pattern": "packages/*" }],
+  "files.exclude": {
+    "**/.turbo": true,
+    "**/.next": true,
+    "**/dist": true,
+    "**/node_modules": true
+  },
+  "search.exclude": {
+    "**/.turbo": true,
+    "**/.next": true,
+    "**/dist": true,
+    "**/pnpm-lock.yaml": true
+  },
+  "tailwindCSS.experimental.classRegex": [
+    ["cva\\(([^)]*)\\)", "[\"'`]([^\"'`]*).*?[\"'`]"],
+    ["cn\\(([^)]*)\\)", "[\"'`]([^\"'`]*).*?[\"'`]"]
+  ],
+  "workbench.colorCustomizations": {
+    "titleBar.activeBackground": "#131c42",
+    "titleBar.activeForeground": "#ffffff",
+    "titleBar.inactiveBackground": "#131c42",
+    "titleBar.inactiveForeground": "#fecaca",
+    // "activityBar.background": "#b91c1c",
+    // "activityBar.foreground": "#ffffff",
+    "statusBar.background": "#131c42",
+    "statusBar.foreground": "#ffffff",
+    "statusBar.debuggingBackground": "#131c42",
+    "statusBar.noFolderBackground": "#131c42",
+    "window.activeBorder": "#131c42",
+    "window.inactiveBorder": "#131c42"
+  }
+}

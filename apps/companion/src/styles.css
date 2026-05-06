@@ -1,0 +1,65 @@
+/* Minimal companion styles. The full design system lives in @metu/ui; we
+ * inline tokens here to keep the desktop bundle small and avoid pulling
+ * Tailwind into the Tauri build. */
+:root {
+  color-scheme: dark;
+  font-family: 'Inter', system-ui, -apple-system, sans-serif;
+  background: transparent;
+}
+* { box-sizing: border-box; }
+html, body, #root { height: 100%; margin: 0; }
+body {
+  background: rgba(12, 14, 20, 0.92);
+  color: #f5f7fb;
+  -webkit-font-smoothing: antialiased;
+}
+.shell {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  padding: 16px;
+  gap: 12px;
+}
+.title {
+  font-size: 14px;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: #8b94a7;
+  margin: 0;
+}
+.card {
+  background: rgba(255, 255, 255, 0.04);
+  border: 1px solid rgba(255, 255, 255, 0.06);
+  border-radius: 12px;
+  padding: 14px;
+  font-size: 13px;
+  line-height: 1.45;
+}
+.btn {
+  appearance: none;
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  background: linear-gradient(180deg, #5b6bff, #3445d9);
+  color: white;
+  font-weight: 600;
+  font-size: 13px;
+  padding: 10px 14px;
+  border-radius: 10px;
+  cursor: pointer;
+  transition: transform 0.08s ease, box-shadow 0.2s ease;
+}
+.btn:hover { transform: translateY(-1px); box-shadow: 0 6px 18px rgba(91,107,255,0.35); }
+.btn.ghost { background: transparent; }
+.row { display: flex; gap: 8px; align-items: center; }
+.muted { color: #8b94a7; font-size: 12px; }
+.code {
+  font-family: 'JetBrains Mono', ui-monospace, monospace;
+  letter-spacing: 0.18em;
+  font-size: 18px;
+  font-weight: 600;
+  background: rgba(255,255,255,0.06);
+  padding: 10px 14px;
+  border-radius: 10px;
+  text-align: center;
+}
+.dot { width: 8px; height: 8px; border-radius: 50%; background: #2dd4bf; box-shadow: 0 0 8px #2dd4bf; }
+.dot.off { background: #6b7280; box-shadow: none; }

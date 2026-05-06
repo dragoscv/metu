@@ -1,0 +1,17 @@
+name: deploy-web
+
+# Vercel auto-deploys via its GitHub integration on every push to `main`.
+# This workflow exists for env-var validation + production smoke tests.
+
+on:
+  deployment_status:
+
+jobs:
+  smoke:
+    if: github.event.deployment_status.state == 'success'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Probe /api/health
+        run: |
+          url="${{ github.event.deployment_status.target_url }}/api/health"
+          curl -fsSL "$url" | tee /dev/stderr | grep -q '"ok":true'

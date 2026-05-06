@@ -1,0 +1,86 @@
+{
+  "name": "metu-vscode",
+  "displayName": "metu",
+  "description": "Two-way bridge between VS Code and your second brain.",
+  "version": "0.0.1",
+  "publisher": "metu",
+  "engines": {
+    "vscode": "^1.90.0"
+  },
+  "categories": [
+    "AI",
+    "Other"
+  ],
+  "main": "./dist/extension.js",
+  "activationEvents": [
+    "onStartupFinished"
+  ],
+  "contributes": {
+    "commands": [
+      {
+        "command": "metu.capture",
+        "title": "metu: Capture selection",
+        "category": "metu"
+      },
+      {
+        "command": "metu.restoreContext",
+        "title": "metu: Where was I?",
+        "category": "metu"
+      },
+      {
+        "command": "metu.logDecision",
+        "title": "metu: Log decision",
+        "category": "metu"
+      },
+      {
+        "command": "metu.recall",
+        "title": "metu: Recall from memory",
+        "category": "metu"
+      },
+      {
+        "command": "metu.signIn",
+        "title": "metu: Sign in",
+        "category": "metu"
+      }
+    ],
+    "configuration": {
+      "title": "metu",
+      "properties": {
+        "metu.apiUrl": {
+          "type": "string",
+          "default": "https://app.metu.ro"
+        },
+        "metu.workspaceId": {
+          "type": "string",
+          "default": ""
+        },
+        "metu.apiToken": {
+          "type": "string",
+          "default": ""
+        }
+      }
+    },
+    "keybindings": [
+      {
+        "command": "metu.capture",
+        "key": "ctrl+alt+m",
+        "mac": "cmd+alt+m"
+      },
+      {
+        "command": "metu.restoreContext",
+        "key": "ctrl+alt+w",
+        "mac": "cmd+alt+w"
+      }
+    ]
+  },
+  "scripts": {
+    "build": "tsc -p .",
+    "watch": "tsc -p . -w",
+    "package": "vsce package --no-dependencies"
+  },
+  "devDependencies": {
+    "@types/vscode": "^1.90.0",
+    "@types/node": "catalog:",
+    "typescript": "catalog:"
+  }
+}

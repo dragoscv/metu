@@ -1,0 +1,48 @@
+{
+  "version": "0.2.0",
+  "configurations": [
+    {
+      "name": "Web (Next.js)",
+      "type": "node-terminal",
+      "request": "launch",
+      "command": "pnpm --filter @metu/web dev",
+      "cwd": "${workspaceFolder}"
+    },
+    {
+      "name": "Worker (Cloud Run)",
+      "type": "node-terminal",
+      "request": "launch",
+      "command": "pnpm --filter @metu/worker dev",
+      "cwd": "${workspaceFolder}"
+    },
+    {
+      "name": "MCP server (stdio)",
+      "type": "node-terminal",
+      "request": "launch",
+      "command": "pnpm --filter @metu/mcp-server dev",
+      "cwd": "${workspaceFolder}"
+    },
+    {
+      "name": "Mobile (Expo)",
+      "type": "node-terminal",
+      "request": "launch",
+      "command": "pnpm --filter @metu/mobile start",
+      "cwd": "${workspaceFolder}"
+    },
+    {
+      "name": "VS Code extension",
+      "type": "extensionHost",
+      "request": "launch",
+      "args": ["--extensionDevelopmentPath=${workspaceFolder}/apps/vscode-ext"],
+      "outFiles": ["${workspaceFolder}/apps/vscode-ext/dist/**/*.js"],
+      "preLaunchTask": "metu: vscode-ext build"
+    }
+  ],
+  "compounds": [
+    {
+      "name": "🚀 metu (web + worker)",
+      "configurations": ["Web (Next.js)", "Worker (Cloud Run)"],
+      "stopAll": true
+    }
+  ]
+}
