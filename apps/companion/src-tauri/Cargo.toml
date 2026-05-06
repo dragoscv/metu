@@ -1,6 +1,6 @@
 [package]
 name = "metu-companion"
-version = "0.0.1"
+version = "0.1.0"
 description = "METU desktop companion"
 authors = ["Dragos Catalin Vladulescu"]
 edition = "2021"
