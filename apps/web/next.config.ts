@@ -11,9 +11,13 @@ for (const candidate of ['../../.env.local', '../../.env']) {
   }
 }
 
+// React Compiler (babel-plugin-react-compiler) is expensive in dev with Turbopack
+// because every file is re-transpiled on change. Restrict it to production builds.
+const isProd = process.env.NODE_ENV === 'production';
+
 const nextConfig: NextConfig = {
   reactStrictMode: true,
-  reactCompiler: true,
+  reactCompiler: isProd,
   experimental: {
     turbopackFileSystemCacheForDev: true,
   },

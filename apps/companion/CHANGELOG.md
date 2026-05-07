@@ -3,15 +3,6 @@
 All notable changes to METU Companion are documented here.
 Format: [Keep a Changelog](https://keepachangelog.com), [Conventional Commits](https://www.conventionalcommits.org).
 
-## [0.1.0] - 2026-05-06
-
-### Features
-
-- initial METU monorepo (9573789)
-
-All notable changes to METU Companion are documented here.
-Format: [Keep a Changelog](https://keepachangelog.com), [Conventional Commits](https://www.conventionalcommits.org).
-
 ## [0.0.1] - 2026-05-06
 
 ### Features

@@ -9,7 +9,7 @@
  *        low_risk   → auto_with_undo
  *        high_risk  → ask
  */
-import { and, eq } from 'drizzle-orm';
+import { and, eq, isNull } from 'drizzle-orm';
 import { getDb } from '@metu/db';
 import { agentPolicy, toolAcl, toolCall as toolCallTable, timelineEvent } from '@metu/db/schema';
 import { getTool, type ToolContext, type ToolKind } from './tools';
@@ -22,14 +22,50 @@ const KIND_DEFAULT: Record<ToolKind, AutonomyMode> = {
   high_risk: 'ask',
 };
 
-export async function resolveAcl(workspaceId: string, toolName: string): Promise<AutonomyMode> {
+/**
+ * Effective ACL for (workspace, tool [, integration]).
+ *
+ * Precedence:
+ *   1. tool_acl row scoped to (workspace, tool, integrationId) — most specific.
+ *   2. tool_acl row scoped to (workspace, tool) with integrationId IS NULL — workspace-wide override.
+ *   3. agent_policy.defaultMode for the workspace.
+ *   4. Fallback by tool kind.
+ *
+ * Workspace-level `observe` always wins (kill-switch semantics).
+ */
+export async function resolveAcl(
+  workspaceId: string,
+  toolName: string,
+  integrationId?: string | null,
+): Promise<AutonomyMode> {
   const tool = getTool(toolName);
   const db = getDb();
+
+  if (integrationId) {
+    const [scoped] = await db
+      .select({ mode: toolAcl.mode })
+      .from(toolAcl)
+      .where(
+        and(
+          eq(toolAcl.workspaceId, workspaceId),
+          eq(toolAcl.tool, toolName),
+          eq(toolAcl.integrationId, integrationId),
+        ),
+      )
+      .limit(1);
+    if (scoped) return scoped.mode as AutonomyMode;
+  }
 
   const [override] = await db
     .select({ mode: toolAcl.mode })
     .from(toolAcl)
-    .where(and(eq(toolAcl.workspaceId, workspaceId), eq(toolAcl.tool, toolName)))
+    .where(
+      and(
+        eq(toolAcl.workspaceId, workspaceId),
+        eq(toolAcl.tool, toolName),
+        isNull(toolAcl.integrationId),
+      ),
+    )
     .limit(1);
   if (override) return override.mode as AutonomyMode;
 
@@ -39,14 +75,22 @@ export async function resolveAcl(workspaceId: string, toolName: string): Promise
     .where(eq(agentPolicy.workspaceId, workspaceId))
     .limit(1);
 
-  // If the workspace explicitly opted into observe-only, that wins for ALL
-  // tools — read-only included. The user wanted nothing to run.
   const policyMode = policy?.defaultMode as AutonomyMode | undefined;
   if (policyMode === 'observe') return 'observe';
 
-  // Otherwise, read-only tools are always safe to run.
   if (tool?.kind === 'read') return 'autopilot';
   return policyMode ?? KIND_DEFAULT[tool?.kind ?? 'high_risk'];
+}
+
+/**
+ * Tools that carry an `integrationId` in their args want their ACL evaluated
+ * scoped to that integration. Add new entries here as more scoped tools land.
+ */
+function extractIntegrationId(toolName: string, args: unknown): string | null {
+  if (toolName !== 'external_invoke') return null;
+  if (!args || typeof args !== 'object') return null;
+  const v = (args as { integrationId?: unknown }).integrationId;
+  return typeof v === 'string' ? v : null;
 }
 
 export interface RunToolInput {
@@ -57,9 +101,15 @@ export interface RunToolInput {
   agentRunId?: string | null;
   tool: string;
   args: unknown;
+  /** Explicit integration scope for ACL evaluation. Auto-extracted from args when omitted. */
+  integrationId?: string | null;
   /** Skip ACL check (server-side trusted). */
   bypassAcl?: boolean;
+  /** Recursion depth; tools that themselves call runTool should pass depth+1. */
+  depth?: number;
 }
+
+export const MAX_TOOL_DEPTH = 5;
 
 export interface RunToolResult {
   toolCallId: string;
@@ -81,6 +131,14 @@ export async function runTool(input: RunToolInput): Promise<RunToolResult> {
   const tool = getTool(input.tool);
   const db = getDb();
 
+  if ((input.depth ?? 0) > MAX_TOOL_DEPTH) {
+    return {
+      toolCallId: '',
+      status: 'failed',
+      error: `tool recursion depth ${input.depth} exceeds max ${MAX_TOOL_DEPTH}`,
+    };
+  }
+
   // Validate args even if the tool is unknown — still want an audit row.
   let parsedArgs: unknown = input.args;
   let validationError: string | null = null;
@@ -97,7 +155,11 @@ export async function runTool(input: RunToolInput): Promise<RunToolResult> {
 
   const aclMode: AutonomyMode = input.bypassAcl
     ? 'autopilot'
-    : await resolveAcl(input.workspaceId, input.tool);
+    : await resolveAcl(
+        input.workspaceId,
+        input.tool,
+        input.integrationId ?? extractIntegrationId(input.tool, parsedArgs),
+      );
 
   const [row] = await db
     .insert(toolCallTable)

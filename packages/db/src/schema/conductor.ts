@@ -239,7 +239,15 @@ export const agentPolicy = pgTable('agent_policy', {
     .$onUpdate(() => new Date()),
 });
 
-/** Per-tool ACL override. Tool name matches packages/core/agent/tools.ts registry. */
+/**
+ * Per-tool ACL override. Tool name matches packages/core/agent/tools.ts registry.
+ *
+ * Optionally scoped to a single `integration` row (e.g. one external_mcp app
+ * gets `autopilot` while every other use of the same tool stays `ask`).
+ *  - integrationId IS NULL → workspace-wide override for this tool.
+ *  - integrationId IS NOT NULL → applies only when runTool is called with that
+ *    integration id (auto-extracted from args for tools like `external_invoke`).
+ */
 export const toolAcl = pgTable(
   'tool_acl',
   {
@@ -250,6 +258,8 @@ export const toolAcl = pgTable(
       .notNull()
       .references(() => workspace.id, { onDelete: 'cascade' }),
     tool: text('tool').notNull(),
+    /** When set, this rule only applies for that integration. */
+    integrationId: uuid('integration_id'),
     mode: autonomyMode('mode').notNull(),
     /** Optional per-tool budget. */
     dailyCostCapUsd: doublePrecision('daily_cost_cap_usd'),
@@ -259,7 +269,16 @@ export const toolAcl = pgTable(
       .default(sql`now()`)
       .$onUpdate(() => new Date()),
   },
-  (t) => [uniqueIndex('tool_acl_unique_idx').on(t.workspaceId, t.tool)],
+  (t) => [
+    // Postgres treats NULLs as distinct in unique indexes; split into two partial uniques.
+    uniqueIndex('tool_acl_workspace_tool_unique_idx')
+      .on(t.workspaceId, t.tool)
+      .where(sql`${t.integrationId} IS NULL`),
+    uniqueIndex('tool_acl_workspace_tool_integration_unique_idx')
+      .on(t.workspaceId, t.tool, t.integrationId)
+      .where(sql`${t.integrationId} IS NOT NULL`),
+    index('tool_acl_integration_idx').on(t.integrationId),
+  ],
 );
 
 // ─── Devices ──────────────────────────────────────────────────────────────

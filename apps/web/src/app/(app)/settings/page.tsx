@@ -1,6 +1,6 @@
 import { auth } from '@metu/auth';
 import { redirect } from 'next/navigation';
-import { Card, CardTitle } from '@metu/ui';
+import { Card, CardTitle, Page, PageHeader } from '@metu/ui';
 import { listAvailableProviders, getProviderPolicy } from '@metu/ai';
 import { ProviderCredentialForm } from '@/components/provider-credential-form';
 import { CopilotConnect } from '@/components/copilot-connect';
@@ -59,13 +59,8 @@ export default async function SettingsPage() {
     .map((p) => p.provider);
 
   return (
-    <div className="mx-auto max-w-3xl space-y-6">
-      <header>
-        <h1 className="text-3xl font-semibold tracking-tight">Settings</h1>
-        <p className="mt-1 text-sm text-[var(--color-fg-muted)]">
-          Bring your own AI keys. Encrypted at rest.
-        </p>
-      </header>
+    <Page className="mx-auto max-w-3xl">
+      <PageHeader title="Settings" description="Bring your own AI keys. Encrypted at rest." />
 
       <Card>
         <div className="flex items-center justify-between">
@@ -119,6 +114,6 @@ export default async function SettingsPage() {
         </p>
         <ProviderCredentialForm />
       </Card>
-    </div>
+    </Page>
   );
 }

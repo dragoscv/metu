@@ -157,6 +157,35 @@ export const NotifyCreateSchema = z.object({
   actionUrl: z.string().url().optional(),
 });
 
+/**
+ * Intent — a satellite app (notai/bancai/facturai/…) signaling that one of
+ * its domain entities needs user action. Mirrors up into METU as a `task` row
+ * tagged with `sourceApp` + `sourceEntityRef` + `sourceUrl` so the Conductor
+ * can reason about it in the unified plan.
+ */
+export const IntentCreateSchema = z.object({
+  /** Slug of the originating app — defaults to the OAuth client_id when omitted. */
+  sourceApp: z.string().min(1).max(64).optional(),
+  /** Free-form ref to the entity in the satellite app. */
+  sourceEntityRef: z.record(z.string(), z.unknown()).default({}),
+  /** Deep link the user (or Conductor) can follow to the source entity. */
+  sourceUrl: z.string().url().optional(),
+  /** One-line action title shown in the Conductor's plan. */
+  title: z.string().min(1).max(200),
+  body: z.string().max(2000).optional(),
+  /** Optional METU project to attach to. */
+  projectId: Uuid.optional(),
+  /** When the action becomes overdue. */
+  dueAt: Iso.optional(),
+  /** Coarse importance hint 0..1; the planner may override. */
+  importance: z.number().min(0).max(1).default(0.5),
+  /**
+   * Initial status. `inbox` means the Conductor will triage; `next` means
+   * surface immediately. Defaults to `inbox`.
+   */
+  status: z.enum(['inbox', 'next']).default('inbox'),
+});
+
 // ─── Types ────────────────────────────────────────────────────────────────
 
 export type Hello = z.infer<typeof HelloSchema>;
@@ -166,3 +195,4 @@ export type ClientEvent = z.infer<typeof ClientEventSchema>;
 export type CaptureCreate = z.infer<typeof CaptureCreateSchema>;
 export type RecallQuery = z.infer<typeof RecallQuerySchema>;
 export type NotifyCreate = z.infer<typeof NotifyCreateSchema>;
+export type IntentCreate = z.infer<typeof IntentCreateSchema>;

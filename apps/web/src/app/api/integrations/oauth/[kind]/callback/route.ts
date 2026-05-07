@@ -8,7 +8,7 @@ import { webOauthConfig } from '@/lib/integrations/web-oauth-config';
 import { verifyIntegrationToken } from '@/lib/integrations/verifiers';
 
 function callbackUrlFor(kind: string): string {
-  const base = process.env.AUTH_URL ?? process.env.NEXT_PUBLIC_APP_URL ?? 'http://localhost:3000';
+  const base = process.env.AUTH_URL ?? process.env.NEXT_PUBLIC_APP_URL ?? 'http://localhost:24890';
   return `${base.replace(/\/+$/, '')}/api/integrations/oauth/${kind}/callback`;
 }
 

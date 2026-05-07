@@ -11,17 +11,24 @@
  * IAM when invoker is the web service account).
  */
 import http from 'node:http';
+import { timingSafeEqual } from 'node:crypto';
 import { transcribeFromUrl } from './handlers/transcribe';
 
-const PORT = Number(process.env.PORT ?? 8080);
+const PORT = Number(process.env.PORT ?? 24892);
 const TOKEN = process.env.WORKER_AUTH_TOKEN ?? '';
 
+if (process.env.NODE_ENV === 'production' && TOKEN.length < 32) {
+  throw new Error('WORKER_AUTH_TOKEN must be set to at least 32 characters in production');
+}
+
 function authorized(req: http.IncomingMessage): boolean {
+  if (!TOKEN) return false;
   const h = req.headers.authorization ?? '';
   if (!h.startsWith('Bearer ')) return false;
-  const provided = h.slice(7);
-  // In prod, prefer GCP ID-token verification; for V1 we use a shared token.
-  return TOKEN.length > 0 && provided === TOKEN;
+  const provided = Buffer.from(h.slice(7));
+  const expected = Buffer.from(TOKEN);
+  if (provided.length !== expected.length) return false;
+  return timingSafeEqual(provided, expected);
 }
 
 async function readBody(req: http.IncomingMessage): Promise<unknown> {

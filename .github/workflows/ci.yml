@@ -54,7 +54,7 @@ jobs:
           DATABASE_URL: postgresql://ci:ci@localhost:5432/ci
           DIRECT_URL: postgresql://ci:ci@localhost:5432/ci
           AUTH_SECRET: ci-dummy-secret-not-used
-          AUTH_URL: http://localhost:3000
+          AUTH_URL: http://localhost:24890
           ENCRYPTION_KEY: AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=
           NEXT_TELEMETRY_DISABLED: '1'
       - run: pnpm turbo run test --concurrency=2

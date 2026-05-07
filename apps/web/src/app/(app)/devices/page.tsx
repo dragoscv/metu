@@ -1,72 +1,71 @@
 import { auth } from '@metu/auth';
 import { redirect } from 'next/navigation';
-import { desc, eq } from 'drizzle-orm';
+import { and, desc, eq, isNull } from 'drizzle-orm';
 import { getDb } from '@metu/db';
-import { device } from '@metu/db/schema';
-import { Card } from '@metu/ui';
-import { formatDistanceToNow } from 'date-fns';
+import { device, deviceEvent } from '@metu/db/schema';
+import { Page, PageHeader } from '@metu/ui';
+import { DevicesView, type DeviceRow, type DeviceEventRow } from '@/components/devices-view';
 
-const PRESENCE_COLOR: Record<string, string> = {
-  online: 'var(--color-success, #22c55e)',
-  idle: 'var(--color-warning, #eab308)',
-  offline: 'var(--color-fg-subtle)',
-};
-
-export default async function DevicesPage() {
+export default async function DevicesPage({
+  searchParams,
+}: {
+  searchParams: Promise<{ id?: string }>;
+}) {
   const session = await auth();
   if (!session) redirect('/sign-in');
+  const sp = await searchParams;
+  const wsId = session.user.workspaceId;
   const db = getDb();
+
   const rows = await db
     .select()
     .from(device)
-    .where(eq(device.workspaceId, session.user.workspaceId))
+    .where(and(eq(device.workspaceId, wsId), isNull(device.revokedAt)))
     .orderBy(desc(device.lastSeenAt));
 
-  return (
-    <div className="space-y-6">
-      <header className="flex items-center justify-between">
-        <div>
-          <h1 className="text-3xl font-semibold tracking-tight">Devices</h1>
-          <p className="mt-1 text-sm text-[var(--color-fg-muted)]">
-            Every endpoint that runs you. Pair a new one with a code from the companion app or VS
-            Code extension.
-          </p>
-        </div>
-      </header>
+  const selected = sp.id ?? rows[0]?.id ?? null;
 
-      <div className="grid grid-cols-1 gap-3 md:grid-cols-2">
-        {rows.length === 0 ? (
-          <Card>
-            <div className="px-1 py-8 text-center text-sm text-[var(--color-fg-muted)]">
-              No devices yet. Install the companion app or pair this browser to start.
-            </div>
-          </Card>
-        ) : (
-          rows.map((d) => (
-            <Card key={d.id}>
-              <div className="flex items-start gap-3">
-                <span
-                  className="mt-1 h-2.5 w-2.5 rounded-full"
-                  style={{ background: PRESENCE_COLOR[d.presence] }}
-                  aria-label={d.presence}
-                />
-                <div className="flex-1">
-                  <div className="font-medium">{d.name}</div>
-                  <div className="text-xs text-[var(--color-fg-subtle)]">
-                    {d.kind} · {d.platform}
-                    {d.version ? ` · v${d.version}` : ''}
-                  </div>
-                  <div className="mt-2 text-xs text-[var(--color-fg-muted)]">
-                    {d.lastSeenAt
-                      ? `last seen ${formatDistanceToNow(new Date(d.lastSeenAt), { addSuffix: true })}`
-                      : 'never seen'}
-                  </div>
-                </div>
-              </div>
-            </Card>
-          ))
-        )}
-      </div>
-    </div>
+  let events: DeviceEventRow[] = [];
+  if (selected) {
+    const eventRows = await db
+      .select({
+        id: deviceEvent.id,
+        kind: deviceEvent.kind,
+        payload: deviceEvent.payload,
+        occurredAt: deviceEvent.occurredAt,
+      })
+      .from(deviceEvent)
+      .where(eq(deviceEvent.deviceId, selected))
+      .orderBy(desc(deviceEvent.occurredAt))
+      .limit(50);
+    events = eventRows.map((e) => ({
+      id: e.id,
+      kind: e.kind,
+      payload: (e.payload ?? {}) as Record<string, unknown>,
+      occurredAt: e.occurredAt.toISOString(),
+    }));
+  }
+
+  const ui: DeviceRow[] = rows.map((d) => ({
+    id: d.id,
+    name: d.name,
+    kind: d.kind,
+    platform: d.platform,
+    version: d.version,
+    presence: d.presence,
+    capabilities: (d.capabilities ?? []) as string[],
+    activity: (d.activity ?? {}) as Record<string, unknown>,
+    lastSeenAt: d.lastSeenAt?.toISOString() ?? null,
+    createdAt: d.createdAt.toISOString(),
+  }));
+
+  return (
+    <Page>
+      <PageHeader
+        title="Devices"
+        description="Every endpoint that runs you. Click a device to send commands or view its activity."
+      />
+      <DevicesView devices={ui} selectedId={selected} events={events} />
+    </Page>
   );
 }

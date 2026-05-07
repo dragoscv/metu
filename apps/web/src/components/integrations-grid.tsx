@@ -1,10 +1,26 @@
 'use client';
 import { useEffect, useRef, useState, useTransition } from 'react';
+import Link from 'next/link';
 import { toast } from 'sonner';
 import { Button, Input } from '@metu/ui';
-import { Check, X, ExternalLink, Loader2, KeyRound, Smartphone, Globe } from 'lucide-react';
+import {
+  ArrowRight,
+  Check,
+  X,
+  ExternalLink,
+  Loader2,
+  KeyRound,
+  Smartphone,
+  Globe,
+  Plus,
+  Star,
+} from 'lucide-react';
 import type { IntegrationKind } from '@metu/types';
-import { connectIntegrationAction, disconnectIntegrationAction } from '@/app/actions/integrations';
+import {
+  connectIntegrationAction,
+  disconnectIntegrationAction,
+  setDefaultIntegrationAction,
+} from '@/app/actions/integrations';
 import {
   startIntegrationDeviceFlowAction,
   pollIntegrationDeviceFlowAction,
@@ -18,6 +34,7 @@ export interface ConnectedIntegration {
   externalId: string;
   label: string;
   status: 'active' | 'paused' | 'error' | 'revoked';
+  isDefault: boolean;
   lastSyncAt: string | null;
   lastError: string | null;
 }
@@ -29,14 +46,20 @@ interface Props {
 }
 
 export function IntegrationsGrid({ connected, capabilities }: Props) {
-  const map = new Map(connected.map((c) => [c.kind, c] as const));
+  // Group all connections by kind so each provider card can show multiple accounts.
+  const byKind = new Map<IntegrationKind, ConnectedIntegration[]>();
+  for (const c of connected) {
+    const list = byKind.get(c.kind) ?? [];
+    list.push(c);
+    byKind.set(c.kind, list);
+  }
   return (
     <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
       {INTEGRATIONS_CATALOG.map((entry) => (
         <IntegrationCard
           key={entry.kind}
           entry={entry}
-          connected={map.get(entry.kind) ?? null}
+          accounts={byKind.get(entry.kind) ?? []}
           methods={capabilities[entry.kind] ?? ['token']}
         />
       ))}
@@ -46,15 +69,16 @@ export function IntegrationsGrid({ connected, capabilities }: Props) {
 
 function IntegrationCard({
   entry,
-  connected,
+  accounts,
   methods,
 }: {
   entry: IntegrationCatalogEntry;
-  connected: ConnectedIntegration | null;
+  accounts: ConnectedIntegration[];
   methods: ConnectMethod[];
 }) {
   const [open, setOpen] = useState(false);
   const Icon = entry.icon;
+  const hasAccounts = accounts.length > 0;
 
   return (
     <div className="rounded-[var(--radius-lg)] border border-[var(--color-border)] bg-[var(--color-bg-card)] p-5 shadow-sm">
@@ -65,9 +89,9 @@ function IntegrationCard({
         <div className="min-w-0 flex-1">
           <div className="flex items-center gap-2">
             <h3 className="truncate text-base font-medium">{entry.name}</h3>
-            {connected ? (
+            {hasAccounts ? (
               <span className="rounded-full bg-[var(--color-success-soft,rgba(34,197,94,0.15))] px-2 py-0.5 text-[10px] font-medium uppercase tracking-wider text-[var(--color-success)]">
-                Connected
+                {accounts.length} {accounts.length === 1 ? 'account' : 'accounts'}
               </span>
             ) : null}
           </div>
@@ -77,13 +101,39 @@ function IntegrationCard({
         </div>
       </div>
 
-      {connected ? (
-        <ConnectedBlock integration={connected} />
-      ) : (
-        <Button type="button" className="mt-4 w-full" onClick={() => setOpen(true)}>
-          Connect
-        </Button>
+      {hasAccounts ? (
+        <ul className="mt-4 space-y-2">
+          {accounts.map((a) => (
+            <AccountRow key={a.id} integration={a} canPromote={accounts.length > 1} />
+          ))}
+        </ul>
+      ) : null}
+
+      {hasAccounts && entry.kind === 'github' && (
+        <Link
+          href="/integrations/github"
+          className="mt-3 inline-flex w-full items-center justify-between rounded-md border border-[var(--color-border)] bg-[var(--color-bg-elevated)] px-3 py-2 text-xs font-medium hover:bg-[var(--color-bg-card)]"
+        >
+          <span>Browse repositories</span>
+          <ArrowRight className="h-3.5 w-3.5" />
+        </Link>
       )}
+
+      <Button
+        type="button"
+        variant={hasAccounts ? 'outline' : 'default'}
+        className="mt-4 w-full"
+        onClick={() => setOpen(true)}
+      >
+        {hasAccounts ? (
+          <>
+            <Plus className="mr-2 h-3.5 w-3.5" />
+            Add another account
+          </>
+        ) : (
+          'Connect'
+        )}
+      </Button>
 
       {open && <ConnectModal entry={entry} methods={methods} onClose={() => setOpen(false)} />}
     </div>
@@ -91,8 +141,7 @@ function IntegrationCard({
 }
 
 // Renders a localized timestamp on the client only to avoid SSR/CSR locale
-// mismatches (server-side Node may format dates differently than the user's
-// browser locale, causing hydration errors).
+// mismatches.
 function ClientTime({ iso }: { iso: string | Date }) {
   const [text, setText] = useState<string | null>(null);
   useEffect(() => {
@@ -101,8 +150,15 @@ function ClientTime({ iso }: { iso: string | Date }) {
   return <>{text ?? ''}</>;
 }
 
-function ConnectedBlock({ integration }: { integration: ConnectedIntegration }) {
+function AccountRow({
+  integration,
+  canPromote,
+}: {
+  integration: ConnectedIntegration;
+  canPromote: boolean;
+}) {
   const [pending, start] = useTransition();
+
   function disconnect() {
     if (!window.confirm(`Disconnect ${integration.label}?`)) return;
     start(async () => {
@@ -111,38 +167,58 @@ function ConnectedBlock({ integration }: { integration: ConnectedIntegration }) 
       else toast.success('Disconnected');
     });
   }
+
+  function makeDefault() {
+    start(async () => {
+      const r = await setDefaultIntegrationAction({ id: integration.id });
+      if (!r.ok) toast.error(r.error);
+      else toast.success(`${integration.label} is now the default`);
+    });
+  }
+
   return (
-    <div className="mt-4 space-y-2">
-      <div className="rounded-[var(--radius)] border border-[var(--color-border)] bg-[var(--color-bg-elevated)] px-3 py-2 text-xs">
-        <p className="truncate font-medium text-[var(--color-fg)]">{integration.label}</p>
-        <p className="truncate text-[var(--color-fg-subtle)]">{integration.externalId}</p>
-        {integration.lastError ? (
-          <p className="mt-1 truncate text-[var(--color-warning,#f59e0b)]">
-            ⚠ {integration.lastError}
-          </p>
-        ) : integration.lastSyncAt ? (
-          <p className="mt-1 text-[var(--color-fg-subtle)]">
-            Last sync <ClientTime iso={integration.lastSyncAt} />
-          </p>
+    <li className="rounded-[var(--radius)] border border-[var(--color-border)] bg-[var(--color-bg-elevated)] px-3 py-2 text-xs">
+      <div className="flex items-center gap-2">
+        <p className="min-w-0 flex-1 truncate font-medium text-[var(--color-fg)]">
+          {integration.label}
+        </p>
+        {integration.isDefault ? (
+          <span className="inline-flex shrink-0 items-center gap-1 rounded-full bg-[var(--color-brand-soft,rgba(124,58,237,0.15))] px-1.5 py-0.5 text-[9px] font-medium uppercase tracking-wider text-[var(--color-brand)]">
+            <Star className="h-2.5 w-2.5 fill-current" /> Default
+          </span>
         ) : null}
       </div>
-      <Button
-        type="button"
-        variant="outline"
-        className="w-full"
-        disabled={pending}
-        onClick={disconnect}
-      >
-        {pending ? (
-          <>
-            <Loader2 className="mr-2 h-3.5 w-3.5 animate-spin" />
-            Disconnecting…
-          </>
-        ) : (
-          'Disconnect'
-        )}
-      </Button>
-    </div>
+      <p className="truncate text-[var(--color-fg-subtle)]">{integration.externalId}</p>
+      {integration.lastError ? (
+        <p className="mt-1 truncate text-[var(--color-warning,#f59e0b)]">
+          ⚠ {integration.lastError}
+        </p>
+      ) : integration.lastSyncAt ? (
+        <p className="mt-1 text-[var(--color-fg-subtle)]">
+          Last sync <ClientTime iso={integration.lastSyncAt} />
+        </p>
+      ) : null}
+      <div className="mt-2 flex items-center gap-2">
+        {canPromote && !integration.isDefault ? (
+          <button
+            type="button"
+            onClick={makeDefault}
+            disabled={pending}
+            className="text-[11px] text-[var(--color-fg-muted)] hover:text-[var(--color-fg)] hover:underline disabled:opacity-50"
+          >
+            Make default
+          </button>
+        ) : null}
+        <button
+          type="button"
+          onClick={disconnect}
+          disabled={pending}
+          className="ml-auto text-[11px] text-[var(--color-fg-muted)] hover:text-[var(--color-warning,#f59e0b)] hover:underline disabled:opacity-50"
+        >
+          {pending ? 'Working…' : 'Disconnect'}
+        </button>
+      </div>
+    </li>
   );
 }
 

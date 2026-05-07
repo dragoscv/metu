@@ -4,9 +4,9 @@
   "private": true,
   "type": "module",
   "scripts": {
-    "dev": "next dev --port 3000",
+    "dev": "next dev --port 24890",
     "build": "next build",
-    "start": "next start --port 3000",
+    "start": "next start --port 24890",
     "lint": "eslint .",
     "typecheck": "tsc --noEmit"
   },
@@ -37,10 +37,11 @@
     "nuqs": "catalog:",
     "react": "catalog:",
     "react-dom": "catalog:",
+    "recharts": "^3.8.1",
     "sonner": "catalog:",
     "telegraf": "catalog:",
-    "zod": "catalog:",
-    "web-push": "catalog:"
+    "web-push": "catalog:",
+    "zod": "catalog:"
   },
   "devDependencies": {
     "@metu/config": "workspace:*",

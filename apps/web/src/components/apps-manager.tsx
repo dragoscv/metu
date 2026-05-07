@@ -1,7 +1,7 @@
 'use client';
 import { useState, useTransition } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { Button, Card, CardTitle } from '@metu/ui';
+import { Button, Card, CardTitle, Page, PageHeader } from '@metu/ui';
 import {
   registerAppAction,
   revokeAppAction,
@@ -25,16 +25,12 @@ export function AppsManager({ apps }: { apps: RegisteredApp[] }) {
   const [secret, setSecret] = useState<RegisterAppResult | null>(null);
 
   return (
-    <div className="space-y-6">
-      <div className="flex items-center justify-between">
-        <div>
-          <h1 className="text-3xl font-semibold tracking-tight">Apps</h1>
-          <p className="mt-1 text-sm text-[var(--color-fg-muted)]">
-            First- and third-party apps that connect to METU. Each gets a scoped OAuth2/OIDC client.
-          </p>
-        </div>
-        <Button onClick={() => setShowCreate(true)}>Register app</Button>
-      </div>
+    <Page>
+      <PageHeader
+        title="API apps"
+        description="OAuth2/OIDC clients that consume the metu API. This is the inverse of Integrations: here metu issues credentials to other apps (mobile, browser-ext, MCP clients, future SaaS surfaces) so they can act on your data with scoped permissions."
+        actions={<Button onClick={() => setShowCreate(true)}>Register app</Button>}
+      />
 
       <AnimatePresence>
         {showCreate ? (
@@ -77,7 +73,7 @@ export function AppsManager({ apps }: { apps: RegisteredApp[] }) {
           apps.map((app) => <AppCard key={app.id} app={app} />)
         )}
       </div>
-    </div>
+    </Page>
   );
 }
 
@@ -92,7 +88,7 @@ function CreateForm({
   const [error, setError] = useState<string | null>(null);
   const [name, setName] = useState('');
   const [type, setType] = useState<'first_party' | 'third_party' | 'public'>('first_party');
-  const [redirectUris, setRedirectUris] = useState('http://localhost:3000/oauth/callback');
+  const [redirectUris, setRedirectUris] = useState('http://localhost:24890/oauth/callback');
   const [scopes, setScopes] = useState('openid profile capture:write recall:read notify:write');
   const [webhookUrl, setWebhookUrl] = useState('');
 

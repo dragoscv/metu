@@ -93,6 +93,12 @@ export const task = pgTable(
     blockedReason: text('blocked_reason'),
     /** AI-suggested vs user-created */
     aiSuggested: integer('ai_suggested').notNull().default(0),
+    /** Originating satellite app slug (e.g. 'notai', 'bancai', 'facturai'). NULL = native METU. */
+    sourceApp: text('source_app'),
+    /** Free-form reference to the entity that produced this intent: { kind, id, ... } */
+    sourceEntityRef: jsonb('source_entity_ref'),
+    /** Deep link back to the source entity in the satellite app's UI. */
+    sourceUrl: text('source_url'),
     dueAt: timestamp('due_at', { withTimezone: true }),
     completedAt: timestamp('completed_at', { withTimezone: true }),
     createdAt: timestamp('created_at', { withTimezone: true })
@@ -109,6 +115,7 @@ export const task = pgTable(
     index('task_project_idx').on(t.projectId),
     index('task_status_idx').on(t.status),
     index('task_leverage_idx').on(t.leverageScore),
+    index('task_source_app_idx').on(t.sourceApp),
   ],
 );
 

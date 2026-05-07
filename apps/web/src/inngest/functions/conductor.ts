@@ -192,7 +192,7 @@ export const onConductorTick = inngest.createFunction(
                 body: action.why ?? 'Conductor proposed an action.',
                 urgency: 'high',
                 source: 'conductor',
-                actionUrl: `/conductor?toolCall=${result.toolCallId}`,
+                actionUrl: `/chat?toolCall=${result.toolCallId}`,
                 actions: [
                   { id: 'approve', label: 'Approve', kind: 'approve' },
                   { id: 'reject', label: 'Reject', kind: 'reject' },
@@ -212,7 +212,7 @@ export const onConductorTick = inngest.createFunction(
                 body: (result.error ?? 'unknown error').slice(0, 240),
                 urgency: 'normal',
                 source: 'conductor',
-                actionUrl: `/conductor?toolCall=${result.toolCallId}`,
+                actionUrl: `/chat?toolCall=${result.toolCallId}`,
                 metadata: { toolCallId: result.toolCallId, tool: action.tool },
               },
             });
@@ -248,5 +248,33 @@ export const onConductorApproved = inngest.createFunction(
       });
     });
     return { ok: true };
+  },
+);
+
+/**
+ * Backstop cron — fires every 15 minutes and emits a `conductor/tick` for
+ * every workspace whose autonomy is enabled. The tick handler debounces on
+ * workspaceId, so this is a no-op when the self-rescheduling chain is healthy
+ * but rescues us if the chain ever breaks (deploy, restart, sleep > 15min).
+ */
+export const conductorBackstop = inngest.createFunction(
+  { id: 'conductor-backstop', name: 'Conductor: backstop scheduler' },
+  { cron: '*/15 * * * *' },
+  async ({ step }) => {
+    const rows = await step.run('list-enabled', async () => {
+      const db = getDb();
+      const r = await db
+        .select({ workspaceId: agentPolicy.workspaceId })
+        .from(agentPolicy)
+        .where(eq(agentPolicy.enabled, true));
+      return r;
+    });
+    for (const r of rows) {
+      await step.sendEvent(`tick-${r.workspaceId}`, {
+        name: 'conductor/tick',
+        data: { workspaceId: r.workspaceId, reason: 'backstop' },
+      });
+    }
+    return { ok: true, scheduled: rows.length };
   },
 );

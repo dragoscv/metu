@@ -7,9 +7,10 @@
  */
 'use server';
 import { z } from 'zod';
-import { eq, and } from 'drizzle-orm';
+import { eq, and, isNull, desc } from 'drizzle-orm';
+import { revalidatePath } from 'next/cache';
 import { getDb } from '@metu/db';
-import { notificationSubscription } from '@metu/db/schema';
+import { notification, notificationSubscription } from '@metu/db/schema';
 import { auth } from '@metu/auth';
 
 const webPushSchema = z.object({
@@ -120,5 +121,66 @@ export async function unsubscribePushAction(id: string): Promise<{ ok: boolean }
         eq(notificationSubscription.userId, session.user.id),
       ),
     );
+  return { ok: true };
+}
+
+/**
+ * Latest unacknowledged notifications for the current user. Used by the bell popover.
+ */
+export async function listRecentNotificationsAction(limit = 20) {
+  const session = await auth();
+  if (!session?.user?.id) return { ok: false as const, error: 'unauthorized' };
+  const db = getDb();
+  const rows = await db
+    .select({
+      id: notification.id,
+      title: notification.title,
+      body: notification.body,
+      urgency: notification.urgency,
+      source: notification.source,
+      actionUrl: notification.actionUrl,
+      actions: notification.actions,
+      metadata: notification.metadata,
+      readAt: notification.readAt,
+      acknowledgedAt: notification.acknowledgedAt,
+      createdAt: notification.createdAt,
+    })
+    .from(notification)
+    .where(and(eq(notification.userId, session.user.id), isNull(notification.acknowledgedAt)))
+    .orderBy(desc(notification.createdAt))
+    .limit(limit);
+  return {
+    ok: true as const,
+    items: rows.map((r) => ({
+      ...r,
+      createdAt: r.createdAt.toISOString(),
+      readAt: r.readAt?.toISOString() ?? null,
+      acknowledgedAt: r.acknowledgedAt?.toISOString() ?? null,
+    })),
+  };
+}
+
+export async function ackNotificationAction(id: string): Promise<{ ok: boolean }> {
+  const session = await auth();
+  if (!session?.user?.id) return { ok: false };
+  const db = getDb();
+  await db
+    .update(notification)
+    .set({ acknowledgedAt: new Date(), readAt: new Date() })
+    .where(and(eq(notification.id, id), eq(notification.userId, session.user.id)));
+  revalidatePath('/');
+  return { ok: true };
+}
+
+export async function ackAllNotificationsAction(): Promise<{ ok: boolean }> {
+  const session = await auth();
+  if (!session?.user?.id) return { ok: false };
+  const db = getDb();
+  const now = new Date();
+  await db
+    .update(notification)
+    .set({ acknowledgedAt: now, readAt: now })
+    .where(and(eq(notification.userId, session.user.id), isNull(notification.acknowledgedAt)));
+  revalidatePath('/');
   return { ok: true };
 }

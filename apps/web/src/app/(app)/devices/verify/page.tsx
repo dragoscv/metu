@@ -1,6 +1,6 @@
 import { auth } from '@metu/auth';
 import { redirect } from 'next/navigation';
-import { Card, CardTitle } from '@metu/ui';
+import { Card, Page, PageHeader } from '@metu/ui';
 import { DeviceVerifyForm } from '@/components/device-verify-form';
 
 export default async function VerifyDevicePage({
@@ -17,16 +17,16 @@ export default async function VerifyDevicePage({
   const sp = await searchParams;
 
   return (
-    <div className="mx-auto max-w-md py-10">
+    <Page className="mx-auto max-w-md">
+      <PageHeader
+        size="sm"
+        back={{ href: '/devices', label: 'Devices' }}
+        title="Pair a device"
+        description="Enter the code shown on your device or companion app to authorize it for this workspace."
+      />
       <Card>
-        <CardTitle>Pair a device</CardTitle>
-        <p className="mt-1 text-sm text-[var(--color-fg-muted)]">
-          Enter the code shown on your device or companion app to authorize it for this workspace.
-        </p>
-        <div className="mt-4">
-          <DeviceVerifyForm initialCode={sp.code ?? ''} />
-        </div>
+        <DeviceVerifyForm initialCode={sp.code ?? ''} />
       </Card>
-    </div>
+    </Page>
   );
 }

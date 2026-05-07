@@ -4,6 +4,39 @@ metu is **read-mostly** with the outside world: integrations stream events in,
 and metu turns them into memory + timeline. Outbound is reserved for explicit
 user actions (e.g. logging a decision back to GitHub).
 
+## Mental model: Integrations vs API apps
+
+These are _inverses_ and live in two different surfaces. Don't confuse them.
+
+| Surface                        | Direction                             | Table                            | Example                                                                                    |
+| ------------------------------ | ------------------------------------- | -------------------------------- | ------------------------------------------------------------------------------------------ |
+| `/integrations`                | metu → external service               | `integration`                    | metu calls GitHub with the user's token                                                    |
+| `/integrations` (Custom OAuth) | metu → external service via BYO OAuth | `oauth_app` + `oauth_connection` | user wires an arbitrary OIDC provider with their own client_id/secret                      |
+| `/apps` (**API apps**)         | external app → metu                   | `oauth_client`                   | mobile, browser-ext, MCP clients, future SaaS surfaces authenticate as a metu OAuth client |
+
+When in doubt: if the credential lets _metu_ read someone else's data, it's an
+**integration**. If the credential lets _another app_ act as a metu user,
+it's an **API app**.
+
+## Multi-account
+
+Every integration is scoped by `(workspace_id, kind, external_id)`, so you can
+connect any number of accounts of the same kind — e.g. a personal GitHub plus
+two org GitHubs, or a `live` and a `test` Stripe.
+
+When more than one is connected, exactly one row per `(workspace, kind)` is
+flagged `is_default`. Pick what "the" GitHub means with the **Make default**
+action on each card. Server consumers should call `getDefaultIntegration` when
+they need to choose one, or `listIntegrationsByKind` when they want to fan
+out across all accounts.
+
+A partial unique index enforces the single-default invariant in Postgres:
+
+```sql
+CREATE UNIQUE INDEX integration_default_unique_idx
+  ON integration (workspace_id, kind) WHERE is_default;
+```
+
 ## Google (Gmail + Calendar)
 
 Sign-in already requests scopes:

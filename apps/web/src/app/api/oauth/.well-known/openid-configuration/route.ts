@@ -27,6 +27,8 @@ export function GET(req: Request) {
         'event:write',
         'event:read',
         'tools:invoke',
+        'intent:write',
+        'creds:borrow',
       ],
       response_types_supported: ['code'],
       grant_types_supported: [

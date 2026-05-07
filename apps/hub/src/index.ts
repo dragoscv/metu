@@ -22,8 +22,9 @@ import { authenticateHello } from './auth';
 import { registerInternalRoutes } from './internal';
 import { handleSocket } from './socket';
 import { registry } from './registry';
+import { consumeHandshakeBudget, exceedsConnectionCap, ipFromReq } from './limits';
 
-const port = Number(process.env.HUB_PORT ?? 3001);
+const port = Number(process.env.HUB_PORT ?? 24891);
 
 const app = new Hono();
 
@@ -41,6 +42,23 @@ const server = serve({ fetch: app.fetch, port }, (info) => {
 const wss = new WebSocketServer({ server, path: '/ws' });
 
 wss.on('connection', (ws, req) => {
+  const ip = ipFromReq(req.headers);
+  if (exceedsConnectionCap(registry.size())) {
+    try {
+      ws.close(1013, 'capacity');
+    } catch {
+      /* ignore */
+    }
+    return;
+  }
+  if (!consumeHandshakeBudget(ip)) {
+    try {
+      ws.close(4008, 'rate_limited');
+    } catch {
+      /* ignore */
+    }
+    return;
+  }
   handleSocket(ws, req, { authenticateHello }).catch((err) => {
     console.error('[hub] socket error', err);
     try {

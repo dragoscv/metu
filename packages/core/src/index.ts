@@ -3,3 +3,4 @@ export * as focus from './focus';
 export * as projectIntel from './project';
 export * as continuity from './continuity';
 export * as agent from './agent';
+export * as goals from './goals';

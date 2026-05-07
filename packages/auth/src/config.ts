@@ -7,7 +7,13 @@ import type { NextAuthConfig } from 'next-auth';
 import Google from 'next-auth/providers/google';
 import { getDb } from '@metu/db';
 import { account, authenticator, session, user, verificationToken } from '@metu/db/schema';
-import { ensurePersonalWorkspace } from '@metu/db/queries';
+import { ensurePersonalWorkspace, getUserWorkspaces } from '@metu/db/queries';
+
+// In-process cache to avoid re-querying the user's workspace on every request.
+// Auth.js calls the `session` callback on every page render; without this we
+// hammer the DB on every navigation and HMR ping during dev.
+const workspaceCache = new Map<string, { id: string; slug: string; expiresAt: number }>();
+const WORKSPACE_TTL_MS = 5 * 60_000;
 
 export const authConfig = {
   adapter: DrizzleAdapter(getDb(), {
@@ -46,12 +52,22 @@ export const authConfig = {
   callbacks: {
     async session({ session, user }) {
       if (!user?.id) return session;
-      // Ensure user has at least one workspace and attach context.
-      const ws = await ensurePersonalWorkspace(
-        user.id,
-        user.name ? `${user.name}'s space` : 'Personal',
-        `personal-${user.id.slice(0, 8)}`,
-      );
+
+      const now = Date.now();
+      const cached = workspaceCache.get(user.id);
+      let ws = cached && cached.expiresAt > now ? cached : null;
+
+      if (!ws) {
+        // Workspace is created in the `signIn` event, so a SELECT is enough here.
+        const rows = await getUserWorkspaces(user.id);
+        const found = rows[0]?.workspace;
+        if (found) {
+          ws = { id: found.id, slug: found.slug, expiresAt: now + WORKSPACE_TTL_MS };
+          workspaceCache.set(user.id, ws);
+        }
+      }
+
+      if (!ws) return session;
       return {
         ...session,
         user: {

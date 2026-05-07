@@ -66,6 +66,21 @@ export type Events = {
   'app/event': {
     data: { workspaceId: string; clientId: string; kind: string; payload: unknown };
   };
+  // ─── Goals + Targets ───────────────────────────────────────────────────
+  'goals/review': {
+    data: { workspaceId: string; reason: 'morning' | 'weekly' | 'manual' };
+  };
+  // ─── GitHub repo memory seeding ────────────────────────────────────────
+  'github/repo.linked': {
+    data: {
+      workspaceId: string;
+      userId: string;
+      projectId: string;
+      integrationId: string;
+      repoFullName: string;
+      repoUrl: string;
+    };
+  };
 };
 
 export const inngest = new Inngest({

@@ -2,6 +2,7 @@ import { auth } from '@metu/auth';
 import { redirect } from 'next/navigation';
 import { listIntegrations, listOauthApps, listOauthConnections } from '@metu/db/queries';
 import type { IntegrationKind } from '@metu/types';
+import { Page, PageHeader } from '@metu/ui';
 import { IntegrationsGrid, type ConnectedIntegration } from '@/components/integrations-grid';
 import {
   CustomOauthSection,
@@ -29,6 +30,7 @@ export default async function IntegrationsPage() {
     externalId: r.externalId,
     label: r.label,
     status: r.status,
+    isDefault: r.isDefault,
     lastSyncAt: r.lastSyncAt ? r.lastSyncAt.toISOString() : null,
     lastError: r.lastError,
   }));
@@ -81,20 +83,30 @@ export default async function IntegrationsPage() {
   }));
 
   return (
-    <div className="space-y-10">
-      <header>
-        <h1 className="text-3xl font-semibold tracking-tight">Integrations</h1>
-        <p className="mt-1 text-sm text-[var(--color-fg-muted)]">
-          Connect external systems. Each closes a real loop. Tokens are sealed with AES-256-GCM and
-          stored per workspace.
-        </p>
-      </header>
+    <Page className="space-y-10">
+      <PageHeader
+        title="Integrations"
+        description={
+          <>
+            Connect external services metu reads from (GitHub, Stripe, Telegram, …). You can connect
+            multiple accounts per provider — pick a default to use when a workflow needs just one.
+            Tokens are sealed with AES-256-GCM and stored per workspace.
+            <span className="mt-2 block text-xs text-[var(--color-fg-subtle)]">
+              Looking to let another app talk to metu? See{' '}
+              <a href="/apps" className="underline hover:text-[var(--color-fg)]">
+                API apps
+              </a>{' '}
+              for OAuth2/OIDC clients.
+            </span>
+          </>
+        }
+      />
 
       <IntegrationsGrid connected={connected} capabilities={capabilities} />
 
       <ExternalMcpSection items={externalMcp} />
 
       <CustomOauthSection apps={apps} connections={connections} />
-    </div>
+    </Page>
   );
 }

@@ -3,3 +3,4 @@ export * from './crypto';
 export * from './prompts';
 export * from './copilot';
 export * from './models';
+export * from './structured';

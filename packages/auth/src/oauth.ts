@@ -34,6 +34,8 @@ export const KNOWN_SCOPES = [
   'event:write',
   'event:read',
   'tools:invoke',
+  'intent:write',
+  'creds:borrow',
   'admin:write',
 ] as const;
 

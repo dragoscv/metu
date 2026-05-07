@@ -1,17 +1,32 @@
 import { auth } from '@metu/auth';
 import { redirect } from 'next/navigation';
 import { focus } from '@metu/core';
-import { listProjects, listOpenTasks, listBlockedTasks } from '@metu/db/queries';
-import { Card, CardTitle, MomentumBar } from '@metu/ui';
+import {
+  listProjects,
+  listOpenTasks,
+  listBlockedTasks,
+  listRecentCaptures,
+} from '@metu/db/queries';
+import { Badge, Card, CardTitle, MomentumBar, Page, PageHeader } from '@metu/ui';
 import { ArrowRight, AlertTriangle, Compass, EyeOff } from 'lucide-react';
 import Link from 'next/link';
+import { and, desc, eq, isNull } from 'drizzle-orm';
+import { getDb } from '@metu/db';
+import { goal, target } from '@metu/db/schema';
 import { BrainDump } from '@/components/brain-dump';
 import { RecomputeFocusButton } from '@/components/recompute-focus';
+import { DashboardTabs } from '@/components/dashboard-tabs';
 
-export default async function Dashboard() {
+export default async function Dashboard({
+  searchParams,
+}: {
+  searchParams: Promise<{ tab?: string }>;
+}) {
   const session = await auth();
   if (!session) redirect('/sign-in');
   const { workspaceId } = session.user;
+  const sp = await searchParams;
+  const tab = (sp.tab ?? 'now') as 'now' | 'inbox' | 'plan' | 'widgets';
 
   const [latestFocus, projects, openTasks, blocked] = await Promise.all([
     focus.getLatestFocus(workspaceId, session.user.id),
@@ -28,19 +43,68 @@ export default async function Dashboard() {
   const momentumProjects = projects.filter((p) => !ignoredIds.includes(p.id)).slice(0, 6);
 
   return (
-    <div className="space-y-8">
-      <header className="flex items-end justify-between">
-        <div>
-          <p className="text-xs uppercase tracking-wider text-[var(--color-fg-subtle)]">
+    <Page className="space-y-8">
+      <PageHeader
+        eyebrow={
+          <span className="text-xs uppercase tracking-wider text-[var(--color-fg-subtle)]">
             What matters now
-          </p>
-          <h1 className="mt-1 text-3xl font-semibold tracking-tight">
-            {greeting()}, {session.user.name?.split(' ')[0] ?? 'there'}.
-          </h1>
-        </div>
-        <RecomputeFocusButton />
-      </header>
+          </span>
+        }
+        title={`${greeting()}, ${session.user.name?.split(' ')[0] ?? 'there'}.`}
+        actions={<RecomputeFocusButton />}
+      />
 
+      <DashboardTabs active={tab} />
+
+      {tab === 'now' && (
+        <NowTab
+          latestFocus={latestFocus}
+          nowTask={nowTask}
+          nextTasks={nextTasks}
+          ignoredProjects={ignoredProjects}
+          momentumProjects={momentumProjects}
+          blocked={blocked}
+        />
+      )}
+      {tab === 'inbox' && <InboxTab workspaceId={workspaceId} />}
+      {tab === 'plan' && <PlanTab openTasks={openTasks} blocked={blocked} />}
+      {tab === 'widgets' && (
+        <WidgetsTab workspaceId={workspaceId} momentumProjects={momentumProjects} />
+      )}
+
+      <BrainDump />
+    </Page>
+  );
+}
+
+function NowTab({
+  latestFocus,
+  nowTask,
+  nextTasks,
+  ignoredProjects,
+  momentumProjects,
+  blocked,
+}: {
+  latestFocus: Awaited<ReturnType<typeof focus.getLatestFocus>>;
+  nowTask: {
+    id: string;
+    title: string;
+    body: string | null;
+    projectId: string | null;
+    kind: string;
+  } | null;
+  nextTasks: ({ id: string; title: string; kind: string } | undefined)[];
+  ignoredProjects: { id: string; name: string }[];
+  momentumProjects: {
+    id: string;
+    name: string;
+    momentumScore: number | null;
+    lastMeaningfulActivityAt: Date | null;
+  }[];
+  blocked: { id: string; title: string; blockedReason: string | null }[];
+}) {
+  return (
+    <div className="space-y-8">
       {/* The single now */}
       <Card className="overflow-hidden !p-0">
         <div className="flex items-center gap-3 border-b border-[var(--color-border)] bg-[var(--color-bg-elevated)] px-5 py-3">
@@ -173,8 +237,273 @@ export default async function Dashboard() {
           </ul>
         </Card>
       )}
+    </div>
+  );
+}
 
-      <BrainDump />
+async function InboxTab({ workspaceId }: { workspaceId: string }) {
+  const captures = await listRecentCaptures(workspaceId, 30);
+  const db = getDb();
+  const drifting = await db
+    .select({ id: goal.id, title: goal.title, drift: goal.drift, weight: goal.weight })
+    .from(goal)
+    .where(
+      and(eq(goal.workspaceId, workspaceId), isNull(goal.deletedAt), eq(goal.status, 'active')),
+    )
+    .orderBy(desc(goal.weight))
+    .limit(10);
+
+  const drifted = drifting.filter((g) => g.drift !== 'on_track');
+
+  return (
+    <div className="grid gap-4 md:grid-cols-2">
+      <Card>
+        <CardTitle>Recent captures</CardTitle>
+        <ul className="mt-3 space-y-2 text-sm">
+          {captures.length === 0 && (
+            <li className="text-[var(--color-fg-subtle)]">No captures yet.</li>
+          )}
+          {captures.slice(0, 12).map((c) => (
+            <li key={c.id} className="rounded-md border border-[var(--color-border)] px-3 py-2">
+              <div className="flex items-center justify-between text-xs text-[var(--color-fg-subtle)]">
+                <span>
+                  {c.kind} · {c.source}
+                </span>
+                <span>{new Date(c.capturedAt).toLocaleString()}</span>
+              </div>
+              <p className="mt-1 line-clamp-2 text-[var(--color-fg-muted)]">
+                {c.content ?? c.sourceUrl ?? c.storageKey ?? '(media)'}
+              </p>
+            </li>
+          ))}
+        </ul>
+        <Link
+          href="/inbox"
+          className="mt-3 inline-flex items-center gap-1 text-xs text-[var(--color-brand)] hover:underline"
+        >
+          See all <ArrowRight className="h-3 w-3" />
+        </Link>
+      </Card>
+      <Card>
+        <CardTitle>Drifting goals</CardTitle>
+        <ul className="mt-3 space-y-2 text-sm">
+          {drifted.length === 0 && (
+            <li className="text-[var(--color-fg-subtle)]">All goals on track. Nice.</li>
+          )}
+          {drifted.map((g) => (
+            <li
+              key={g.id}
+              className="flex items-center justify-between gap-2 rounded-md border border-[var(--color-border)] px-3 py-2"
+            >
+              <span className="truncate">{g.title}</span>
+              <Badge variant={g.drift === 'stalled' ? 'danger' : 'warning'} size="xs">
+                {g.drift}
+              </Badge>
+            </li>
+          ))}
+        </ul>
+        <Link
+          href="/goals"
+          className="mt-3 inline-flex items-center gap-1 text-xs text-[var(--color-brand)] hover:underline"
+        >
+          Open goals <ArrowRight className="h-3 w-3" />
+        </Link>
+      </Card>
+    </div>
+  );
+}
+
+function PlanTab({
+  openTasks,
+  blocked,
+}: {
+  openTasks: {
+    id: string;
+    title: string;
+    kind: string;
+    dueAt: Date | null;
+    projectId: string | null;
+  }[];
+  blocked: { id: string; title: string; blockedReason: string | null }[];
+}) {
+  const today = new Date();
+  today.setHours(0, 0, 0, 0);
+  const tomorrow = new Date(today);
+  tomorrow.setDate(tomorrow.getDate() + 1);
+
+  const dueToday = openTasks.filter((t) => t.dueAt && new Date(t.dueAt) < tomorrow);
+  const dueLater = openTasks.filter((t) => t.dueAt && new Date(t.dueAt) >= tomorrow).slice(0, 10);
+  const undated = openTasks.filter((t) => !t.dueAt).slice(0, 10);
+
+  return (
+    <div className="grid gap-4 md:grid-cols-3">
+      <PlanColumn title="Due today" tasks={dueToday} accent="text-[var(--color-brand)]" />
+      <PlanColumn title="Upcoming" tasks={dueLater} accent="text-[var(--color-fg)]" />
+      <PlanColumn title="Undated" tasks={undated} accent="text-[var(--color-fg-muted)]" />
+      {blocked.length > 0 && (
+        <Card className="md:col-span-3">
+          <CardTitle>Blocked</CardTitle>
+          <ul className="mt-3 grid gap-2 md:grid-cols-2">
+            {blocked.map((t) => (
+              <li key={t.id} className="rounded-md border border-[var(--color-border)] p-3 text-sm">
+                <div className="font-medium">{t.title}</div>
+                {t.blockedReason && (
+                  <div className="mt-1 text-xs text-[var(--color-fg-muted)]">{t.blockedReason}</div>
+                )}
+              </li>
+            ))}
+          </ul>
+        </Card>
+      )}
+    </div>
+  );
+}
+
+function PlanColumn({
+  title,
+  tasks,
+  accent,
+}: {
+  title: string;
+  tasks: { id: string; title: string; dueAt: Date | null; projectId: string | null }[];
+  accent: string;
+}) {
+  return (
+    <Card>
+      <CardTitle className={accent}>{title}</CardTitle>
+      <ul className="mt-3 space-y-2 text-sm">
+        {tasks.length === 0 && <li className="text-[var(--color-fg-subtle)]">—</li>}
+        {tasks.map((t) => (
+          <li key={t.id} className="rounded-md border border-[var(--color-border)] px-3 py-2">
+            <div className="truncate">{t.title}</div>
+            {t.dueAt && (
+              <div className="mt-0.5 text-[11px] text-[var(--color-fg-subtle)]">
+                {new Date(t.dueAt).toLocaleDateString()}
+              </div>
+            )}
+          </li>
+        ))}
+      </ul>
+    </Card>
+  );
+}
+
+async function WidgetsTab({
+  workspaceId,
+  momentumProjects,
+}: {
+  workspaceId: string;
+  momentumProjects: {
+    id: string;
+    name: string;
+    momentumScore: number | null;
+    lastMeaningfulActivityAt: Date | null;
+  }[];
+}) {
+  const db = getDb();
+  const goals = await db
+    .select({
+      id: goal.id,
+      title: goal.title,
+      progress: goal.progress,
+      drift: goal.drift,
+      weight: goal.weight,
+    })
+    .from(goal)
+    .where(
+      and(eq(goal.workspaceId, workspaceId), isNull(goal.deletedAt), eq(goal.status, 'active')),
+    )
+    .orderBy(desc(goal.weight))
+    .limit(8);
+  const targets = await db
+    .select({
+      id: target.id,
+      title: target.title,
+      currentValue: target.currentValue,
+      targetValue: target.targetValue,
+      unit: target.unit,
+    })
+    .from(target)
+    .where(and(eq(target.workspaceId, workspaceId), isNull(target.deletedAt)))
+    .orderBy(desc(target.updatedAt))
+    .limit(8);
+
+  return (
+    <div className="grid gap-4 md:grid-cols-2">
+      <Card>
+        <CardTitle>Top goals</CardTitle>
+        <ul className="mt-3 space-y-3 text-sm">
+          {goals.length === 0 && (
+            <li className="text-[var(--color-fg-subtle)]">
+              No goals yet.{' '}
+              <Link href="/goals" className="underline">
+                Add one
+              </Link>
+              .
+            </li>
+          )}
+          {goals.map((g) => (
+            <li key={g.id}>
+              <div className="mb-1 flex items-center justify-between">
+                <span className="truncate">{g.title}</span>
+                <span className="text-[11px] text-[var(--color-fg-subtle)]">
+                  {Math.round(g.progress * 100)}%
+                </span>
+              </div>
+              <div className="h-1 w-full overflow-hidden rounded-full bg-[var(--color-bg-elevated)]">
+                <div
+                  className="h-full rounded-full bg-[var(--color-brand)]"
+                  style={{ width: `${Math.round(g.progress * 100)}%` }}
+                />
+              </div>
+            </li>
+          ))}
+        </ul>
+      </Card>
+      <Card>
+        <CardTitle>Targets</CardTitle>
+        <ul className="mt-3 space-y-3 text-sm">
+          {targets.length === 0 && (
+            <li className="text-[var(--color-fg-subtle)]">No targets set.</li>
+          )}
+          {targets.map((t) => {
+            const pct = t.targetValue ? Math.min(100, (t.currentValue / t.targetValue) * 100) : 0;
+            return (
+              <li key={t.id}>
+                <div className="mb-1 flex items-center justify-between">
+                  <span className="truncate">{t.title}</span>
+                  <span className="font-mono text-[11px] text-[var(--color-fg-subtle)]">
+                    {t.currentValue.toLocaleString()} / {t.targetValue.toLocaleString()}
+                    {t.unit ? ` ${t.unit}` : ''}
+                  </span>
+                </div>
+                <div className="h-1 w-full overflow-hidden rounded-full bg-[var(--color-bg-elevated)]">
+                  <div
+                    className="h-full rounded-full bg-[var(--color-brand)]"
+                    style={{ width: `${pct}%` }}
+                  />
+                </div>
+              </li>
+            );
+          })}
+        </ul>
+      </Card>
+      <Card className="md:col-span-2">
+        <CardTitle>Momentum</CardTitle>
+        <div className="mt-3 space-y-3">
+          {momentumProjects.map((p) => (
+            <div key={p.id}>
+              <div className="mb-1 flex items-center justify-between text-sm">
+                <span>{p.name}</span>
+                <span className="text-xs text-[var(--color-fg-subtle)]">
+                  {p.lastMeaningfulActivityAt ? formatRelative(p.lastMeaningfulActivityAt) : 'idle'}
+                </span>
+              </div>
+              <MomentumBar value={p.momentumScore ?? 0} />
+            </div>
+          ))}
+        </div>
+      </Card>
     </div>
   );
 }

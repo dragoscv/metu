@@ -3,6 +3,8 @@ import type { Metadata, Viewport } from 'next';
 import { Toaster } from 'sonner';
 import { NuqsAdapter } from 'nuqs/adapters/next/app';
 import { Providers } from '@/components/providers';
+import { ThemeScript } from '@/components/theme-provider';
+import { ErrorCatcher } from '@/components/error/error-catcher';
 
 export const metadata: Metadata = {
   title: 'metu — your second brain',
@@ -20,9 +22,13 @@ export const viewport: Viewport = {
 export default function RootLayout({ children }: { children: React.ReactNode }) {
   return (
     <html lang="en" suppressHydrationWarning>
+      <head>
+        <ThemeScript />
+      </head>
       <body className="min-h-screen bg-[var(--color-bg)] text-[var(--color-fg)] antialiased">
         <Providers>
           <NuqsAdapter>{children}</NuqsAdapter>
+          <ErrorCatcher />
           <Toaster
             position="bottom-right"
             theme="dark"

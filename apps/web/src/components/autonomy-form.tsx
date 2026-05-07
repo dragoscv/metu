@@ -29,10 +29,22 @@ export interface ToolRow {
   kind: 'read' | 'low_risk' | 'high_risk';
   effective: AutonomyMode;
   override: AutonomyMode | null;
+  scopable?: boolean;
+}
+
+export interface ScopedAclRow {
+  tool: string;
+  integrationId: string;
+  integrationLabel: string;
+  integrationKind: string;
+  integrationStatus: string;
+  effective: AutonomyMode;
+  override: AutonomyMode | null;
 }
 
 export interface PolicyState {
   defaultMode: AutonomyMode;
+  enabled: boolean;
   notificationLevel: number;
   dailyCostCapUsd: number | null;
   dailyActionCap: number | null;
@@ -40,7 +52,15 @@ export interface PolicyState {
   unlimitedAi: boolean;
 }
 
-export function AutonomyForm({ initial, tools }: { initial: PolicyState; tools: ToolRow[] }) {
+export function AutonomyForm({
+  initial,
+  tools,
+  scopedRows = [],
+}: {
+  initial: PolicyState;
+  tools: ToolRow[];
+  scopedRows?: ScopedAclRow[];
+}) {
   const [pending, startTransition] = useTransition();
   const [state, setState] = useState<PolicyState>(initial);
 
@@ -53,6 +73,34 @@ export function AutonomyForm({ initial, tools }: { initial: PolicyState; tools: 
 
   return (
     <div className="space-y-6">
+      <Card data-card-variant={state.enabled ? undefined : 'outline'}>
+        <div className="flex flex-wrap items-start justify-between gap-3">
+          <div>
+            <CardTitle>{state.enabled ? 'Conductor is active' : 'Conductor is paused'}</CardTitle>
+            <p className="mt-1 text-xs text-[var(--color-fg-subtle)]">
+              When paused, the supervisor tick exits without planning or running tools. Captures,
+              webhooks, and SDK observe events still flow in but no autonomous actions fire.
+            </p>
+          </div>
+          <button
+            type="button"
+            role="switch"
+            aria-checked={state.enabled}
+            disabled={pending}
+            onClick={() => save({ enabled: !state.enabled })}
+            className={`relative inline-flex h-6 w-11 shrink-0 items-center rounded-full transition-colors ${
+              state.enabled ? 'bg-[var(--color-success)]' : 'bg-[var(--color-border-strong)]'
+            }`}
+          >
+            <span
+              className={`inline-block h-5 w-5 transform rounded-full bg-white shadow transition-transform ${
+                state.enabled ? 'translate-x-5' : 'translate-x-0.5'
+              }`}
+            />
+          </button>
+        </div>
+      </Card>
+
       <Card>
         <CardTitle>Default autonomy</CardTitle>
         <p className="mt-1 text-xs text-[var(--color-fg-subtle)]">
@@ -151,7 +199,61 @@ export function AutonomyForm({ initial, tools }: { initial: PolicyState; tools: 
           ))}
         </ol>
       </Card>
+
+      {scopedRows.length > 0 && (
+        <Card>
+          <CardTitle>Per-integration overrides</CardTitle>
+          <p className="mt-1 text-xs text-[var(--color-fg-subtle)]">
+            Fine-tune autonomy for one specific connected integration. Most specific rule wins:
+            integration-scoped beats tool-wide override beats workspace default.
+          </p>
+          <ol className="mt-3 divide-y divide-[var(--color-border)]">
+            {scopedRows.map((r) => (
+              <ScopedRowCmp key={`${r.tool}::${r.integrationId}`} r={r} pending={pending} />
+            ))}
+          </ol>
+        </Card>
+      )}
     </div>
+  );
+}
+
+function ScopedRowCmp({ r, pending }: { r: ScopedAclRow; pending: boolean }) {
+  const [, startTransition] = useTransition();
+  return (
+    <li className="flex flex-wrap items-center gap-3 py-2.5">
+      <div className="min-w-[260px] flex-1">
+        <div className="text-sm font-medium">{r.integrationLabel}</div>
+        <div className="text-xs text-[var(--color-fg-subtle)]">
+          <span className="font-mono">{r.tool}</span> · {r.integrationKind} · {r.integrationStatus}
+        </div>
+      </div>
+      <select
+        defaultValue={r.override ?? ''}
+        disabled={pending}
+        onChange={(e) => {
+          const v = e.target.value as AutonomyMode | '';
+          startTransition(async () => {
+            if (v === '')
+              await clearToolAclAction({ tool: r.tool, integrationId: r.integrationId });
+            else
+              await setToolAclAction({
+                tool: r.tool,
+                mode: v,
+                integrationId: r.integrationId,
+              });
+          });
+        }}
+        className="rounded-md border border-[var(--color-border)] bg-[var(--color-bg-elevated)] px-2 py-1 text-xs"
+      >
+        <option value="">inherit ({r.effective})</option>
+        {(Object.keys(MODE_LABELS) as AutonomyMode[]).map((m) => (
+          <option key={m} value={m}>
+            {MODE_LABELS[m]}
+          </option>
+        ))}
+      </select>
+    </li>
   );
 }
 

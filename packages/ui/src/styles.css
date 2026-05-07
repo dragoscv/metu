@@ -1,39 +1,235 @@
 @import 'tailwindcss';
 
+/* ─────────────────────────────────────────────────────────────────────────
+ * Default theme tokens (also acts as Glass — the production default).
+ *
+ * Naming conventions:
+ *   --color-bg / -elevated / -card / -overlay  — surfaces (ascending z)
+ *   --color-border / -border-strong            — 1px borders
+ *   --color-fg / -muted / -subtle              — text hierarchy
+ *   --color-brand / -fg / -soft                — primary accent
+ *   --color-accent / -fg                       — secondary accent
+ *   --color-{state} / -fg / -bg / -border      — semantic states
+ *   States: success | warning | danger | info | neutral
+ * ───────────────────────────────────────────────────────────────────────── */
 @theme {
-  --color-bg: oklch(0.14 0.01 270);
-  --color-bg-elevated: oklch(0.18 0.012 270);
-  --color-bg-card: oklch(0.21 0.014 270);
-  --color-border: oklch(0.27 0.014 270);
-  --color-fg: oklch(0.96 0.005 270);
-  --color-fg-muted: oklch(0.72 0.012 270);
-  --color-fg-subtle: oklch(0.55 0.012 270);
+  --color-bg: oklch(0.13 0.025 285);
+  --color-bg-elevated: oklch(0.18 0.035 290);
+  --color-bg-card: oklch(0.23 0.045 295);
+  --color-bg-overlay: oklch(0.28 0.055 295);
+  --color-border: oklch(0.34 0.04 290 / 60%);
+  --color-border-strong: oklch(0.42 0.05 290);
 
-  --color-brand: oklch(0.71 0.18 290);
+  --color-fg: oklch(0.98 0.005 280);
+  --color-fg-muted: oklch(0.78 0.02 280);
+  --color-fg-subtle: oklch(0.6 0.025 280);
+
+  --color-brand: oklch(0.74 0.21 305);
   --color-brand-fg: oklch(0.99 0 0);
-  --color-accent: oklch(0.78 0.16 200);
+  --color-brand-soft: oklch(0.74 0.21 305 / 16%);
+  --color-accent: oklch(0.82 0.18 200);
+  --color-accent-fg: oklch(0.12 0.02 280);
 
-  --color-success: oklch(0.78 0.18 150);
+  --color-success: oklch(0.78 0.18 155);
+  --color-success-fg: oklch(0.95 0.05 155);
+  --color-success-bg: oklch(0.78 0.18 155 / 14%);
+  --color-success-border: oklch(0.78 0.18 155 / 35%);
+
   --color-warning: oklch(0.82 0.16 80);
-  --color-danger: oklch(0.68 0.21 25);
+  --color-warning-fg: oklch(0.95 0.06 80);
+  --color-warning-bg: oklch(0.82 0.16 80 / 14%);
+  --color-warning-border: oklch(0.82 0.16 80 / 35%);
 
-  --radius: 0.625rem;
-  --radius-lg: 0.875rem;
-  --radius-xl: 1.25rem;
+  --color-danger: oklch(0.7 0.21 25);
+  --color-danger-fg: oklch(0.96 0.05 25);
+  --color-danger-bg: oklch(0.7 0.21 25 / 14%);
+  --color-danger-border: oklch(0.7 0.21 25 / 35%);
+
+  --color-info: oklch(0.74 0.16 230);
+  --color-info-fg: oklch(0.95 0.04 230);
+  --color-info-bg: oklch(0.74 0.16 230 / 14%);
+  --color-info-border: oklch(0.74 0.16 230 / 35%);
+
+  --color-neutral: oklch(0.65 0.01 280);
+  --color-neutral-fg: oklch(0.85 0.005 280);
+  --color-neutral-bg: oklch(0.65 0.01 280 / 12%);
+  --color-neutral-border: oklch(0.65 0.01 280 / 30%);
+
+  --radius-sm: 0.5rem;
+  --radius: 0.75rem;
+  --radius-lg: 1rem;
+  --radius-xl: 1.375rem;
 
   --font-sans:
     'Geist', ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont,
     'Segoe UI', Roboto, sans-serif;
   --font-mono:
-    'Geist Mono', ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas,
-    monospace;
+    'Geist Mono', ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
 
-  --shadow-glow: 0 0 0 1px color-mix(in oklch, var(--color-brand) 30%, transparent),
+  --shadow-sm: 0 1px 2px oklch(0 0 0 / 30%);
+  --shadow-md: 0 4px 12px -2px oklch(0 0 0 / 35%);
+  --shadow-lg: 0 12px 40px -8px oklch(0 0 0 / 50%);
+  --shadow-glow:
+    0 0 0 1px color-mix(in oklch, var(--color-brand) 30%, transparent),
     0 8px 32px -8px color-mix(in oklch, var(--color-brand) 40%, transparent);
 }
 
-@layer base {
+/* ─────────────────────────────────────────────────────────────────────────
+ * Theme: glass — premium translucent surfaces with iridescent glow.
+ * ───────────────────────────────────────────────────────────────────────── */
+[data-theme='glass'] {
+  --color-bg: oklch(0.14 0.04 290);
+  --color-bg-elevated: oklch(0.2 0.05 295);
+  --color-bg-card: oklch(0.26 0.06 300);
+  --color-bg-overlay: oklch(0.3 0.07 300);
+  --color-border: oklch(0.4 0.06 295 / 50%);
+  --color-border-strong: oklch(0.5 0.08 295 / 80%);
 
+  --color-fg: oklch(0.985 0.01 285);
+  --color-fg-muted: oklch(0.82 0.03 285);
+  --color-fg-subtle: oklch(0.62 0.04 285);
+
+  --color-brand: oklch(0.76 0.23 308);
+  --color-brand-fg: oklch(0.99 0 0);
+  --color-brand-soft: oklch(0.76 0.23 308 / 18%);
+  --color-accent: oklch(0.84 0.18 195);
+  --color-accent-fg: oklch(0.14 0.02 290);
+
+  --radius-sm: 0.625rem;
+  --radius: 0.875rem;
+  --radius-lg: 1.25rem;
+  --radius-xl: 1.75rem;
+}
+
+[data-theme='glass'] body {
+  background:
+    radial-gradient(ellipse 80% 60% at 10% 0%, color-mix(in oklch, var(--color-brand) 22%, transparent), transparent 60%),
+    radial-gradient(ellipse 60% 80% at 100% 100%, color-mix(in oklch, var(--color-accent) 18%, transparent), transparent 60%),
+    radial-gradient(ellipse 50% 50% at 50% 100%, color-mix(in oklch, oklch(0.5 0.2 320) 12%, transparent), transparent 70%),
+    var(--color-bg);
+  background-attachment: fixed;
+}
+
+/* Glass theme makes default cards translucent + frosted automatically. */
+[data-theme='glass'] [data-card]:not([data-card-variant='outline']) {
+  background: color-mix(in oklch, var(--color-bg-card) 60%, transparent);
+  backdrop-filter: blur(20px) saturate(160%);
+  -webkit-backdrop-filter: blur(20px) saturate(160%);
+  border-color: color-mix(in oklch, var(--color-fg) 8%, var(--color-border));
+}
+
+/* ─────────────────────────────────────────────────────────────────────────
+ * Theme: minimal — flat, low-chroma, content-first.
+ * ───────────────────────────────────────────────────────────────────────── */
+[data-theme='minimal'] {
+  --color-bg: oklch(0.13 0.005 270);
+  --color-bg-elevated: oklch(0.16 0.006 270);
+  --color-bg-card: oklch(0.19 0.007 270);
+  --color-bg-overlay: oklch(0.22 0.008 270);
+  --color-border: oklch(0.26 0.008 270);
+  --color-border-strong: oklch(0.34 0.01 270);
+
+  --color-fg: oklch(0.97 0.003 270);
+  --color-fg-muted: oklch(0.7 0.008 270);
+  --color-fg-subtle: oklch(0.5 0.008 270);
+
+  --color-brand: oklch(0.82 0.04 270);
+  --color-brand-fg: oklch(0.13 0.005 270);
+  --color-brand-soft: oklch(0.82 0.04 270 / 12%);
+  --color-accent: oklch(0.78 0.05 200);
+
+  --radius-sm: 0.25rem;
+  --radius: 0.375rem;
+  --radius-lg: 0.5rem;
+  --radius-xl: 0.75rem;
+}
+
+/* ─────────────────────────────────────────────────────────────────────────
+ * Theme: dense — pro/data-heavy, tighter, higher contrast.
+ * ───────────────────────────────────────────────────────────────────────── */
+[data-theme='dense'] {
+  --color-bg: oklch(0.09 0.005 270);
+  --color-bg-elevated: oklch(0.13 0.006 270);
+  --color-bg-card: oklch(0.16 0.008 270);
+  --color-bg-overlay: oklch(0.19 0.01 270);
+  --color-border: oklch(0.3 0.012 270);
+  --color-border-strong: oklch(0.42 0.014 270);
+
+  --color-fg: oklch(0.99 0.003 270);
+  --color-fg-muted: oklch(0.76 0.01 270);
+  --color-fg-subtle: oklch(0.58 0.01 270);
+
+  --color-brand: oklch(0.72 0.2 250);
+  --color-brand-fg: oklch(0.99 0 0);
+  --color-brand-soft: oklch(0.72 0.2 250 / 16%);
+  --color-accent: oklch(0.78 0.16 180);
+
+  --radius-sm: 0.125rem;
+  --radius: 0.25rem;
+  --radius-lg: 0.375rem;
+  --radius-xl: 0.5rem;
+
+  --font-sans:
+    'Geist Mono', 'Geist', ui-sans-serif, system-ui, sans-serif;
+}
+
+/* ─────────────────────────────────────────────────────────────────────────
+ * Theme: soft — friendly, warm, light mode. Re-tunes state colors so chips
+ * stay legible on white surfaces.
+ * ───────────────────────────────────────────────────────────────────────── */
+[data-theme='soft'] {
+  --color-bg: oklch(0.97 0.008 80);
+  --color-bg-elevated: oklch(0.995 0.004 80);
+  --color-bg-card: oklch(1 0 0);
+  --color-bg-overlay: oklch(0.99 0.006 80);
+  --color-border: oklch(0.86 0.018 80);
+  --color-border-strong: oklch(0.74 0.025 80);
+
+  --color-fg: oklch(0.22 0.025 80);
+  --color-fg-muted: oklch(0.45 0.025 80);
+  --color-fg-subtle: oklch(0.62 0.02 80);
+
+  --color-brand: oklch(0.62 0.2 28);
+  --color-brand-fg: oklch(1 0 0);
+  --color-brand-soft: oklch(0.62 0.2 28 / 12%);
+  --color-accent: oklch(0.62 0.18 165);
+  --color-accent-fg: oklch(1 0 0);
+
+  --color-success: oklch(0.55 0.18 150);
+  --color-success-fg: oklch(0.32 0.14 150);
+  --color-success-bg: oklch(0.55 0.18 150 / 12%);
+  --color-success-border: oklch(0.55 0.18 150 / 35%);
+
+  --color-warning: oklch(0.65 0.18 70);
+  --color-warning-fg: oklch(0.4 0.14 70);
+  --color-warning-bg: oklch(0.65 0.18 70 / 14%);
+  --color-warning-border: oklch(0.65 0.18 70 / 38%);
+
+  --color-danger: oklch(0.55 0.22 25);
+  --color-danger-fg: oklch(0.4 0.18 25);
+  --color-danger-bg: oklch(0.55 0.22 25 / 12%);
+  --color-danger-border: oklch(0.55 0.22 25 / 35%);
+
+  --color-info: oklch(0.55 0.18 230);
+  --color-info-fg: oklch(0.36 0.14 230);
+  --color-info-bg: oklch(0.55 0.18 230 / 12%);
+  --color-info-border: oklch(0.55 0.18 230 / 35%);
+
+  --color-neutral: oklch(0.55 0.01 80);
+  --color-neutral-fg: oklch(0.4 0.01 80);
+  --color-neutral-bg: oklch(0.55 0.01 80 / 10%);
+  --color-neutral-border: oklch(0.55 0.01 80 / 28%);
+
+  --radius-sm: 0.625rem;
+  --radius: 0.875rem;
+  --radius-lg: 1.25rem;
+  --radius-xl: 1.75rem;
+}
+
+/* ─────────────────────────────────────────────────────────────────────────
+ * Base layer — html/body, selection, scrollbar.
+ * ───────────────────────────────────────────────────────────────────────── */
+@layer base {
   *,
   *::before,
   *::after {
@@ -47,9 +243,36 @@
     font-family: var(--font-sans);
     font-feature-settings: 'cv11', 'ss01';
     -webkit-font-smoothing: antialiased;
+    text-rendering: optimizeLegibility;
   }
 
-  /* View transitions for navigation. */
+  ::selection {
+    background: color-mix(in oklch, var(--color-brand) 35%, transparent);
+    color: var(--color-fg);
+  }
+
+  * {
+    scrollbar-width: thin;
+    scrollbar-color: var(--color-border-strong) transparent;
+  }
+  ::-webkit-scrollbar {
+    width: 10px;
+    height: 10px;
+  }
+  ::-webkit-scrollbar-track {
+    background: transparent;
+  }
+  ::-webkit-scrollbar-thumb {
+    background: var(--color-border-strong);
+    border-radius: 9999px;
+    border: 2px solid transparent;
+    background-clip: content-box;
+  }
+  ::-webkit-scrollbar-thumb:hover {
+    background: color-mix(in oklch, var(--color-fg-subtle) 60%, transparent);
+    background-clip: content-box;
+  }
+
   ::view-transition-old(root),
   ::view-transition-new(root) {
     animation-duration: 0.4s;
@@ -58,9 +281,10 @@
 }
 
 @layer utilities {
-  .glass {
-    background: color-mix(in oklch, var(--color-bg-card) 70%, transparent);
-    backdrop-filter: blur(12px) saturate(140%);
+  .surface-glass {
+    background: color-mix(in oklch, var(--color-bg-card) 72%, transparent);
+    backdrop-filter: blur(14px) saturate(140%);
+    -webkit-backdrop-filter: blur(14px) saturate(140%);
   }
 
   .text-balance {

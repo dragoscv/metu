@@ -91,11 +91,26 @@
       "problemMatcher": []
     },
     {
+      "label": "metu: clean web cache",
+      "type": "shell",
+      "command": "Remove-Item -Recurse -Force -ErrorAction SilentlyContinue apps/web/.next, apps/web/.turbo, apps/web/node_modules/.cache; Write-Host 'Web cache cleaned.'",
+      "presentation": { "reveal": "always", "panel": "shared", "clear": true },
+      "problemMatcher": []
+    },
+    {
       "label": "metu: open services",
       "type": "shell",
-      "command": "Start-Process http://localhost:3000; Start-Process http://localhost:8288; Start-Process http://localhost:9001; Start-Process http://localhost:8025",
+      "command": "Start-Process http://localhost:24890; Start-Process http://localhost:24893; Start-Process http://localhost:24895; Start-Process http://localhost:24894",
       "presentation": { "reveal": "silent", "panel": "shared" },
       "problemMatcher": []
     }
+  ],
+  "statusbar.menu.hiddenTasks": [],
+  "statusbar.list.hiddenTasks": [
+    "metu: infra up",
+    "metu: infra down",
+    "metu: infra reset (DESTROYS data)",
+    "metu: infra logs",
+    "metu: db studio"
   ]
 }

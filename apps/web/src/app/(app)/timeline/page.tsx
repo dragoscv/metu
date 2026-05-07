@@ -1,44 +1,74 @@
 import { auth } from '@metu/auth';
+import {
+  listTimelineFiltered,
+  listTimelineProjectsForFilter,
+  timelineKindFacets,
+} from '@metu/db/queries';
 import { redirect } from 'next/navigation';
-import { listTimeline } from '@metu/db/queries';
-import { Card } from '@metu/ui';
-import { formatDistanceToNow } from 'date-fns';
+import { Page, PageHeader } from '@metu/ui';
+import { TimelineList } from '@/components/timeline/timeline-list';
+import { TimelineToolbar } from '@/components/timeline/timeline-toolbar';
 
-export default async function TimelinePage() {
+export const dynamic = 'force-dynamic';
+
+interface PageProps {
+  searchParams: Promise<{
+    kinds?: string;
+    projectId?: string;
+    since?: string;
+    q?: string;
+  }>;
+}
+
+function parseSince(since: string | undefined): Date | null {
+  if (!since) return null;
+  const m = since.match(/^(\d+)d$/);
+  if (!m) return null;
+  return new Date(Date.now() - Number(m[1]) * 24 * 60 * 60 * 1000);
+}
+
+export default async function TimelinePage({ searchParams }: PageProps) {
   const session = await auth();
   if (!session) redirect('/sign-in');
-  const events = await listTimeline(session.user.workspaceId, 100);
+  const wsId = session.user.workspaceId;
+  const sp = await searchParams;
+  const kinds = sp.kinds ? sp.kinds.split(',').filter(Boolean) : [];
+  const since = parseSince(sp.since);
+
+  const [{ items, nextCursor }, kindFacets, projects] = await Promise.all([
+    listTimelineFiltered({
+      workspaceId: wsId,
+      kinds: kinds.length > 0 ? kinds : undefined,
+      projectId: sp.projectId || undefined,
+      since,
+      search: sp.q || undefined,
+      limit: 40,
+    }),
+    timelineKindFacets(wsId),
+    listTimelineProjectsForFilter(wsId),
+  ]);
+
+  const initialItems = items.map((e) => ({
+    id: e.id,
+    kind: e.kind,
+    title: e.title,
+    body: e.body,
+    payload: (e.payload ?? {}) as Record<string, unknown>,
+    importance: e.importance,
+    occurredAt: e.occurredAt.toISOString(),
+    projectId: e.projectId,
+  }));
 
   return (
-    <div className="space-y-6">
-      <header>
-        <h1 className="text-3xl font-semibold tracking-tight">Timeline</h1>
-        <p className="mt-1 text-sm text-[var(--color-fg-muted)]">
-          Episodic memory. Every meaningful event, in order.
-        </p>
-      </header>
+    <Page className="space-y-5">
+      <PageHeader
+        title="Timeline"
+        description="Episodic memory. Every meaningful event, in order."
+      />
 
-      <Card>
-        <ol className="relative ml-3 border-l border-[var(--color-border)]">
-          {events.map((e) => (
-            <li key={e.id} className="ml-4 py-2.5">
-              <span
-                className="absolute -left-[5px] mt-2 h-2 w-2 rounded-full"
-                style={{
-                  background: e.importance > 0.7 ? 'var(--color-brand)' : 'var(--color-fg-subtle)',
-                }}
-              />
-              <div className="text-xs uppercase tracking-wide text-[var(--color-fg-subtle)]">
-                {e.kind} · {formatDistanceToNow(new Date(e.occurredAt), { addSuffix: true })}
-              </div>
-              <div className="mt-0.5 text-sm">{e.title}</div>
-              {e.body && (
-                <div className="mt-0.5 text-xs text-[var(--color-fg-muted)]">{e.body}</div>
-              )}
-            </li>
-          ))}
-        </ol>
-      </Card>
-    </div>
+      <TimelineToolbar kindFacets={kindFacets} projects={projects} />
+
+      <TimelineList initialItems={initialItems} initialCursor={nextCursor} />
+    </Page>
   );
 }

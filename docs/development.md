@@ -31,7 +31,7 @@ DATABASE_URL=postgres://...neon.../metu?sslmode=require
 AUTH_SECRET=<openssl rand -base64 32>
 GOOGLE_CLIENT_ID=...
 GOOGLE_CLIENT_SECRET=...
-NEXTAUTH_URL=http://localhost:3000
+NEXTAUTH_URL=http://localhost:24890
 MASTER_ENCRYPTION_KEY=<openssl rand -base64 32>   # base64-encoded 32 bytes for AES-256
 ```
 
@@ -74,15 +74,15 @@ pnpm dev
 Individual apps:
 
 ```pwsh
-pnpm --filter @metu/web dev          # http://localhost:3000
-pnpm --filter @metu/worker dev       # http://localhost:8080
+pnpm --filter @metu/web dev          # http://localhost:24890
+pnpm --filter @metu/worker dev       # http://localhost:24892
 pnpm --filter @metu/mobile start     # Expo dev server
 pnpm --filter @metu/mcp-server dev   # stdio MCP
 ```
 
 ## 5. Sign in
 
-Open <http://localhost:3000>, click **Continue with Google**. On first sign-in
+Open <http://localhost:24890>, click **Continue with Google**. On first sign-in
 metu auto-creates your **personal workspace**. Drop into `/dashboard` and start
 brain-dumping.
 
@@ -126,5 +126,5 @@ docs/           Architecture, deployment, BYOK, security
 ## Troubleshooting
 
 - **`vector` extension missing** — make sure your Neon branch is on Postgres ≥ 16 and run `pnpm db:push` once; we create extensions before the schema.
-- **Auth callback mismatch** — your Google OAuth app must include `http://localhost:3000/api/auth/callback/google` as an authorized redirect.
+- **Auth callback mismatch** — your Google OAuth app must include `http://localhost:24890/api/auth/callback/google` as an authorized redirect.
 - **Voice upload 403** — local dev skips signed URLs unless `GCS_BUCKET_NAME` is set; the brain-dump silently falls back to inline storage.

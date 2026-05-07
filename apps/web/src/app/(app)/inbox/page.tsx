@@ -1,77 +1,121 @@
 import { auth } from '@metu/auth';
 import { redirect } from 'next/navigation';
-import { listRecentCaptures, listProjects } from '@metu/db/queries';
-import { Card } from '@metu/ui';
-import { formatDistanceToNow } from 'date-fns';
+import { captureFacets, listCaptures, listProjects } from '@metu/db/queries';
+import { Badge, EmptyState, Page, PageHeader, PageSection } from '@metu/ui';
+import { Inbox } from 'lucide-react';
+import Link from 'next/link';
+import { Suspense } from 'react';
 import { BrainDump } from '@/components/brain-dump';
 import { ImportConversations } from '@/components/import-conversations';
+import { CaptureList, type CaptureListItem } from '@/components/inbox/capture-list';
+import { InboxFilters } from '@/components/inbox/inbox-filters';
 
-export default async function InboxPage() {
+export const dynamic = 'force-dynamic';
+
+export default async function InboxPage({
+  searchParams,
+}: {
+  searchParams: Promise<Record<string, string | string[] | undefined>>;
+}) {
   const session = await auth();
   if (!session) redirect('/sign-in');
-  const [captures, projects] = await Promise.all([
-    listRecentCaptures(session.user.workspaceId, 100),
+  const sp = await searchParams;
+  const param = (k: string) => {
+    const v = sp[k];
+    return typeof v === 'string' && v.length > 0 ? v : null;
+  };
+
+  const [page, projects, facets] = await Promise.all([
+    listCaptures({
+      workspaceId: session.user.workspaceId,
+      limit: 30,
+      cursor: param('before'),
+      kind: param('kind'),
+      status: param('status'),
+      source: param('source'),
+      search: param('q'),
+    }),
     listProjects(session.user.workspaceId),
+    captureFacets(session.user.workspaceId),
   ]);
 
+  const projectMap = new Map(projects.map((p) => [p.id, p.name] as const));
+  const items: CaptureListItem[] = page.rows.map((c) => ({
+    id: c.id,
+    kind: c.kind,
+    status: c.status,
+    content: c.content,
+    sourceUrl: c.sourceUrl,
+    source: c.source,
+    capturedAt: c.capturedAt.toISOString(),
+    metadata: (c.metadata ?? {}) as Record<string, unknown>,
+    projectId: c.projectId,
+    projectName: c.projectId ? (projectMap.get(c.projectId) ?? null) : null,
+  }));
+
+  const totalCount = facets.kinds.reduce((s, k) => s + k.count, 0);
+  const hasFilters = !!(param('q') || param('kind') || param('status') || param('source'));
+
+  const loadOlderHref = page.nextCursor
+    ? `/inbox?${new URLSearchParams(
+        Object.fromEntries(
+          Object.entries({
+            q: param('q'),
+            kind: param('kind'),
+            status: param('status'),
+            source: param('source'),
+            before: page.nextCursor,
+          }).filter(([, v]) => v !== null),
+        ) as Record<string, string>,
+      ).toString()}`
+    : null;
+
   return (
-    <div className="space-y-6">
-      <header>
-        <h1 className="text-3xl font-semibold tracking-tight">Brain dump</h1>
-        <p className="mt-1 text-sm text-[var(--color-fg-muted)]">
-          Universal inbox. Type, paste, record. metu sorts later.
-        </p>
-      </header>
+    <Page>
+      <PageHeader
+        title="Brain dump"
+        description="Universal inbox. Type, paste, record. metu sorts later."
+        actions={
+          <Badge variant="neutral" size="sm">
+            {totalCount} total
+          </Badge>
+        }
+      />
 
       <BrainDump />
 
       <ImportConversations projects={projects.map((p) => ({ id: p.id, name: p.name }))} />
 
-      <Card>
-        <ul className="divide-y divide-[var(--color-border)]">
-          {captures.map((c) => {
-            const meta = (c.metadata ?? {}) as {
-              imported?: boolean;
-              title?: string;
-              format?: string;
-              messageCount?: number;
-            };
-            const isImported = meta.imported === true;
-            return (
-              <li key={c.id} className="flex items-start gap-3 py-3">
-                <span className="mt-1 inline-block rounded bg-[var(--color-bg-elevated)] px-1.5 py-0.5 text-[10px] uppercase tracking-wider text-[var(--color-fg-muted)]">
-                  {isImported ? 'conversation' : c.kind}
-                </span>
-                <div className="min-w-0 flex-1">
-                  {isImported && meta.title ? (
-                    <p className="truncate text-sm font-medium">{meta.title}</p>
-                  ) : null}
-                  <p
-                    className={
-                      isImported ? 'line-clamp-2 text-xs text-[var(--color-fg-muted)]' : 'text-sm'
-                    }
-                  >
-                    {c.content ?? (
-                      <em className="text-[var(--color-fg-subtle)]">no transcript yet…</em>
-                    )}
-                  </p>
-                  <p className="mt-1 text-xs text-[var(--color-fg-subtle)]">
-                    {formatDistanceToNow(new Date(c.capturedAt), { addSuffix: true })} · via{' '}
-                    {isImported
-                      ? `${meta.format ?? 'import'}${meta.messageCount ? ` · ${meta.messageCount} msgs` : ''}`
-                      : c.source}
-                  </p>
-                </div>
-              </li>
-            );
-          })}
-          {captures.length === 0 && (
-            <li className="py-8 text-center text-sm text-[var(--color-fg-subtle)]">
-              Nothing captured yet.
-            </li>
-          )}
-        </ul>
-      </Card>
-    </div>
+      <PageSection>
+        <Suspense fallback={null}>
+          <InboxFilters facets={facets} totalCount={items.length} />
+        </Suspense>
+        {items.length === 0 && hasFilters ? (
+          <EmptyState
+            icon={<Inbox className="h-5 w-5" />}
+            title="No captures match"
+            description="Adjust filters or clear them to see everything."
+          />
+        ) : items.length === 0 ? (
+          <EmptyState
+            icon={<Inbox className="h-5 w-5" />}
+            title="Nothing captured yet"
+            description="Use the input above to start your second brain."
+          />
+        ) : (
+          <CaptureList captures={items} />
+        )}
+        {loadOlderHref ? (
+          <div className="flex justify-center">
+            <Link
+              href={loadOlderHref}
+              className="inline-flex h-9 items-center rounded-[var(--radius)] bg-[var(--color-bg-elevated)] px-4 text-sm font-medium text-[var(--color-fg)] transition-colors hover:bg-[var(--color-bg-card)]"
+            >
+              Load older
+            </Link>
+          </div>
+        ) : null}
+      </PageSection>
+    </Page>
   );
 }

@@ -36,6 +36,8 @@ export async function hubBroadcast(input: BroadcastInput): Promise<{ delivered: 
     }
     return null;
   }
+  const ac = new AbortController();
+  const timeout = setTimeout(() => ac.abort(), 5_000);
   try {
     const res = await fetch(`${url.replace(/\/$/, '')}/internal/broadcast`, {
       method: 'POST',
@@ -44,6 +46,7 @@ export async function hubBroadcast(input: BroadcastInput): Promise<{ delivered: 
         'x-hub-secret': secret,
       },
       body: JSON.stringify(input),
+      signal: ac.signal,
     });
     if (!res.ok) {
       console.error('[hub] broadcast failed', res.status, await res.text().catch(() => ''));
@@ -52,7 +55,13 @@ export async function hubBroadcast(input: BroadcastInput): Promise<{ delivered: 
     const body = (await res.json()) as { ok: boolean; delivered: number };
     return { delivered: body.delivered };
   } catch (err) {
-    console.error('[hub] broadcast error', err);
+    if ((err as { name?: string }).name === 'AbortError') {
+      console.error('[hub] broadcast timed out after 5s');
+    } else {
+      console.error('[hub] broadcast error', err);
+    }
     return null;
+  } finally {
+    clearTimeout(timeout);
   }
 }

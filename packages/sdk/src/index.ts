@@ -30,6 +30,7 @@ import {
   CaptureCreateSchema,
   ClientEventSchema,
   HelloSchema,
+  IntentCreateSchema,
   NotifyCreateSchema,
   PROTOCOL_VERSION,
   RecallQuerySchema,
@@ -37,6 +38,7 @@ import {
   type CaptureCreate,
   type ClientEvent,
   type Hello,
+  type IntentCreate,
   type NotifyCreate,
   type RecallQuery,
   type ServerEvent,
@@ -83,8 +85,24 @@ export interface MetuClient {
   capture(input: CaptureCreate): Promise<{ id: string }>;
   recall(input: RecallQuery): Promise<Array<{ id: string; content: string; score: number }>>;
   notify(input: NotifyCreate): Promise<{ id: string }>;
+  intent(input: IntentCreate): Promise<{ id: string }>;
+  borrow(input: BorrowInput): Promise<BorrowResult>;
   event(kind: string, payload: Record<string, unknown>): Promise<void>;
   connect(hello: Omit<Hello, 'v' | 'type' | 'accessToken'>): Promise<MetuSocket>;
+}
+
+export interface BorrowInput {
+  integrationId: string;
+  purpose: string;
+  ttlSec?: number;
+}
+
+export interface BorrowResult {
+  ok: true;
+  integrationId: string;
+  kind: string;
+  accessToken: string;
+  expiresAt: string;
 }
 
 export interface MetuSocket {
@@ -147,6 +165,13 @@ export function createClient(opts: ClientOptions): MetuClient {
     async notify(input) {
       const parsed = NotifyCreateSchema.parse(input);
       return request<{ id: string }>('POST', '/api/sdk/v1/notify', parsed);
+    },
+    async intent(input) {
+      const parsed = IntentCreateSchema.parse(input);
+      return request<{ id: string }>('POST', '/api/sdk/v1/intent', parsed);
+    },
+    async borrow(input) {
+      return request<BorrowResult>('POST', '/api/sdk/v1/credentials/borrow', input);
     },
     async event(kind, payload) {
       await request<void>('POST', '/api/sdk/v1/events', { kind, payload });

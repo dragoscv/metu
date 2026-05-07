@@ -1,61 +1,166 @@
-import Link from 'next/link';
 import { auth } from '@metu/auth';
-import { redirect } from 'next/navigation';
-import { listProjects } from '@metu/db/queries';
-import { Card, CardTitle, MomentumBar } from '@metu/ui';
-import { CreateProjectForm } from '@/components/create-project-form';
+import {
+  listAvailableStackTags,
+  listProjectsCounts,
+  listProjectsFiltered,
+  listProjectsLinkSummary,
+  projectStatusFacets,
+} from '@metu/db/queries';
+import { Badge, EmptyState, Page, PageHeader } from '@metu/ui';
+import { FolderKanban, Plus } from 'lucide-react';
+import Link from 'next/link';
 
-export default async function ProjectsPage() {
+const BTN_PRIMARY =
+  'inline-flex h-8 items-center gap-2 rounded-md bg-[var(--color-brand)] px-3 text-sm font-medium text-[var(--color-brand-fg)] hover:opacity-90';
+import { redirect } from 'next/navigation';
+import { ProjectsGrid } from '@/components/projects/projects-grid';
+import { ProjectsToolbar } from '@/components/projects/projects-toolbar';
+
+export const dynamic = 'force-dynamic';
+
+const VALID_SORT = new Set(['momentum', 'name', 'recent']);
+const VALID_ACTIVITY = new Set(['today', 'week', 'month', 'stale']);
+
+function asString(v: string | string[] | undefined): string | null {
+  return typeof v === 'string' && v.length > 0 ? v : null;
+}
+
+function asList(v: string | string[] | undefined): string[] {
+  if (!v) return [];
+  if (Array.isArray(v)) return v.flatMap((x) => x.split(',')).filter(Boolean);
+  return v.split(',').filter(Boolean);
+}
+
+export default async function ProjectsPage({
+  searchParams,
+}: {
+  searchParams: Promise<Record<string, string | string[] | undefined>>;
+}) {
   const session = await auth();
   if (!session) redirect('/sign-in');
-  const projects = await listProjects(session.user.workspaceId);
+  const sp = await searchParams;
+  const status = asString(sp.status);
+  const sort = (asString(sp.sort) ?? 'momentum') as 'momentum' | 'name' | 'recent';
+  const safeSort = VALID_SORT.has(sort) ? sort : 'momentum';
+  const search = asString(sp.q);
+  const hasLinkRaw = asString(sp.hasLink);
+  const hasLink = hasLinkRaw === 'yes' ? true : hasLinkRaw === 'no' ? false : undefined;
+  const linkProviders = asList(sp.linkProviders);
+  const stack = asList(sp.stack);
+  const lastActivityRaw = asString(sp.lastActivity);
+  const lastActivity =
+    lastActivityRaw && VALID_ACTIVITY.has(lastActivityRaw)
+      ? (lastActivityRaw as 'today' | 'week' | 'month' | 'stale')
+      : undefined;
+  const hasOpenTasks = sp.hasOpenTasks === 'yes' ? true : undefined;
+  const hasBlockedTasks = sp.hasBlockedTasks === 'yes' ? true : undefined;
+  const hasGoal = sp.hasGoal === 'yes' ? true : undefined;
+
+  const hasFilters =
+    status !== null ||
+    !!search ||
+    hasLink !== undefined ||
+    linkProviders.length > 0 ||
+    stack.length > 0 ||
+    lastActivity !== undefined ||
+    hasOpenTasks !== undefined ||
+    hasBlockedTasks !== undefined ||
+    hasGoal !== undefined;
+
+  const [projects, facets, availableStack] = await Promise.all([
+    listProjectsFiltered({
+      workspaceId: session.user.workspaceId,
+      status,
+      sort: safeSort,
+      includeArchived: status !== null,
+      search,
+      hasLink,
+      linkProviders: linkProviders.length > 0 ? linkProviders : undefined,
+      stack: stack.length > 0 ? stack : undefined,
+      lastActivity,
+      hasOpenTasks,
+      hasBlockedTasks,
+      hasGoal,
+    }),
+    projectStatusFacets(session.user.workspaceId),
+    listAvailableStackTags(session.user.workspaceId),
+  ]);
+
+  const ids = projects.map((p) => p.id);
+  const [linkSummary, counts] = await Promise.all([
+    listProjectsLinkSummary(session.user.workspaceId, ids),
+    listProjectsCounts(session.user.workspaceId, ids),
+  ]);
+
+  const total = facets.reduce((s, f) => s + f.count, 0);
 
   return (
-    <div className="space-y-6">
-      <header>
-        <h1 className="text-3xl font-semibold tracking-tight">Projects</h1>
-        <p className="mt-1 text-sm text-[var(--color-fg-muted)]">
-          Each project has its own memory, decisions, and pulse.
-        </p>
-      </header>
+    <Page>
+      <PageHeader
+        title="Projects"
+        description="Each project has its own memory, decisions, links, and pulse."
+        actions={
+          <div className="flex items-center gap-2">
+            <Badge variant="neutral" size="sm">
+              {total} total
+            </Badge>
+            <Link href="/projects/new" className={BTN_PRIMARY}>
+              <Plus className="h-4 w-4" />
+              New project
+            </Link>
+          </div>
+        }
+      />
 
-      <CreateProjectForm />
+      <ProjectsToolbar
+        facets={facets}
+        resultCount={projects.length}
+        availableStack={availableStack}
+      />
 
-      <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
-        {projects.map((p) => (
-          <Link key={p.id} href={`/projects/${p.id}`}>
-            <Card className="h-full transition-all hover:border-[var(--color-brand)]">
-              <div className="flex items-center gap-2">
-                <span
-                  className="h-2.5 w-2.5 rounded-full"
-                  style={{
-                    background: (p.metadata as { color?: string })?.color ?? 'var(--color-brand)',
-                  }}
-                />
-                <CardTitle className="!mt-0 text-base text-[var(--color-fg)]">{p.name}</CardTitle>
-              </div>
-              {p.summary && (
-                <p className="mt-2 line-clamp-2 text-sm text-[var(--color-fg-muted)]">
-                  {p.summary}
-                </p>
-              )}
-              {p.stateSummary && (
-                <p className="mt-3 line-clamp-3 text-xs text-[var(--color-fg-subtle)]">
-                  {p.stateSummary}
-                </p>
-              )}
-              <div className="mt-4">
-                <MomentumBar value={p.momentumScore ?? 0} label="momentum" />
-              </div>
-            </Card>
-          </Link>
-        ))}
-        {projects.length === 0 && (
-          <p className="text-sm text-[var(--color-fg-subtle)]">
-            No projects yet. Create your first above.
-          </p>
-        )}
-      </div>
-    </div>
+      {projects.length === 0 && hasFilters ? (
+        <EmptyState
+          icon={<FolderKanban className="h-5 w-5" />}
+          title="No projects match"
+          description="Try a different filter combination or clear them."
+        />
+      ) : projects.length === 0 ? (
+        <EmptyState
+          icon={<FolderKanban className="h-5 w-5" />}
+          title="No projects yet"
+          description="Create your first project to get started."
+          action={
+            <Link href="/projects/new" className={BTN_PRIMARY}>
+              <Plus className="h-4 w-4" />
+              New project
+            </Link>
+          }
+        />
+      ) : (
+        <ProjectsGrid
+          projects={projects.map((p) => {
+            const c = counts.get(p.id) ?? { openTasks: 0, blockedTasks: 0, goals: 0 };
+            return {
+              id: p.id,
+              name: p.name,
+              slug: p.slug,
+              summary: p.summary,
+              stateSummary: p.stateSummary,
+              status: p.status,
+              momentumScore: p.momentumScore ?? 0,
+              lastMeaningfulActivityAt: p.lastMeaningfulActivityAt
+                ? p.lastMeaningfulActivityAt.toISOString()
+                : null,
+              color: ((p.metadata as { color?: string })?.color ?? null) as string | null,
+              stack: ((p.metadata as { stack?: unknown })?.stack as string[] | undefined) ?? null,
+              links: linkSummary.get(p.id) ?? [],
+              openTasks: c.openTasks,
+              blockedTasks: c.blockedTasks,
+              goals: c.goals,
+            };
+          })}
+        />
+      )}
+    </Page>
   );
 }

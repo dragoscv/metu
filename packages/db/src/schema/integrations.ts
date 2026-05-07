@@ -1,6 +1,7 @@
 /** External integrations + BYOK provider credentials + agent runs. */
 import { sql } from 'drizzle-orm';
 import {
+  boolean,
   doublePrecision,
   index,
   integer,
@@ -68,6 +69,8 @@ export const integration = pgTable(
     config: jsonb('config')
       .notNull()
       .default(sql`'{}'::jsonb`),
+    /** Marks "the" account for this (workspace, kind) when multiple are connected. */
+    isDefault: boolean('is_default').notNull().default(false),
     lastSyncAt: timestamp('last_sync_at', { withTimezone: true }),
     lastError: text('last_error'),
     createdAt: timestamp('created_at', { withTimezone: true })
@@ -80,6 +83,9 @@ export const integration = pgTable(
   },
   (t) => [
     uniqueIndex('integration_unique_idx').on(t.workspaceId, t.kind, t.externalId),
+    uniqueIndex('integration_default_unique_idx')
+      .on(t.workspaceId, t.kind)
+      .where(sql`${t.isDefault}`),
     index('integration_workspace_idx').on(t.workspaceId),
     index('integration_status_idx').on(t.status),
   ],

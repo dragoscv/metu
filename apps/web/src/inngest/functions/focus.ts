@@ -1,4 +1,7 @@
 import { focus, projectIntel } from '@metu/core';
+import { getDb } from '@metu/db';
+import { project } from '@metu/db/schema';
+import { and, eq, isNull } from 'drizzle-orm';
 import { inngest } from '../client';
 
 export const onFocusRecompute = inngest.createFunction(
@@ -27,12 +30,35 @@ export const onProjectMomentum = inngest.createFunction(
   },
 );
 
-/** Nightly cron: pulse + momentum for every active project */
+/** Nightly cron: pulse + momentum for every active project. */
 export const nightlyProjectPulse = inngest.createFunction(
-  { id: 'nightly-pulse', name: 'Nightly project pulse' },
+  { id: 'nightly-pulse', name: 'Nightly project pulse', concurrency: { limit: 4 } },
   { cron: '0 3 * * *' },
-  async () => {
-    // Iterate all workspaces would require an admin query — V1: skip, V2: workspace iterator.
-    return { ran: true };
+  async ({ step, logger }) => {
+    const projects = await step.run('list-active-projects', async () => {
+      const db = getDb();
+      return db
+        .select({ id: project.id, workspaceId: project.workspaceId })
+        .from(project)
+        .where(and(eq(project.status, 'active'), isNull(project.deletedAt)));
+    });
+
+    let ok = 0;
+    let failed = 0;
+    for (const p of projects) {
+      try {
+        await step.run(`momentum-${p.id}`, () =>
+          projectIntel.recomputeMomentum(p.workspaceId, p.id),
+        );
+        ok += 1;
+      } catch (err) {
+        failed += 1;
+        logger.error('nightly-pulse momentum failed', {
+          projectId: p.id,
+          error: err instanceof Error ? err.message : String(err),
+        });
+      }
+    }
+    return { ran: true, projects: projects.length, ok, failed };
   },
 );

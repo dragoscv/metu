@@ -23,8 +23,8 @@ const hex = (n) => randomBytes(n).toString('hex');
 const defaults = {
   NODE_ENV: 'development',
   AUTH_SECRET: b64(32),
-  AUTH_URL: 'http://localhost:3000',
-  NEXTAUTH_URL: 'http://localhost:3000',
+  AUTH_URL: 'http://localhost:24890',
+  NEXTAUTH_URL: 'http://localhost:24890',
 
   // Local Postgres + pgvector (docker-compose, host port 5433 to avoid clashes)
   DATABASE_URL: 'postgres://metu:metu@localhost:5433/metu?sslmode=disable',
@@ -58,7 +58,7 @@ const defaults = {
 
   // Inngest dev server (no signing key needed in dev)
   INNGEST_DEV: '1',
-  INNGEST_BASE_URL: 'http://localhost:8288',
+  INNGEST_BASE_URL: 'http://localhost:24893',
   INNGEST_EVENT_KEY: 'local-dev',
   INNGEST_SIGNING_KEY: '',
 
@@ -73,7 +73,7 @@ const defaults = {
   // envelope key.
 
   // Worker (Cloud Run in prod, local in dev)
-  WORKER_URL: 'http://localhost:8080',
+  WORKER_URL: 'http://localhost:24892',
   WORKER_AUTH_TOKEN: hex(32),
 
   // Cross-client bearer (mobile/ext) — dev only; prod uses hashed PATs
@@ -89,16 +89,16 @@ const defaults = {
   STRIPE_SECRET_KEY: '',
   STRIPE_WEBHOOK_SECRET: hex(24),
 
-  NEXT_PUBLIC_APP_URL: 'http://localhost:3000',
+  NEXT_PUBLIC_APP_URL: 'http://localhost:24890',
   NEXT_PUBLIC_APP_NAME: 'metu',
 
   // Realtime hub (apps/hub) — internal shared secret + URL the web app uses
   // to broadcast back into the hub. WEB_INTERNAL_URL is what the hub posts to
   // when forwarding tool.result envelopes.
-  HUB_INTERNAL_URL: 'http://localhost:3001',
+  HUB_INTERNAL_URL: 'http://localhost:24891',
   HUB_INTERNAL_SECRET: hex(32),
-  WEB_INTERNAL_URL: 'http://localhost:3000',
-  HUB_PORT: '3001',
+  WEB_INTERNAL_URL: 'http://localhost:24890',
+  HUB_PORT: '24891',
 
   // Web push (VAPID) — generate with `npx web-push generate-vapid-keys`.
   // Empty by default so push gracefully no-ops in dev.

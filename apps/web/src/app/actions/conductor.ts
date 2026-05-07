@@ -22,7 +22,7 @@ export async function createSideChatAction(input: { title?: string }) {
       title: input.title?.trim() || 'New conversation',
     })
     .returning();
-  revalidatePath('/conductor');
+  revalidatePath('/chat');
   return { ok: true as const, id: row!.id };
 }
 
@@ -34,7 +34,7 @@ export async function archiveConversationAction(id: string) {
     .update(conversation)
     .set({ status: 'archived', archivedAt: new Date() })
     .where(and(eq(conversation.id, id), eq(conversation.workspaceId, session.user.workspaceId)));
-  revalidatePath('/conductor');
+  revalidatePath('/chat');
   return { ok: true as const };
 }
 
@@ -52,7 +52,7 @@ export async function approveToolCallAction(toolCallId: string) {
       },
     })
     .catch(() => {});
-  revalidatePath('/conductor');
+  revalidatePath('/chat');
   return { ok: r.status === 'success', status: r.status, error: r.error };
 }
 
@@ -71,7 +71,7 @@ export async function rejectToolCallAction(toolCallId: string, reason?: string) 
       },
     })
     .catch(() => {});
-  revalidatePath('/conductor');
+  revalidatePath('/chat');
   return { ok: true as const };
 }
 
@@ -80,7 +80,7 @@ export async function undoToolCallAction(toolCallId: string) {
   if (!session) return { ok: false as const, error: 'Unauthenticated' };
   try {
     await agent.undoToolCall(session.user.workspaceId, toolCallId);
-    revalidatePath('/conductor');
+    revalidatePath('/chat');
     return { ok: true as const };
   } catch (err) {
     return {

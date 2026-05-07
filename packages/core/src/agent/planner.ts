@@ -183,6 +183,41 @@ Rules:
     schemaDescription:
       'Structured plan produced by the Conductor on each tick. Pulse + ordered action list + notes.',
     prompt: userPrompt,
+    // The model occasionally returns a "briefing/suggestedActions/questions"
+    // shape (a sibling planner schema). Coerce it back to the canonical
+    // pulse/actions shape so the tick doesn't fail and waste a cycle.
+    experimental_repairText: async ({ text }) => {
+      try {
+        const parsed = JSON.parse(text) as Record<string, unknown>;
+        if (parsed && typeof parsed === 'object' && !('pulse' in parsed)) {
+          const briefing =
+            (parsed.briefing as string | undefined) ??
+            (parsed.summary as string | undefined) ??
+            (parsed.state as string | undefined);
+          if (briefing) {
+            const followups = [
+              Array.isArray(parsed.suggestedActions) && parsed.suggestedActions.length
+                ? `suggested: ${(parsed.suggestedActions as unknown[]).join(' | ')}`
+                : null,
+              Array.isArray(parsed.questions) && parsed.questions.length
+                ? `questions: ${(parsed.questions as unknown[]).join(' | ')}`
+                : null,
+            ]
+              .filter(Boolean)
+              .join('\n');
+            const repaired = {
+              pulse: String(briefing).slice(0, 500),
+              actions: Array.isArray(parsed.actions) ? parsed.actions : [],
+              notes: (parsed.notes as string | undefined) ?? (followups || undefined),
+            };
+            return JSON.stringify(repaired);
+          }
+        }
+      } catch {
+        // fall through — let the SDK throw the original error.
+      }
+      return null;
+    },
   });
 
   return { plan: object, provider, modelId };

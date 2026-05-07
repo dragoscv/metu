@@ -5,6 +5,7 @@
 'use client';
 import { useState, useTransition } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
+import { Badge, Button, Card, Input } from '@metu/ui';
 import {
   connectExternalMcpAction,
   refreshExternalMcpAction,
@@ -27,6 +28,12 @@ const PRESETS: Array<{ label: string; url: string; toolPrefix: string }> = [
   { label: 'mmo', url: 'https://mmo.app/mcp', toolPrefix: 'mmo' },
 ];
 
+function statusVariant(s: string): 'success' | 'danger' | 'neutral' {
+  if (s === 'active') return 'success';
+  if (s === 'error') return 'danger';
+  return 'neutral';
+}
+
 export function ExternalMcpSection({ items }: { items: ExternalMcpView[] }) {
   const [showForm, setShowForm] = useState(false);
   return (
@@ -39,12 +46,9 @@ export function ExternalMcpSection({ items }: { items: ExternalMcpView[] }) {
             sealed with the workspace key.
           </p>
         </div>
-        <button
-          className="rounded-lg border border-white/10 bg-white/5 px-3 py-1.5 text-sm hover:bg-white/10"
-          onClick={() => setShowForm((v) => !v)}
-        >
+        <Button variant="outline" size="sm" onClick={() => setShowForm((v) => !v)}>
           {showForm ? 'Cancel' : '+ Connect'}
-        </button>
+        </Button>
       </header>
 
       <AnimatePresence>
@@ -76,59 +80,50 @@ export function ExternalMcpSection({ items }: { items: ExternalMcpView[] }) {
 function ServerCard({ item }: { item: ExternalMcpView }) {
   const [pending, start] = useTransition();
   return (
-    <div className="rounded-xl border border-white/10 bg-white/[0.03] p-4">
+    <Card>
       <div className="flex items-start justify-between gap-3">
-        <div>
+        <div className="min-w-0">
           <p className="text-sm font-medium">{item.label}</p>
           <p className="mt-0.5 truncate text-xs text-[var(--color-fg-muted)]">{item.url}</p>
         </div>
-        <span
-          className={`rounded-full px-2 py-0.5 text-xs ${
-            item.status === 'active'
-              ? 'bg-emerald-500/10 text-emerald-300'
-              : item.status === 'error'
-                ? 'bg-rose-500/10 text-rose-300'
-                : 'bg-white/5 text-white/60'
-          }`}
-        >
+        <Badge variant={statusVariant(item.status)} size="sm">
           {item.status}
-        </span>
+        </Badge>
       </div>
       <p className="mt-3 text-xs text-[var(--color-fg-muted)]">
-        Prefix <code className="rounded bg-white/5 px-1">{item.toolPrefix}</code> · {item.toolCount}{' '}
-        tools
+        Prefix{' '}
+        <code className="rounded bg-[var(--color-bg-elevated)] px-1 font-mono">
+          {item.toolPrefix}
+        </code>{' '}
+        · {item.toolCount} tools
       </p>
       {item.lastError && (
-        <p className="mt-2 truncate rounded bg-rose-500/10 px-2 py-1 text-xs text-rose-300">
+        <p className="mt-2 truncate rounded border border-[var(--color-danger-border)] bg-[var(--color-danger-bg)] px-2 py-1 text-xs text-[var(--color-danger)]">
           {item.lastError}
         </p>
       )}
       <div className="mt-3 flex gap-2">
-        <button
+        <Button
+          size="sm"
+          variant="outline"
           disabled={pending}
-          className="rounded-md border border-white/10 bg-white/5 px-2 py-1 text-xs hover:bg-white/10 disabled:opacity-50"
-          onClick={() => {
-            start(async () => {
-              await refreshExternalMcpAction(item.id);
-            });
-          }}
+          onClick={() => start(async () => void (await refreshExternalMcpAction(item.id)))}
         >
           Refresh tools
-        </button>
-        <button
+        </Button>
+        <Button
+          size="sm"
+          variant="danger"
           disabled={pending}
-          className="rounded-md border border-rose-500/30 bg-rose-500/5 px-2 py-1 text-xs text-rose-300 hover:bg-rose-500/10 disabled:opacity-50"
           onClick={() => {
             if (!confirm(`Remove ${item.label}?`)) return;
-            start(async () => {
-              await removeExternalMcpAction(item.id);
-            });
+            start(async () => void (await removeExternalMcpAction(item.id)));
           }}
         >
           Remove
-        </button>
+        </Button>
       </div>
-    </div>
+    </Card>
   );
 }
 
@@ -155,25 +150,18 @@ function ConnectForm({ onDone }: { onDone: () => void }) {
         token: token.trim() || undefined,
         toolPrefix: toolPrefix.trim(),
       });
-      if (r.ok) {
-        onDone();
-      } else {
-        setError(r.error);
-      }
+      if (r.ok) onDone();
+      else setError(r.error);
     });
   }
 
   return (
-    <div className="rounded-xl border border-white/10 bg-white/[0.03] p-4">
+    <Card variant="outline">
       <div className="flex flex-wrap gap-2">
         {PRESETS.map((p) => (
-          <button
-            key={p.label}
-            className="rounded-md border border-white/10 bg-white/5 px-2 py-1 text-xs hover:bg-white/10"
-            onClick={() => applyPreset(p)}
-          >
+          <Button key={p.label} variant="subtle" size="sm" onClick={() => applyPreset(p)}>
             {p.label}
-          </button>
+          </Button>
         ))}
       </div>
       <div className="mt-3 grid grid-cols-1 gap-3 md:grid-cols-2">
@@ -201,24 +189,19 @@ function ConnectForm({ onDone }: { onDone: () => void }) {
         />
       </div>
       {error && (
-        <p className="mt-3 rounded bg-rose-500/10 px-2 py-1 text-xs text-rose-300">{error}</p>
+        <p className="mt-3 rounded border border-[var(--color-danger-border)] bg-[var(--color-danger-bg)] px-2 py-1 text-xs text-[var(--color-danger)]">
+          {error}
+        </p>
       )}
       <div className="mt-3 flex gap-2">
-        <button
-          disabled={pending || !label || !url || !toolPrefix}
-          onClick={submit}
-          className="rounded-lg bg-indigo-500 px-3 py-1.5 text-sm font-medium text-white hover:bg-indigo-400 disabled:opacity-50"
-        >
+        <Button size="sm" disabled={pending || !label || !url || !toolPrefix} onClick={submit}>
           {pending ? 'Testing…' : 'Connect'}
-        </button>
-        <button
-          onClick={onDone}
-          className="rounded-lg border border-white/10 bg-white/5 px-3 py-1.5 text-sm hover:bg-white/10"
-        >
+        </Button>
+        <Button size="sm" variant="outline" onClick={onDone}>
           Cancel
-        </button>
+        </Button>
       </div>
-    </div>
+    </Card>
   );
 }
 
@@ -240,12 +223,12 @@ function Field({
   return (
     <label className={`block text-xs ${className}`}>
       <span className="text-[var(--color-fg-muted)]">{label}</span>
-      <input
+      <Input
         value={value}
         onChange={(e) => onChange(e.target.value)}
         placeholder={placeholder}
         type={type}
-        className="mt-1 w-full rounded-md border border-white/10 bg-black/30 px-2 py-1.5 text-sm text-white placeholder:text-white/30"
+        className="mt-1"
       />
     </label>
   );

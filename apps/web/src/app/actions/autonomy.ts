@@ -1,6 +1,6 @@
 'use server';
 import { revalidatePath } from 'next/cache';
-import { eq, and } from 'drizzle-orm';
+import { eq, and, isNull } from 'drizzle-orm';
 import { z } from 'zod';
 import { auth } from '@metu/auth';
 import { getDb } from '@metu/db';
@@ -10,6 +10,7 @@ const autonomyMode = z.enum(['observe', 'ask', 'auto_with_undo', 'autopilot']);
 
 const updatePolicySchema = z.object({
   defaultMode: autonomyMode.optional(),
+  enabled: z.boolean().optional(),
   notificationLevel: z.number().int().min(0).max(100).optional(),
   dailyCostCapUsd: z.number().min(0).max(10000).nullable().optional(),
   dailyActionCap: z.number().int().min(0).max(10000).nullable().optional(),
@@ -41,6 +42,7 @@ export async function updateAutonomyPolicyAction(input: UpdatePolicyInput) {
 
   const policyPatch = {
     defaultMode: parsed.data.defaultMode,
+    enabled: parsed.data.enabled,
     notificationLevel: parsed.data.notificationLevel,
     dailyCostCapUsd: parsed.data.dailyCostCapUsd,
     dailyActionCap: parsed.data.dailyActionCap,
@@ -70,6 +72,8 @@ export async function updateAutonomyPolicyAction(input: UpdatePolicyInput) {
 const setToolAclSchema = z.object({
   tool: z.string().min(1).max(64),
   mode: autonomyMode,
+  /** When provided, the override is scoped to that integration only. */
+  integrationId: z.string().uuid().nullable().optional(),
 });
 
 export async function setToolAclAction(input: z.infer<typeof setToolAclSchema>) {
@@ -84,11 +88,18 @@ export async function setToolAclAction(input: z.infer<typeof setToolAclSchema>) 
   }
   const db = getDb();
   const wsId = session.user.workspaceId;
+  const integrationId = parsed.data.integrationId ?? null;
 
   const [existing] = await db
     .select({ id: toolAcl.id })
     .from(toolAcl)
-    .where(and(eq(toolAcl.workspaceId, wsId), eq(toolAcl.tool, parsed.data.tool)))
+    .where(
+      and(
+        eq(toolAcl.workspaceId, wsId),
+        eq(toolAcl.tool, parsed.data.tool),
+        integrationId ? eq(toolAcl.integrationId, integrationId) : isNull(toolAcl.integrationId),
+      ),
+    )
     .limit(1);
 
   if (existing) {
@@ -98,6 +109,7 @@ export async function setToolAclAction(input: z.infer<typeof setToolAclSchema>) 
       workspaceId: wsId,
       tool: parsed.data.tool,
       mode: parsed.data.mode,
+      integrationId,
     });
   }
 
@@ -105,13 +117,31 @@ export async function setToolAclAction(input: z.infer<typeof setToolAclSchema>) 
   return { ok: true as const };
 }
 
-export async function clearToolAclAction(tool: string) {
+const clearToolAclSchema = z.object({
+  tool: z.string().min(1).max(64),
+  integrationId: z.string().uuid().nullable().optional(),
+});
+
+export async function clearToolAclAction(input: string | z.infer<typeof clearToolAclSchema>) {
   const session = await auth();
   if (!session) return { ok: false as const, error: 'Unauthenticated' };
+  // Backwards-compatible: accept a bare tool-name string.
+  const normalized = typeof input === 'string' ? { tool: input } : input;
+  const parsed = clearToolAclSchema.safeParse(normalized);
+  if (!parsed.success) {
+    return { ok: false as const, error: parsed.error.issues[0]?.message ?? 'Invalid' };
+  }
   const db = getDb();
+  const integrationId = parsed.data.integrationId ?? null;
   await db
     .delete(toolAcl)
-    .where(and(eq(toolAcl.workspaceId, session.user.workspaceId), eq(toolAcl.tool, tool)));
+    .where(
+      and(
+        eq(toolAcl.workspaceId, session.user.workspaceId),
+        eq(toolAcl.tool, parsed.data.tool),
+        integrationId ? eq(toolAcl.integrationId, integrationId) : isNull(toolAcl.integrationId),
+      ),
+    );
   revalidatePath('/settings/autonomy');
   return { ok: true as const };
 }

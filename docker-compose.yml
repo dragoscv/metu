@@ -78,8 +78,8 @@ services:
       MINIO_ROOT_USER: metu
       MINIO_ROOT_PASSWORD: metu-local-password
     ports:
-      - '9000:9000' # S3 API
-      - '9001:9001' # Web console
+      - '9000:9000' # S3 API (kept on conventional port)
+      - '24895:9001' # Web console (host: 24895, container: 9001)
     volumes:
       - minio-data:/data
     healthcheck:
@@ -111,9 +111,9 @@ services:
     container_name: metu-inngest
     restart: unless-stopped
     command:
-      ['inngest', 'dev', '-u', 'http://host.docker.internal:3000/api/inngest', '--no-discovery']
+      ['inngest', 'dev', '-u', 'http://host.docker.internal:24890/api/inngest', '--no-discovery']
     ports:
-      - '8288:8288' # Dev UI + event API
+      - '24893:8288' # Dev UI + event API (host: 24893, container: 8288)
     extra_hosts:
       - 'host.docker.internal:host-gateway'
 
@@ -122,8 +122,8 @@ services:
     container_name: metu-mailpit
     restart: unless-stopped
     ports:
-      - '1025:1025' # SMTP
-      - '8025:8025' # Web UI
+      - '1025:1025' # SMTP (kept on conventional port)
+      - '24894:8025' # Web UI (host: 24894, container: 8025)
 
 volumes:
   postgres-data:
