@@ -12,8 +12,10 @@ import {
   requestPermission,
 } from '@tauri-apps/plugin-notification';
 import { platform } from '@tauri-apps/plugin-os';
+import { open as openUrl } from '@tauri-apps/plugin-shell';
 import type { AuthState } from './auth';
 import { executeDeviceTool } from './device-tools';
+import { pushHubNotification } from './hub-notifications';
 
 export type HubStatus = 'idle' | 'connecting' | 'open' | 'closed' | 'error';
 
@@ -88,11 +90,40 @@ export function useHubConnection(auth: AuthState | null): HubStatus {
           return;
         }
         if (m.type === 'event.notification') {
-          const n = m as { title: string; body?: string };
+          const n = m as {
+            id: string;
+            title: string;
+            body?: string;
+            urgency?: 'low' | 'normal' | 'high' | 'critical';
+            actionUrl?: string;
+          };
+          const urgency = n.urgency ?? 'normal';
+          pushHubNotification({
+            at: Date.now(),
+            id: n.id,
+            title: n.title,
+            body: n.body,
+            urgency,
+            actionUrl: n.actionUrl,
+          });
           let granted = await isPermissionGranted();
           if (!granted) granted = (await requestPermission()) === 'granted';
           if (granted) {
-            await sendNotification({ title: n.title, body: n.body ?? '' });
+            await sendNotification({
+              title: n.title,
+              body: n.body ?? '',
+              silent: urgency === 'low',
+            });
+          }
+          // Critical urgency auto-opens the action URL in the user's browser.
+          if (urgency === 'critical' && n.actionUrl) {
+            const base = import.meta.env.VITE_METU_WEB_URL ?? 'https://app.metu.ro';
+            const url = n.actionUrl.startsWith('http') ? n.actionUrl : `${base}${n.actionUrl}`;
+            try {
+              await openUrl(url);
+            } catch {
+              /* ignore — user can still see the toast */
+            }
           }
           return;
         }
