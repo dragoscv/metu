@@ -32,8 +32,21 @@ interface PageProps {
   searchParams: Promise<{ since?: string }>;
 }
 
-function parseWindow(s: string | undefined): Window {
-  if (s === '3w' || s === '3m') return s;
+function parseWindow(s: string | undefined): Window | null {
+  if (s === '3d' || s === '3w' || s === '3m') return s;
+  return null;
+}
+
+/**
+ * Pick the smallest window that fully contains the user's gap. If the
+ * last meaningful activity was 12d ago, '3d' would show nothing — bump
+ * to '3w'. If it was 45d ago, bump to '3m'. Falls back to '3d'.
+ */
+function autoWindow(lastActivity: Date | null): Window {
+  if (!lastActivity) return '3d';
+  const days = (Date.now() - lastActivity.getTime()) / (24 * 60 * 60 * 1000);
+  if (days > 21) return '3m';
+  if (days > 3) return '3w';
   return '3d';
 }
 
@@ -67,7 +80,20 @@ export default async function ResumePage({ searchParams }: PageProps) {
   if (!session) redirect('/sign-in');
   const wsId = session.user.workspaceId;
   const sp = await searchParams;
-  const win = parseWindow(sp.since);
+
+  const parsed = parseWindow(sp.since);
+  if (!parsed) {
+    // Auto-detect the gap from the latest timeline event and redirect.
+    const db0 = getDb();
+    const [latest] = await db0
+      .select({ at: sql<Date>`max(${timelineEvent.occurredAt})` })
+      .from(timelineEvent)
+      .where(eq(timelineEvent.workspaceId, wsId));
+    const detected = autoWindow(latest?.at ? new Date(latest.at) : null);
+    redirect(`/resume?since=${detected}`);
+  }
+  const win: Window = parsed;
+
   const days = WINDOWS.find((w) => w.key === win)!.days;
   const cutoff = new Date(Date.now() - days * 24 * 60 * 60 * 1000);
 
