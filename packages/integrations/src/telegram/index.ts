@@ -43,3 +43,25 @@ export function extractCapture(ctx: Context): TelegramCapturePayload | null {
 export async function getFileLink(fileId: string) {
   return bot().telegram.getFileLink(fileId);
 }
+
+/**
+ * Send a plain-text message to a Telegram chat. Returns the Telegram
+ * message id on success — used by the agent tool to support deletion
+ * via `bot().telegram.deleteMessage(chatId, messageId)` if we ever
+ * choose to make the action undoable.
+ *
+ * Throws if `TELEGRAM_BOT_TOKEN` is missing or the Telegram API errors
+ * out — callers should let the rejection propagate so the tool_call
+ * row records the failure.
+ */
+export async function sendTextMessage(
+  chatId: string,
+  text: string,
+  opts?: { parseMode?: 'Markdown' | 'MarkdownV2' | 'HTML'; disableNotification?: boolean },
+): Promise<number> {
+  const res = await bot().telegram.sendMessage(chatId, text, {
+    parse_mode: opts?.parseMode,
+    disable_notification: opts?.disableNotification,
+  });
+  return res.message_id;
+}

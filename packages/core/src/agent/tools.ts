@@ -25,9 +25,13 @@ import {
   project,
   projectLink,
   task,
+  telegramChatLink,
   timelineEvent,
 } from '@metu/db/schema';
 import { callRemoteTool, type ExternalMcpConfig } from '@metu/integrations/mcp';
+import { sendTextMessage as sendTelegramText } from '@metu/integrations/telegram';
+import { octokitForToken } from '@metu/integrations/github';
+import { open as openSealed } from '@metu/ai';
 import * as memoryEngine from '../memory';
 import { restoreProjectContext } from '../continuity';
 import { DEVICE_TOOLS } from './device-tools';
@@ -561,6 +565,332 @@ const restoreContinuityTool: ToolDefinition<typeof restoreContinuityArgs> = {
   },
 };
 
+// ─── send_telegram ─────────────────────────────────────────────────────────
+
+const sendTelegramArgs = z.object({
+  text: z.string().min(1).max(4000).describe('Plain-text message body (Telegram caps at 4096).'),
+  chatId: z
+    .string()
+    .optional()
+    .describe(
+      'External Telegram chat id. When omitted, the most-recently-active linked chat in the workspace is used.',
+    ),
+  parseMode: z.enum(['Markdown', 'MarkdownV2', 'HTML']).optional(),
+  silent: z.boolean().optional().describe('Send without device notification.'),
+});
+
+const sendTelegramTool: ToolDefinition<typeof sendTelegramArgs> = {
+  name: 'send_telegram',
+  description:
+    'Send a Telegram message to the user via the linked metu bot. Only works for chats already linked in /settings/integrations/telegram. Inherently non-undoable — default ACL is `ask`.',
+  kind: 'high_risk',
+  args: sendTelegramArgs,
+  async execute(args, ctx) {
+    const db = getDb();
+    let chatId = args.chatId ?? null;
+    if (!chatId) {
+      const [link] = await db
+        .select({ chatId: telegramChatLink.chatId })
+        .from(telegramChatLink)
+        .where(eq(telegramChatLink.workspaceId, ctx.workspaceId))
+        .orderBy(desc(telegramChatLink.lastInboundAt))
+        .limit(1);
+      if (!link) throw new Error('no_linked_telegram_chat');
+      chatId = link.chatId;
+    } else {
+      // Verify caller-supplied chatId is actually linked to this workspace
+      // — never let the LLM send to an arbitrary chat id.
+      const [link] = await db
+        .select({ chatId: telegramChatLink.chatId })
+        .from(telegramChatLink)
+        .where(
+          and(
+            eq(telegramChatLink.workspaceId, ctx.workspaceId),
+            eq(telegramChatLink.chatId, chatId),
+          ),
+        )
+        .limit(1);
+      if (!link) throw new Error('chat_not_linked_to_workspace');
+    }
+    const messageId = await sendTelegramText(chatId, args.text, {
+      parseMode: args.parseMode,
+      disableNotification: args.silent,
+    });
+    return {
+      result: { chatId, messageId },
+      // Telegram does support deleteMessage; we keep the data so a future
+      // undo can be wired in if needed. Marked here for traceability.
+      undoPayload: { chatId, messageId },
+    };
+  },
+};
+
+// ─── send_email ────────────────────────────────────────────────────────────
+
+const sendEmailArgs = z.object({
+  to: z.email().describe('Recipient email address.'),
+  subject: z.string().min(1).max(200),
+  text: z.string().min(1).max(10000).describe('Plain-text body.'),
+  html: z.string().max(50000).optional().describe('Optional HTML body.'),
+});
+
+async function sendViaResend(input: {
+  to: string;
+  subject: string;
+  text: string;
+  html?: string;
+}): Promise<{ id: string }> {
+  const key = process.env.RESEND_API_KEY;
+  if (!key) throw new Error('RESEND_API_KEY not configured');
+  const from = process.env.RESEND_FROM ?? 'metu <hello@metu.app>';
+  const res = await fetch('https://api.resend.com/emails', {
+    method: 'POST',
+    headers: {
+      authorization: `Bearer ${key}`,
+      'content-type': 'application/json',
+    },
+    body: JSON.stringify({
+      from,
+      to: [input.to],
+      subject: input.subject,
+      text: input.text,
+      ...(input.html ? { html: input.html } : {}),
+    }),
+  });
+  if (!res.ok) {
+    const body = await res.text().catch(() => '');
+    throw new Error(`resend ${res.status}: ${body.slice(0, 200)}`);
+  }
+  const data = (await res.json().catch(() => ({}))) as { id?: string };
+  return { id: data.id ?? '' };
+}
+
+const sendEmailTool: ToolDefinition<typeof sendEmailArgs> = {
+  name: 'send_email',
+  description:
+    'Send an email via Resend. High-risk — default ACL is `ask`. Use sparingly: only when the user has asked for an email or the action is part of an approved workflow.',
+  kind: 'high_risk',
+  args: sendEmailArgs,
+  async execute(args) {
+    const sent = await sendViaResend({
+      to: args.to,
+      subject: args.subject,
+      text: args.text,
+      html: args.html,
+    });
+    return { result: { providerId: sent.id, to: args.to } };
+  },
+};
+
+// ─── archive_project ───────────────────────────────────────────────────────
+
+const archiveProjectArgs = z.object({
+  projectId: z.string().uuid(),
+});
+
+const archiveProjectTool: ToolDefinition<typeof archiveProjectArgs> = {
+  name: 'archive_project',
+  description:
+    'Archive a project (flips status to "archived"). Reversible via undo. The user can still see archived projects under the "Archived" filter.',
+  kind: 'high_risk',
+  args: archiveProjectArgs,
+  async execute(args, ctx) {
+    const db = getDb();
+    const [before] = await db
+      .select({ id: project.id, status: project.status })
+      .from(project)
+      .where(and(eq(project.id, args.projectId), eq(project.workspaceId, ctx.workspaceId)))
+      .limit(1);
+    if (!before) throw new Error('project_not_found');
+    if (before.status === 'archived') {
+      return { result: { changed: false }, undoPayload: null };
+    }
+    await db
+      .update(project)
+      .set({ status: 'archived' })
+      .where(and(eq(project.id, args.projectId), eq(project.workspaceId, ctx.workspaceId)));
+    return {
+      result: { changed: true, previousStatus: before.status },
+      undoPayload: { projectId: args.projectId, previousStatus: before.status },
+    };
+  },
+  async undo(payload, ctx) {
+    const db = getDb();
+    const prev =
+      (payload.previousStatus as 'active' | 'paused' | 'archived' | 'killed') ?? 'active';
+    await db
+      .update(project)
+      .set({ status: prev })
+      .where(
+        and(eq(project.id, String(payload.projectId)), eq(project.workspaceId, ctx.workspaceId)),
+      );
+  },
+};
+
+// ─── delete_capture ────────────────────────────────────────────────────────
+
+const deleteCaptureArgs = z.object({
+  captureId: z.string().uuid(),
+});
+
+const deleteCaptureTool: ToolDefinition<typeof deleteCaptureArgs> = {
+  name: 'delete_capture',
+  description:
+    'Soft-delete a capture (sets deleted_at). The capture stops appearing in the inbox and recall. Reversible via undo.',
+  kind: 'high_risk',
+  args: deleteCaptureArgs,
+  async execute(args, ctx) {
+    const db = getDb();
+    const [before] = await db
+      .select({ id: capture.id, deletedAt: capture.deletedAt })
+      .from(capture)
+      .where(and(eq(capture.id, args.captureId), eq(capture.workspaceId, ctx.workspaceId)))
+      .limit(1);
+    if (!before) throw new Error('capture_not_found');
+    if (before.deletedAt) {
+      return { result: { changed: false }, undoPayload: null };
+    }
+    await db
+      .update(capture)
+      .set({ deletedAt: new Date() })
+      .where(and(eq(capture.id, args.captureId), eq(capture.workspaceId, ctx.workspaceId)));
+    return {
+      result: { changed: true },
+      undoPayload: { captureId: args.captureId },
+    };
+  },
+  async undo(payload, ctx) {
+    const db = getDb();
+    await db
+      .update(capture)
+      .set({ deletedAt: null })
+      .where(
+        and(eq(capture.id, String(payload.captureId)), eq(capture.workspaceId, ctx.workspaceId)),
+      );
+  },
+};
+
+// ─── merge_pr ──────────────────────────────────────────────────────────────
+
+const mergePrArgs = z.object({
+  integrationId: z
+    .string()
+    .uuid()
+    .describe('UUID of the active GitHub integration in this workspace.'),
+  repoFullName: z.string().regex(/^[^/]+\/[^/]+$/, 'expected "owner/repo"'),
+  prNumber: z.number().int().positive(),
+  mergeMethod: z.enum(['merge', 'squash', 'rebase']).default('squash'),
+  commitTitle: z.string().max(200).optional(),
+  commitMessage: z.string().max(4000).optional(),
+});
+
+async function resolveGithubToken(workspaceId: string, integrationId: string): Promise<string> {
+  const db = getDb();
+  const [row] = await db
+    .select()
+    .from(integration)
+    .where(
+      and(
+        eq(integration.id, integrationId),
+        eq(integration.workspaceId, workspaceId),
+        eq(integration.kind, 'github'),
+      ),
+    )
+    .limit(1);
+  if (!row) throw new Error('integration_not_found');
+  if (row.status !== 'active') throw new Error(`integration_${row.status}`);
+  if (!row.tokenCiphertext || !row.tokenIv) throw new Error('no_token');
+  const tokenTag = (row.config as { tokenTag?: string })?.tokenTag;
+  if (!tokenTag) throw new Error('token_tag_missing');
+  return openSealed({
+    ciphertext: row.tokenCiphertext,
+    iv: row.tokenIv,
+    tag: tokenTag,
+  });
+}
+
+const mergePrTool: ToolDefinition<typeof mergePrArgs> = {
+  name: 'merge_pr',
+  description:
+    'Merge a GitHub pull request. High-risk and irreversible — default ACL is `ask`. The default merge method is squash; pass mergeMethod to override.',
+  kind: 'high_risk',
+  args: mergePrArgs,
+  async execute(args, ctx) {
+    const token = await resolveGithubToken(ctx.workspaceId, args.integrationId);
+    const [owner, repo] = args.repoFullName.split('/') as [string, string];
+    const o = octokitForToken(token);
+    const res = await o.rest.pulls.merge({
+      owner,
+      repo,
+      pull_number: args.prNumber,
+      merge_method: args.mergeMethod,
+      commit_title: args.commitTitle,
+      commit_message: args.commitMessage,
+    });
+    return {
+      result: { merged: res.data.merged, sha: res.data.sha, message: res.data.message },
+    };
+  },
+};
+
+// ─── commit_file ───────────────────────────────────────────────────────────
+
+const commitFileArgs = z.object({
+  integrationId: z.string().uuid(),
+  repoFullName: z.string().regex(/^[^/]+\/[^/]+$/, 'expected "owner/repo"'),
+  path: z.string().min(1).max(500).describe('Path inside the repo, e.g. "docs/notes.md".'),
+  content: z
+    .string()
+    .max(200_000)
+    .describe('Full new file content (plain text, will be base64-encoded).'),
+  message: z.string().min(1).max(500),
+  branch: z.string().min(1).max(200).optional(),
+});
+
+const commitFileTool: ToolDefinition<typeof commitFileArgs> = {
+  name: 'commit_file',
+  description:
+    'Create or overwrite a file in a GitHub repo by committing directly via the contents API. High-risk and effectively irreversible — default ACL is `ask`. Pass branch to target a non-default branch.',
+  kind: 'high_risk',
+  args: commitFileArgs,
+  async execute(args, ctx) {
+    const token = await resolveGithubToken(ctx.workspaceId, args.integrationId);
+    const [owner, repo] = args.repoFullName.split('/') as [string, string];
+    const o = octokitForToken(token);
+
+    let existingSha: string | undefined;
+    try {
+      const got = await o.rest.repos.getContent({
+        owner,
+        repo,
+        path: args.path,
+        ...(args.branch ? { ref: args.branch } : {}),
+      });
+      const data = got.data as { sha?: string } | Array<unknown>;
+      if (!Array.isArray(data) && data.sha) existingSha = data.sha;
+    } catch {
+      // 404 = file does not exist yet, that's fine
+    }
+
+    const res = await o.rest.repos.createOrUpdateFileContents({
+      owner,
+      repo,
+      path: args.path,
+      message: args.message,
+      content: Buffer.from(args.content, 'utf8').toString('base64'),
+      ...(existingSha ? { sha: existingSha } : {}),
+      ...(args.branch ? { branch: args.branch } : {}),
+    });
+    return {
+      result: {
+        commitSha: res.data.commit.sha,
+        contentSha: res.data.content?.sha,
+        previousSha: existingSha ?? null,
+      },
+    };
+  },
+};
+
 // ─── Registry ──────────────────────────────────────────────────────────────
 
 // ─── external_invoke ───────────────────────────────────────────────────────
@@ -623,6 +953,12 @@ export const TOOLS = {
   notify_user: notifyTool,
   log_observation: logObservationTool,
   restore_continuity: restoreContinuityTool,
+  send_telegram: sendTelegramTool,
+  send_email: sendEmailTool,
+  archive_project: archiveProjectTool,
+  delete_capture: deleteCaptureTool,
+  merge_pr: mergePrTool,
+  commit_file: commitFileTool,
   external_invoke: externalInvokeTool,
   ...DEVICE_TOOLS,
   ...EDITOR_TOOLS,
