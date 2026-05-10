@@ -54,17 +54,19 @@ export async function resolveSession(req: Request): Promise<ResolvedSession | nu
     return null;
   }
 
-  // 3) Dev token.
-  const devTok = process.env.METU_DEV_API_TOKEN;
-  const wsId = process.env.METU_DEV_WORKSPACE_ID;
-  const userId = process.env.METU_DEV_USER_ID;
-  if (devTok && safeEqual(tok, devTok) && wsId && userId) {
-    return {
-      workspaceId: wsId,
-      userId,
-      scopes: ['*'],
-      clientId: null,
-    };
+  // 3) Dev token. Only honored outside production.
+  if (process.env.NODE_ENV !== 'production') {
+    const devTok = process.env.METU_DEV_API_TOKEN;
+    const wsId = process.env.METU_DEV_WORKSPACE_ID;
+    const userId = process.env.METU_DEV_USER_ID;
+    if (devTok && safeEqual(tok, devTok) && wsId && userId) {
+      return {
+        workspaceId: wsId,
+        userId,
+        scopes: ['*'],
+        clientId: null,
+      };
+    }
   }
   return null;
 }

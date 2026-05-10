@@ -39,7 +39,7 @@ export function GET(req: Request) {
         'urn:ietf:params:oauth:grant-type:device_code',
       ],
       token_endpoint_auth_methods_supported: ['client_secret_post', 'client_secret_basic', 'none'],
-      code_challenge_methods_supported: ['S256', 'plain'],
+      code_challenge_methods_supported: ['S256'],
       subject_types_supported: ['public'],
       // No id_token signing for v1 — userinfo serves as the canonical identity surface.
       id_token_signing_alg_values_supported: [],

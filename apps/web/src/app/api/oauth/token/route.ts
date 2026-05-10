@@ -79,11 +79,11 @@ async function handleAuthCode(
   }
   if (codeRow.codeChallenge) {
     if (!verifier) return oauthError('invalid_request', 'Missing code_verifier.');
-    const ok = verifyPkce(
-      verifier,
-      codeRow.codeChallenge,
-      (codeRow.codeChallengeMethod as PkceMethod) ?? 'S256',
-    );
+    const method = (codeRow.codeChallengeMethod as PkceMethod) ?? 'S256';
+    if (method !== 'S256') {
+      return oauthError('invalid_grant', 'Only S256 PKCE is supported.');
+    }
+    const ok = verifyPkce(verifier, codeRow.codeChallenge, method);
     if (!ok) return oauthError('invalid_grant', 'PKCE verification failed.');
   } else if (client.type === 'public') {
     return oauthError('invalid_grant', 'PKCE required.');

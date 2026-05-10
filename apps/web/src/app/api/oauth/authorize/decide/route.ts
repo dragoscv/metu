@@ -3,17 +3,21 @@
  * redirects back to the client's redirect_uri.
  */
 import { auth } from '@metu/auth';
-import { findActiveClientByClientId, issueToken } from '@/lib/oauth-provider';
+import { findActiveClientByClientId, intersectScopes, issueToken } from '@/lib/oauth-provider';
 import { TTL } from '@metu/auth/oauth';
+import { clientKey, rateLimit } from '@/lib/ratelimit';
 
 export async function POST(req: Request) {
+  const limited = await rateLimit('oauth-authorize', clientKey(req));
+  if (limited) return limited;
+
   const session = await auth();
   if (!session) return new Response('Unauthorized', { status: 401 });
 
   const form = await req.formData();
   const decision = form.get('decision');
   const params = JSON.parse(String(form.get('params') ?? '{}')) as Record<string, string>;
-  const grantedScopes = String(form.get('granted_scopes') ?? '')
+  const submittedScopes = String(form.get('granted_scopes') ?? '')
     .split(/\s+/)
     .filter(Boolean);
 
@@ -34,6 +38,23 @@ export async function POST(req: Request) {
     return Response.redirect(url.toString(), 302);
   }
 
+  // Re-intersect against client.allowedScopes AND against the request's
+  // `scope` param. The hidden form field is user-controllable, so we never
+  // trust it as the authority. This collapses any tampered-scope payload
+  // back to what the client is actually allowed to ask for.
+  const requestAllowed = new Set(intersectScopes(params.scope ?? '', client.allowedScopes));
+  const grantedScopes = submittedScopes.filter((s) => requestAllowed.has(s));
+  if (grantedScopes.length === 0) {
+    return new Response('invalid_scope', { status: 400 });
+  }
+
+  // PKCE: require S256. `plain` is a downgrade; reject explicit `plain`.
+  const codeChallengeMethod =
+    params.code_challenge_method ?? (params.code_challenge ? 'S256' : null);
+  if (params.code_challenge && codeChallengeMethod !== 'S256') {
+    return new Response('invalid_request: only S256 PKCE is supported', { status: 400 });
+  }
+
   const issued = await issueToken({
     workspaceId: client.workspaceId,
     clientUuid: client.id,
@@ -42,7 +63,7 @@ export async function POST(req: Request) {
     scopes: grantedScopes,
     ttlSeconds: TTL.authorizationCode,
     codeChallenge: params.code_challenge ?? null,
-    codeChallengeMethod: params.code_challenge_method ?? null,
+    codeChallengeMethod,
     redirectUri: params.redirect_uri ?? null,
   });
 

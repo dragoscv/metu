@@ -54,6 +54,13 @@ const limiters: Record<string, Limiter> = {
   'oauth-token': buildLimiter('rl:oauth-token', 30, 60),
   'oauth-device': buildLimiter('rl:oauth-device', 10, 60),
   'oauth-revoke': buildLimiter('rl:oauth-revoke', 30, 60),
+  // Consent + auth-code issuance is cheap, but it's a brute-forceable
+  // surface (client_id enumeration, redirect_uri probing). Throttle gently.
+  'oauth-authorize': buildLimiter('rl:oauth-authorize', 60, 60),
+  // Streaming Conductor chat hits a paid LLM provider and can run for
+  // ~120s. A single human can't reasonably start more than a few per
+  // minute; cap at 20/min/user to absorb retries without enabling abuse.
+  'conductor-chat': buildLimiter('rl:conductor-chat', 20, 60),
   'sdk-write': buildLimiter('rl:sdk-write', 120, 60),
   // Voice broker: minting Realtime sessions hits a paid BYOK endpoint and a
   // human can only realistically open ~1 per minute. Cap fairly tightly.

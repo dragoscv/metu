@@ -64,6 +64,10 @@ export default async function AuthorizePage({
   if (client.type === 'public' && !params.code_challenge) {
     return errorPage('invalid_request', 'PKCE (code_challenge) is required for public clients.');
   }
+  // Only S256 is accepted. `plain` is a downgrade-attack vector.
+  if (params.code_challenge && (params.code_challenge_method ?? 'S256') !== 'S256') {
+    return errorPage('invalid_request', 'Only S256 PKCE is supported.');
+  }
 
   const grantedScopes = intersectScopes(params.scope ?? '', client.allowedScopes);
   if (grantedScopes.length === 0) {
