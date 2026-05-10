@@ -77,7 +77,14 @@ function authHeader(auth: AuthMode): Record<string, string> {
     case 'api_key':
       return { 'x-metu-api-key': auth.apiKey };
     case 'oauth_device_flow':
-      return {}; // resolved at runtime once flow completes
+      // The device-flow mode is a placeholder — the caller must complete
+      // the flow with `startDeviceFlow()` (see below) and re-create the
+      // client with `auth: { kind: 'token', accessToken }`. Failing fast
+      // here prevents silent 401 storms on every request.
+      throw new Error(
+        'SDK: oauth_device_flow is not directly usable. Call startDeviceFlow() ' +
+          'to obtain an access token, then create the client with kind="token".',
+      );
   }
 }
 
