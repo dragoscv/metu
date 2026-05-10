@@ -12,7 +12,7 @@
 
 const API = 'https://api.github.com';
 
-function ghHeaders(token: string): HeadersInit {
+function ghHeaders(token: string): Record<string, string> {
   return {
     Authorization: `Bearer ${token}`,
     Accept: 'application/vnd.github+json',
@@ -93,7 +93,7 @@ export interface RepoStatsSnapshot {
 }
 
 async function ghJson<T>(url: string, token: string): Promise<T | null> {
-  const r = await fetch(url, { headers: ghHeaders(token), cache: 'no-store' });
+  const r = await fetch(url, { headers: ghHeaders(token) });
   // /stats/* returns 202 while GitHub computes — caller handles null.
   if (r.status === 202 || r.status === 204) return null;
   if (!r.ok) return null;
