@@ -1,6 +1,6 @@
 'use client';
 import Link from 'next/link';
-import { useRouter, useSearchParams } from 'next/navigation';
+import { parseAsStringLiteral, useQueryState } from 'nuqs';
 import { motion } from 'framer-motion';
 import {
   CheckCircle2,
@@ -66,8 +66,10 @@ const STATUS_STYLE: Record<AgentRunRow['status'], { color: string; Icon: typeof 
   cancelled: { color: 'text-[var(--color-fg-subtle)]', Icon: XCircle },
 };
 
+const VIEW_KEYS = ['cards', 'table', 'kanban', 'timeline'] as const;
+
 export function AgentsView({
-  view,
+  view: initialView,
   runs,
   toolCalls,
   threads,
@@ -77,13 +79,13 @@ export function AgentsView({
   toolCalls: ToolCallRow[];
   threads: ThreadRow[];
 }) {
-  const router = useRouter();
-  const sp = useSearchParams();
+  const [view, setViewState] = useQueryState(
+    'view',
+    parseAsStringLiteral(VIEW_KEYS).withDefault(initialView),
+  );
 
   function setView(v: ViewKind) {
-    const next = new URLSearchParams(sp);
-    next.set('view', v);
-    router.push(`/agents?${next.toString()}`);
+    void setViewState(v);
   }
 
   return (
