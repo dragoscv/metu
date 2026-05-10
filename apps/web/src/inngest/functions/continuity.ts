@@ -19,6 +19,7 @@ import {
   workspaceMember,
 } from '@metu/db/schema';
 import { sendTextMessage as sendTelegramText } from '@metu/integrations/telegram';
+import { hubBroadcast } from '../../lib/hub';
 import { inngest } from '../client';
 import { parseEvent } from '../schemas';
 
@@ -341,10 +342,39 @@ export const continuityMorningDelivery = inngest.createFunction(
       return sent;
     });
 
+    // Live push to connected devices (companion / vscode-ext / browser-ext /
+    // mobile). Best-effort, returns null if HUB_URL/HUB_INTERNAL_SECRET unset.
+    const hubDelivered = await step.run('hub-broadcast', async () => {
+      let total = 0;
+      const seen = new Set<string>();
+      for (const r of recipients) {
+        if (seen.has(r.workspaceId)) continue;
+        seen.add(r.workspaceId);
+        const res = await hubBroadcast({
+          workspaceId: r.workspaceId,
+          envelope: {
+            type: 'event.notification',
+            id: crypto.randomUUID(),
+            title: `Where to start: ${r.projectName}`,
+            body: r.nextStep,
+            urgency: 'normal',
+            actionUrl: '/resume?since=3d',
+            actions: [
+              { id: 'resume', label: 'Resume', kind: 'open' },
+              { id: 'project', label: 'Open project', kind: 'open' },
+            ],
+          },
+        });
+        total += res?.delivered ?? 0;
+      }
+      return total;
+    });
+
     return {
       ok: true,
       delivered: inserted,
       telegramSent,
+      hubDelivered,
       candidates: recipients.length,
     };
   },
