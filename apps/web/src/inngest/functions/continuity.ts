@@ -11,7 +11,14 @@
 import { and, desc, eq, gt, gte, isNull, sql } from 'drizzle-orm';
 import { restoreProjectContext } from '@metu/core/continuity';
 import { getDb } from '@metu/db';
-import { continuityBriefing, notification, project, workspaceMember } from '@metu/db/schema';
+import {
+  continuityBriefing,
+  notification,
+  project,
+  telegramChatLink,
+  workspaceMember,
+} from '@metu/db/schema';
+import { sendTextMessage as sendTelegramText } from '@metu/integrations/telegram';
 import { inngest } from '../client';
 import { parseEvent } from '../schemas';
 
@@ -294,6 +301,51 @@ export const continuityMorningDelivery = inngest.createFunction(
       return fresh.length;
     });
 
-    return { ok: true, delivered: inserted, candidates: recipients.length };
+    // Best-effort Telegram push. Skips silently if the bot token is unset
+    // or the workspace has no linked chats; per-chat failures are logged
+    // but never fail the whole step.
+    const telegramSent = await step.run('telegram-deliver', async () => {
+      if (!process.env.TELEGRAM_BOT_TOKEN) return 0;
+      const wsIds = Array.from(new Set(recipients.map((r) => r.workspaceId)));
+      if (wsIds.length === 0) return 0;
+      const db = getDb();
+      const links = await db
+        .select({
+          chatId: telegramChatLink.chatId,
+          workspaceId: telegramChatLink.workspaceId,
+        })
+        .from(telegramChatLink)
+        .where(sql`${telegramChatLink.workspaceId} = any(${wsIds})`);
+      if (links.length === 0) return 0;
+
+      // Best-effort de-dup: one chat = one message per workspace.
+      const byWs = new Map(recipients.map((r) => [r.workspaceId, r]));
+      let sent = 0;
+      for (const link of links) {
+        const r = byWs.get(link.workspaceId);
+        if (!r) continue;
+        const text = `🌅 *${r.projectName}*\n\n${r.nextStep}\n\nOpen: ${process.env.METU_WEB_URL ?? ''}/resume?since=3d`;
+        try {
+          await sendTelegramText(link.chatId, text, {
+            parseMode: 'Markdown',
+            disableNotification: true,
+          });
+          sent += 1;
+        } catch (err) {
+          logger.warn('telegram morning brief failed', {
+            chatId: link.chatId,
+            err: err instanceof Error ? err.message : String(err),
+          });
+        }
+      }
+      return sent;
+    });
+
+    return {
+      ok: true,
+      delivered: inserted,
+      telegramSent,
+      candidates: recipients.length,
+    };
   },
 );
