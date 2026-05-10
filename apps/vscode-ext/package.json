@@ -38,6 +38,11 @@
         "category": "metu"
       },
       {
+        "command": "metu.resume",
+        "title": "metu: Where did I leave off?",
+        "category": "metu"
+      },
+      {
         "command": "metu.notify",
         "title": "metu: Send notification",
         "category": "metu"

@@ -197,6 +197,41 @@ class MetuClient {
       clearTimeout(timer);
     }
   }
+
+  async resume(): Promise<ResumePayload> {
+    const token = this.auth.token;
+    if (!token) throw new Error('not signed in');
+    const apiUrl = readCfg().apiUrl;
+    const ctrl = new AbortController();
+    const timer = setTimeout(() => ctrl.abort(), 15_000);
+    try {
+      const res = await fetch(`${apiUrl}/api/sdk/v1/resume`, {
+        headers: { authorization: `Bearer ${token}`, accept: 'application/json' },
+        signal: ctrl.signal,
+      });
+      if (!res.ok) throw new Error(`metu /resume → HTTP ${res.status}`);
+      return (await res.json()) as ResumePayload;
+    } finally {
+      clearTimeout(timer);
+    }
+  }
+}
+
+interface ResumeBriefing {
+  id: string;
+  projectId: string;
+  projectName: string;
+  momentumScore: number | null;
+  generatedAt: string;
+  nextStep: string;
+  briefing: string;
+}
+interface ResumePayload {
+  ok: boolean;
+  since: '3d' | '3w' | '3m';
+  windowDays: number;
+  timelineEventCount: number;
+  briefings: ResumeBriefing[];
 }
 
 interface BacklogItem {
@@ -296,6 +331,7 @@ export async function activate(ctx: vscode.ExtensionContext): Promise<void> {
   ctx.subscriptions.push(
     vscode.commands.registerCommand('metu.capture', () => captureCmd(client)),
     vscode.commands.registerCommand('metu.recall', () => recallCmd(client)),
+    vscode.commands.registerCommand('metu.resume', () => resumeCmd(client)),
     vscode.commands.registerCommand('metu.notify', () => notifyCmd(client)),
     vscode.commands.registerCommand('metu.companionTurn', () => companionTurnCmd(client)),
     vscode.commands.registerCommand('metu.signIn', () => signInCmd(auth)),
@@ -313,6 +349,35 @@ export async function activate(ctx: vscode.ExtensionContext): Promise<void> {
   // Auto-refresh every 60s while the view exists.
   const refreshTimer = setInterval(() => backlog.refresh(), 60_000);
   ctx.subscriptions.push({ dispose: () => clearInterval(refreshTimer) });
+
+  // Resume status bar — top "where to start" briefing, refreshed every 5min.
+  const resumeStatus = vscode.window.createStatusBarItem(vscode.StatusBarAlignment.Left, 100);
+  resumeStatus.command = 'metu.resume';
+  ctx.subscriptions.push(resumeStatus);
+  async function refreshResume(): Promise<void> {
+    if (!auth.token) {
+      resumeStatus.hide();
+      return;
+    }
+    try {
+      const r = await client.resume();
+      const top = r.briefings[0];
+      if (!top) {
+        resumeStatus.hide();
+        return;
+      }
+      const oneLine = top.nextStep.split(/\s+/).slice(0, 12).join(' ');
+      resumeStatus.text = `$(book) ${top.projectName}: ${oneLine}…`;
+      resumeStatus.tooltip = `metu — next step in ${top.projectName}.\n\n${top.nextStep}\n\nClick for all (${r.briefings.length}).`;
+      resumeStatus.show();
+    } catch {
+      resumeStatus.hide();
+    }
+  }
+  void refreshResume();
+  ctx.subscriptions.push(auth.onChange(() => void refreshResume()));
+  const resumeTimer = setInterval(() => void refreshResume(), 5 * 60_000);
+  ctx.subscriptions.push({ dispose: () => clearInterval(resumeTimer) });
 }
 
 export function deactivate(): void {
@@ -390,6 +455,33 @@ async function recallCmd(client: MetuClient): Promise<void> {
     await editor.edit((b) => b.insert(editor.selection.active, `${block}\n`));
   } catch (e) {
     vscode.window.showErrorMessage(`metu recall failed: ${(e as Error).message}`);
+  }
+}
+
+async function resumeCmd(client: MetuClient): Promise<void> {
+  try {
+    const r = await client.resume();
+    if (r.briefings.length === 0) {
+      vscode.window.showInformationMessage('No briefings yet.');
+      return;
+    }
+    const pick = await vscode.window.showQuickPick(
+      r.briefings.map((b) => ({
+        label: b.projectName,
+        description: b.momentumScore != null ? `${Math.round(b.momentumScore * 100)}%` : undefined,
+        detail: b.nextStep.slice(0, 200),
+        briefing: b,
+      })),
+      { placeHolder: `Where to start (${r.since}, ${r.timelineEventCount} events)` },
+    );
+    if (!pick) return;
+    const doc = await vscode.workspace.openTextDocument({
+      language: 'markdown',
+      content: `# ${pick.briefing.projectName}\n\n${pick.briefing.briefing}\n`,
+    });
+    await vscode.window.showTextDocument(doc, { preview: true });
+  } catch (e) {
+    vscode.window.showErrorMessage(`metu resume failed: ${(e as Error).message}`);
   }
 }
 
