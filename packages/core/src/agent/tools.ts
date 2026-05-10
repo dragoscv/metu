@@ -32,6 +32,7 @@ import { callRemoteTool, type ExternalMcpConfig } from '@metu/integrations/mcp';
 import { sendTextMessage as sendTelegramText } from '@metu/integrations/telegram';
 import { octokitForToken } from '@metu/integrations/github';
 import { open as openSealed } from '@metu/ai';
+import { listRecentBriefings } from '@metu/db/queries';
 import * as memoryEngine from '../memory';
 import { restoreProjectContext } from '../continuity';
 import { DEVICE_TOOLS } from './device-tools';
@@ -567,6 +568,99 @@ const restoreContinuityTool: ToolDefinition<typeof restoreContinuityArgs> = {
 
 // ─── send_telegram ─────────────────────────────────────────────────────────
 
+const metuResumeArgs = z.object({
+  since: z
+    .enum(['3d', '3w', '3m'])
+    .default('3d')
+    .describe('Time window: 3 days, 3 weeks, or 3 months.'),
+  limit: z.number().int().min(1).max(20).default(8),
+});
+
+const SINCE_DAYS: Record<'3d' | '3w' | '3m', number> = { '3d': 3, '3w': 21, '3m': 90 };
+
+const metuResumeTool: ToolDefinition<typeof metuResumeArgs> = {
+  name: 'metu_resume',
+  description:
+    'Answer "where did I leave off?" for the user, scoped to a 3-day / 3-week / 3-month window. Returns the latest persisted briefings, the active projects with movement in that window (sorted by momentum), the open blocked tasks, and the count of meaningful timeline events. Read-only — safe to call anywhere.',
+  kind: 'read',
+  args: metuResumeArgs,
+  async execute(args, ctx) {
+    const days = SINCE_DAYS[args.since];
+    const cutoff = new Date(Date.now() - days * 24 * 60 * 60 * 1000);
+    const db = getDb();
+    const [briefings, activeProjects, blockedTasks, eventCountRow] = await Promise.all([
+      listRecentBriefings(ctx.workspaceId, args.limit),
+      db
+        .select({
+          id: project.id,
+          name: project.name,
+          stateSummary: project.stateSummary,
+          momentumScore: project.momentumScore,
+          lastMeaningfulActivityAt: project.lastMeaningfulActivityAt,
+          status: project.status,
+        })
+        .from(project)
+        .where(
+          and(
+            eq(project.workspaceId, ctx.workspaceId),
+            isNull(project.deletedAt),
+            sql`${project.status} in ('active', 'paused')`,
+            sql`${project.lastMeaningfulActivityAt} >= ${cutoff}`,
+          ),
+        )
+        .orderBy(desc(project.momentumScore), desc(project.lastMeaningfulActivityAt))
+        .limit(args.limit),
+      db
+        .select({
+          id: task.id,
+          title: task.title,
+          blockedReason: task.blockedReason,
+          projectId: task.projectId,
+          updatedAt: task.updatedAt,
+        })
+        .from(task)
+        .where(
+          and(
+            eq(task.workspaceId, ctx.workspaceId),
+            isNull(task.deletedAt),
+            eq(task.status, 'blocked'),
+          ),
+        )
+        .orderBy(desc(task.updatedAt))
+        .limit(args.limit),
+      db
+        .select({ n: sql<number>`count(*)::int` })
+        .from(timelineEvent)
+        .where(
+          and(
+            eq(timelineEvent.workspaceId, ctx.workspaceId),
+            sql`${timelineEvent.occurredAt} >= ${cutoff}`,
+          ),
+        ),
+    ]);
+    return {
+      result: {
+        since: args.since,
+        windowDays: days,
+        windowStart: cutoff.toISOString(),
+        timelineEventCount: eventCountRow[0]?.n ?? 0,
+        briefings: briefings.map((b) => ({
+          projectId: b.projectId,
+          projectName: b.projectName,
+          briefing: b.briefing,
+          generatedAt: b.generatedAt.toISOString(),
+          modelProvider: b.modelProvider,
+          momentumScore: b.momentumScore,
+        })),
+        activeProjects,
+        blockedTasks,
+      },
+    };
+  },
+};
+
+// ─── send_telegram ─────────────────────────────────────────────────────────
+
 const sendTelegramArgs = z.object({
   text: z.string().min(1).max(4000).describe('Plain-text message body (Telegram caps at 4096).'),
   chatId: z
@@ -953,6 +1047,7 @@ export const TOOLS = {
   notify_user: notifyTool,
   log_observation: logObservationTool,
   restore_continuity: restoreContinuityTool,
+  metu_resume: metuResumeTool,
   send_telegram: sendTelegramTool,
   send_email: sendEmailTool,
   archive_project: archiveProjectTool,
