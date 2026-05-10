@@ -3,6 +3,7 @@ import type { AuthState } from '../state/auth';
 import type { HubStatus } from '../state/useHubConnection';
 import { PresencePanel } from '../forms/Panel';
 import { ObservingBadge } from './ObservingBadge';
+import { ClipboardRing } from './ClipboardRing';
 import { OnboardingWizard, shouldShowOnboarding } from './OnboardingWizard';
 import { UpdateBanner } from '../state/useUpdater';
 
@@ -45,6 +46,7 @@ export function Connected({
         </p>
       </div>
       {ok && <PresencePanel auth={auth} />}
+      {ok && <ClipboardRing auth={auth} />}
       <div className="card">
         <p className="muted" style={{ margin: 0 }}>
           Workspace
