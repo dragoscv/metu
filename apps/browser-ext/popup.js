@@ -70,8 +70,54 @@ document.querySelectorAll('.tab-btn').forEach((btn) => {
     document.querySelectorAll('.pane').forEach((p) => p.classList.remove('active'));
     btn.classList.add('active');
     $(`pane-${btn.dataset.pane}`).classList.add('active');
+    if (btn.dataset.pane === 'resume') void loadResume();
   });
 });
+
+async function loadResume() {
+  const list = $('resumeList');
+  const meta = $('resumeMeta');
+  const status = $('resumeStatus');
+  list.innerHTML = '';
+  status.textContent = '';
+  meta.textContent = 'Loading…';
+  const r = await chrome.runtime.sendMessage({ type: 'metu.resume' });
+  if (!r?.ok) {
+    meta.textContent = '';
+    status.textContent = r?.error ?? 'Error';
+    return;
+  }
+  const payload = r.result || {};
+  const briefings = Array.isArray(payload.briefings) ? payload.briefings : [];
+  meta.textContent = `${labelSince(payload.since)} · ${payload.timelineEventCount ?? 0} events`;
+  if (briefings.length === 0) {
+    status.textContent = 'No briefings yet — open a project on web to generate one.';
+    return;
+  }
+  const cfg = await chrome.storage.local.get(['apiUrl']);
+  const apiUrl = (cfg.apiUrl || API_URL_DEFAULT).replace(/\/$/, '');
+  for (const b of briefings) {
+    const li = document.createElement('li');
+    li.className = 'hit';
+    const score =
+      b.momentumScore != null
+        ? `<span class="score">${Math.round(b.momentumScore * 100)}%</span>`
+        : '';
+    li.innerHTML = `<div><strong>${escapeHtml(b.projectName)}</strong>${score}</div><div class="muted" style="margin-top:4px;">${escapeHtml((b.nextStep ?? '').slice(0, 240))}</div>`;
+    li.style.cursor = 'pointer';
+    li.addEventListener('click', () => {
+      chrome.tabs.create({ url: `${apiUrl}/projects/${b.projectId}` });
+    });
+    list.appendChild(li);
+  }
+}
+
+function labelSince(s) {
+  if (s === '3d') return 'Last 3 days';
+  if (s === '3w') return 'Last 3 weeks';
+  if (s === '3m') return 'Last 3 months';
+  return '';
+}
 
 // ─── Settings ─────────────────────────────────────────────────────────────
 

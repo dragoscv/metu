@@ -70,6 +70,7 @@ const sdk = {
   notify: (input) => api('/api/sdk/v1/notify', input),
   companionTurn: (input) => api('/api/sdk/v1/companion/turn', input),
   listProjects: () => apiGet('/api/sdk/v1/projects'),
+  resume: () => apiGet('/api/sdk/v1/resume'),
 };
 
 async function apiGet(path) {
@@ -265,6 +266,9 @@ chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
       if (msg?.type === 'metu.companionTurn') {
         const result = await sdk.companionTurn(msg.payload);
         return sendResponse({ ok: true, ...result });
+      }
+      if (msg?.type === 'metu.resume') {
+        return sendResponse({ ok: true, result: await sdk.resume() });
       }
       sendResponse({ ok: false, error: 'unknown_message' });
     } catch (e) {

@@ -181,6 +181,7 @@
 
   <div class="tabs">
     <button class="tab-btn active" data-pane="capture">Capture</button>
+    <button class="tab-btn" data-pane="resume">Resume</button>
     <button class="tab-btn" data-pane="recall">Recall</button>
     <button class="tab-btn" data-pane="notify">Notify</button>
     <button class="tab-btn" data-pane="ask">Ask</button>
@@ -194,6 +195,12 @@
     </p>
     <button id="save">Capture</button>
     <p class="muted" id="captureStatus"></p>
+  </section>
+
+  <section id="pane-resume" class="pane">
+    <p class="muted" id="resumeMeta" style="margin:0 0 6px;"></p>
+    <ul id="resumeList" class="hits"></ul>
+    <p class="status" id="resumeStatus"></p>
   </section>
 
   <section id="pane-recall" class="pane">
