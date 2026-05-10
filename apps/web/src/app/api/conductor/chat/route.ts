@@ -9,7 +9,7 @@
  * tool_calls produced. Returns a UI message stream consumed by the client.
  */
 import { type NextRequest } from 'next/server';
-import { asc, eq } from 'drizzle-orm';
+import { and, asc, eq } from 'drizzle-orm';
 import { stepCountIs, streamText, type ModelMessage } from 'ai';
 import { auth } from '@metu/auth';
 import { getDb } from '@metu/db';
@@ -17,6 +17,7 @@ import { conversation, message } from '@metu/db/schema';
 import { getModel, buildConductorSystem, estimateCostUsd } from '@metu/ai';
 import { agent } from '@metu/core';
 import { log } from '@/lib/logger';
+import { rateLimit } from '@/lib/ratelimit';
 
 export const runtime = 'nodejs';
 export const maxDuration = 120;
@@ -26,6 +27,10 @@ const HISTORY_LIMIT = 60;
 export async function POST(req: NextRequest) {
   const session = await auth();
   if (!session) return new Response('Unauthenticated', { status: 401 });
+
+  // Per-user throttle. The session is the cheapest reliable key here.
+  const limited = await rateLimit('conductor-chat', `u:${session.user.id}`);
+  if (limited) return limited;
 
   const body = (await req.json().catch(() => null)) as {
     conversationId?: string;
@@ -39,9 +44,14 @@ export async function POST(req: NextRequest) {
   const [convo] = await db
     .select()
     .from(conversation)
-    .where(eq(conversation.id, body.conversationId))
+    .where(
+      and(
+        eq(conversation.id, body.conversationId),
+        eq(conversation.workspaceId, session.user.workspaceId),
+      ),
+    )
     .limit(1);
-  if (!convo || convo.workspaceId !== session.user.workspaceId) {
+  if (!convo) {
     return new Response('Conversation not found', { status: 404 });
   }
 
