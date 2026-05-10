@@ -21,6 +21,7 @@ mod a11y;
 mod forms;
 mod fs;
 mod input;
+mod mdns;
 mod screenshot;
 mod see;
 mod shell;
@@ -255,6 +256,9 @@ pub fn run() {
             forms::presence_pet_show,
             forms::presence_pet_hide,
             forms::presence_pet_set_clickthrough,
+            mdns::mdns_announce,
+            mdns::mdns_stop,
+            mdns::mdns_status,
         ])
         .setup(|app| {
             // ── Tray ────────────────────────────────────────────────────

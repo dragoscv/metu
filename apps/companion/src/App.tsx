@@ -8,6 +8,7 @@
  *                 `useHubConnection` hook.
  */
 import { useEffect, useState } from 'react';
+import { invoke } from '@tauri-apps/api/core';
 import { loadAuth, saveAuth, clearAuth, type AuthState } from './state/auth';
 import { Pairing } from './ui/Pairing';
 import { Connected } from './ui/Connected';
@@ -21,6 +22,21 @@ export function App() {
   }, []);
 
   const status = useHubConnection(auth && auth !== 'loading' ? auth : null);
+
+  // Best-effort LAN presence beacon: advertise the paired hub URL via
+  // mDNS so other devices on the same network can discover it. Silently
+  // ignored on networks without multicast (corporate VPN, container).
+  useEffect(() => {
+    if (!auth || auth === 'loading') return;
+    invoke('mdns_announce', {
+      hub: auth.apiBase,
+      workspace: auth.workspaceId,
+      name: null,
+    }).catch(() => {});
+    return () => {
+      invoke('mdns_stop').catch(() => {});
+    };
+  }, [auth]);
 
   if (auth === 'loading') {
     return (

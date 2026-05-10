@@ -42,6 +42,11 @@ base64 = "0.22"
 # Slice 7 — synthetic input + shell allowlist.
 enigo = "0.2"
 
+# mDNS / DNS-SD presence beacon (advertise companion on the LAN so other
+# devices can discover the paired hub URL via TXT records).
+mdns-sd = "0.11"
+hostname = "0.4"
+
 # Slice 7b — native window focus / move (Windows only for now;
 # macOS AXUIElement and Linux AT-SPI are future follow-ups).
 [target.'cfg(windows)'.dependencies]
