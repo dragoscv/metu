@@ -11,6 +11,7 @@
 import { and, desc, eq, gt, gte, isNull, sql } from 'drizzle-orm';
 import { restoreProjectContext } from '@metu/core/continuity';
 import { getDb } from '@metu/db';
+import { workspacesWithLiveDevices } from '@metu/db/queries';
 import {
   continuityBriefing,
   notification,
@@ -344,10 +345,15 @@ export const continuityMorningDelivery = inngest.createFunction(
 
     // Live push to connected devices (companion / vscode-ext / browser-ext /
     // mobile). Best-effort, returns null if HUB_URL/HUB_INTERNAL_SECRET unset.
+    // Skips workspaces with no fresh-online device to avoid pointless broadcasts.
     const hubDelivered = await step.run('hub-broadcast', async () => {
+      const wsIds = Array.from(new Set(recipients.map((r) => r.workspaceId)));
+      const live = await workspacesWithLiveDevices(wsIds);
+      if (live.size === 0) return 0;
       let total = 0;
       const seen = new Set<string>();
       for (const r of recipients) {
+        if (!live.has(r.workspaceId)) continue;
         if (seen.has(r.workspaceId)) continue;
         seen.add(r.workspaceId);
         const res = await hubBroadcast({

@@ -7,3 +7,4 @@ export * from './external';
 export * from './oauth';
 export * from './audit';
 export * from './continuity';
+export * from './presence';
