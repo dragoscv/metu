@@ -18,6 +18,7 @@ import { Page, PageHeader, PageSection, Card, CardTitle, Badge, StatusDot } from
 import { getDb } from '@metu/db';
 import { project, task, timelineEvent } from '@metu/db/schema';
 import { listRecentBriefings } from '@metu/db/queries';
+import { RegenerateBriefingButton } from './regenerate-button';
 
 export const dynamic = 'force-dynamic';
 
@@ -258,13 +259,16 @@ export default async function ResumePage({ searchParams }: PageProps) {
                     ) : (
                       <span />
                     )}
-                    <Link
-                      href={`/projects/${p.id}`}
-                      className="inline-flex items-center gap-1 hover:text-[var(--color-brand)]"
-                    >
-                      Resume
-                      <ArrowRight className="h-3 w-3" />
-                    </Link>
+                    <div className="flex items-center gap-1">
+                      <RegenerateBriefingButton projectId={p.id} hasBriefing={!!b} />
+                      <Link
+                        href={`/projects/${p.id}`}
+                        className="inline-flex items-center gap-1 hover:text-[var(--color-brand)]"
+                      >
+                        Resume
+                        <ArrowRight className="h-3 w-3" />
+                      </Link>
+                    </div>
                   </div>
                 </Card>
               );
