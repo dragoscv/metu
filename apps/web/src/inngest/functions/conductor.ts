@@ -15,6 +15,7 @@ import { and, eq } from 'drizzle-orm';
 import { getDb } from '@metu/db';
 import {
   agentPolicy,
+  agentRun,
   conversation,
   message,
   timelineEvent,
@@ -133,6 +134,7 @@ export const onConductorTick = inngest.createFunction(
       inputTokens: null,
       outputTokens: null,
     };
+    let planError: string | null = null;
     try {
       const r = await step.run('plan', () =>
         agent.planConductor({ workspaceId, reason: tickReason }),
@@ -143,6 +145,7 @@ export const onConductorTick = inngest.createFunction(
       usage = r.usage;
     } catch (err) {
       const msg = err instanceof Error ? err.message : String(err);
+      planError = msg;
       await step.run('plan-failed', async () => {
         const db = getDb();
         await db.insert(message).values({
@@ -154,6 +157,40 @@ export const onConductorTick = inngest.createFunction(
         });
       });
     }
+
+    // Record this tick as an agent_run for the /agents audit view. One row
+    // per tick irrespective of whether planning succeeded — failed ticks
+    // are useful signal too. `agentRunId` is then threaded into the
+    // assistant message + every tool_call below for full traceability.
+    const agentRunId = await step.run('agent-run', async () => {
+      const db = getDb();
+      const costUsd = estimateCostUsd(provider, modelId, usage);
+      const [row] = await db
+        .insert(agentRun)
+        .values({
+          workspaceId,
+          userId: ownerUserId || null,
+          kind: 'conductor.tick',
+          intent: 'agentic',
+          providerUsed: (provider || null) as never,
+          modelUsed: modelId || null,
+          inputTokens: usage.inputTokens,
+          outputTokens: usage.outputTokens,
+          costUsd,
+          status: planError ? 'failed' : 'success',
+          inputPreview: (tickReason ?? '').slice(0, 500) || null,
+          outputPreview: plan?.pulse?.slice(0, 500) ?? null,
+          error: planError,
+          metadata: {
+            actions: plan?.actions ?? [],
+            notes: plan?.notes ?? null,
+            reason: tickReason ?? null,
+          },
+          finishedAt: new Date(),
+        })
+        .returning();
+      return row?.id ?? null;
+    });
 
     if (plan) {
       await step.run('post-pulse', async () => {
@@ -169,6 +206,7 @@ export const onConductorTick = inngest.createFunction(
           inputTokens: usage.inputTokens,
           outputTokens: usage.outputTokens,
           costUsd,
+          agentRunId,
           metadata: {
             actions: plan!.actions,
             notes: plan!.notes,
@@ -196,6 +234,7 @@ export const onConductorTick = inngest.createFunction(
             workspaceId,
             userId: ownerUserId,
             conversationId: thread.id,
+            agentRunId,
             tool: action.tool,
             args: action.args,
           });
