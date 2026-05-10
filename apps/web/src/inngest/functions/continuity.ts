@@ -379,3 +379,60 @@ export const continuityMorningDelivery = inngest.createFunction(
     };
   },
 );
+
+/**
+ * Pre-morning prewarm — at 05:30 daily, find every active project with
+ * any momentum but no fresh briefing in the last 24h and fan out
+ * continuity/prewarm events. Ensures the 06:30 morning delivery has
+ * fresh content to pick from instead of yesterday's leftovers.
+ */
+export const continuityMorningPrewarm = inngest.createFunction(
+  {
+    id: 'continuity-morning-prewarm',
+    name: 'Continuity morning prewarm fan-out',
+    concurrency: { limit: 2 },
+  },
+  { cron: '30 5 * * *' },
+  async ({ step, logger }) => {
+    const stale = await step.run('list-stale-projects', async () => {
+      const db = getDb();
+      const cutoff = new Date(Date.now() - 24 * 60 * 60 * 1000);
+      return db
+        .select({ workspaceId: project.workspaceId, projectId: project.id })
+        .from(project)
+        .where(
+          and(
+            eq(project.status, 'active'),
+            isNull(project.deletedAt),
+            gt(project.momentumScore, 0.05),
+            sql`not exists (
+              select 1 from ${continuityBriefing} cb
+              where cb.project_id = ${project.id}
+                and cb.workspace_id = ${project.workspaceId}
+                and cb.generated_at >= ${cutoff}
+            )`,
+          ),
+        )
+        .limit(200);
+    });
+
+    if (stale.length === 0) {
+      logger.info('continuity-morning-prewarm nothing stale');
+      return { ok: true, fanned: 0 };
+    }
+
+    await step.sendEvent(
+      'fan-prewarm',
+      stale.map((s) => ({
+        name: 'continuity/prewarm' as const,
+        data: {
+          workspaceId: s.workspaceId,
+          projectId: s.projectId,
+          reason: 'morning-prewarm',
+        },
+      })),
+    );
+
+    return { ok: true, fanned: stale.length };
+  },
+);

@@ -20,6 +20,7 @@ import {
   onContinuityPrewarm,
   continuityMorningCron,
   continuityMorningDelivery,
+  continuityMorningPrewarm,
 } from '@/inngest/functions/continuity';
 import { conductorProactiveCron } from '@/inngest/functions/conductor-proactive';
 import { conductorIdleNudgeCron } from '@/inngest/functions/conductor-idle-nudge';
@@ -53,6 +54,7 @@ export const { GET, POST, PUT } = serve({
     onGithubRepoStatsSync,
     onContinuityPrewarm,
     continuityMorningCron,
+    continuityMorningPrewarm,
     continuityMorningDelivery,
     conductorProactiveCron,
     conductorIdleNudgeCron,
