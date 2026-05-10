@@ -301,6 +301,23 @@ export async function runTool(input: RunToolInput): Promise<RunToolResult> {
       importance: 0.5,
       payload: { toolCallId, tool: input.tool },
     });
+    // Push a notification so HITL doesn't require the user to visit /audit.
+    // urgency=high for high_risk tools (send_telegram, merge_pr, etc), normal otherwise.
+    await db.insert(notification).values({
+      workspaceId: input.workspaceId,
+      userId: input.userId,
+      title: `Approve: ${input.tool}`,
+      body: JSON.stringify(parsedArgs).slice(0, 280),
+      urgency: tool!.kind === 'high_risk' ? 'high' : 'normal',
+      source: 'conductor:tool-approval',
+      actionUrl: `/audit/${toolCallId}`,
+      actions: [
+        { id: 'approve', label: 'Approve', kind: 'approve' as const, toolCallId },
+        { id: 'reject', label: 'Reject', kind: 'reject' as const, toolCallId },
+        { id: 'open', label: 'Open audit', kind: 'open' as const, href: `/audit/${toolCallId}` },
+      ],
+      metadata: { toolCallId, tool: input.tool, kind: tool!.kind },
+    });
     return { toolCallId, status: 'awaiting_approval' };
   }
 
