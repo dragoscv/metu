@@ -16,8 +16,21 @@ export interface BackLinkProps {
  * - If the user landed here from another page in this app (same origin), pops history.
  * - Otherwise navigates to the provided fallback `href`.
  * Renders as an <a> for keyboard/right-click affordances; intercepts on click.
+ *
+ * `href` is hardened to internal paths only — a `javascript:` URL would
+ * otherwise execute on right-click "open in new tab" / middle-click,
+ * bypassing the onClick interceptor. Anything that doesn't start with `/`
+ * is rewritten to `/`.
  */
+function sanitizeHref(href: string): string {
+  if (typeof href !== 'string' || !href.startsWith('/')) return '/';
+  // Reject protocol-relative URLs like `//evil.example.com`.
+  if (href.startsWith('//')) return '/';
+  return href;
+}
+
 export function BackLink({ href, label = 'Back', className }: BackLinkProps) {
+  const safeHref = sanitizeHref(href);
   const router = useRouter();
   const [canPop, setCanPop] = useState(false);
   const startKeyRef = useRef<string | null>(null);
@@ -38,14 +51,14 @@ export function BackLink({ href, label = 'Back', className }: BackLinkProps) {
       if (e.metaKey || e.ctrlKey || e.shiftKey || e.altKey || e.button !== 0) return;
       e.preventDefault();
       if (canPop) router.back();
-      else router.push(href);
+      else router.push(safeHref);
     },
-    [canPop, href, router],
+    [canPop, safeHref, router],
   );
 
   return (
     <a
-      href={href}
+      href={safeHref}
       onClick={onClick}
       className={cn(
         'group inline-flex items-center gap-1 rounded text-xs text-[var(--color-fg-subtle)] transition-colors hover:text-[var(--color-fg)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--color-ring)]',

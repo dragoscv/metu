@@ -15,6 +15,16 @@ import {
 import { onConductorNotify } from '@/inngest/functions/notify';
 import { goalsMorningCheckin, goalsWeeklyReview, onGoalsReview } from '@/inngest/functions/goals';
 import { onGithubRepoLinked } from '@/inngest/functions/github-repo-indexing';
+import { githubStatsCron, onGithubRepoStatsSync } from '@/inngest/functions/github-stats-sync';
+import { onContinuityPrewarm, continuityMorningCron } from '@/inngest/functions/continuity';
+import { conductorProactiveCron } from '@/inngest/functions/conductor-proactive';
+import { conductorIdleNudgeCron } from '@/inngest/functions/conductor-idle-nudge';
+import { companionAgentAnticipatory } from '@/inngest/functions/companion-anticipatory';
+import { recentDigestRefresh } from '@/inngest/functions/recent-digest';
+import { dailyDigestEmailCron } from '@/inngest/functions/daily-digest-email';
+import { weeklyDigestEmailCron } from '@/inngest/functions/weekly-digest-email';
+import { gcsCleanupCron } from '@/inngest/functions/gcs-cleanup';
+import { memoryJanitorWeekly } from '@/inngest/functions/memory-janitor';
 
 export const runtime = 'nodejs';
 export const maxDuration = 300;
@@ -35,5 +45,17 @@ export const { GET, POST, PUT } = serve({
     goalsWeeklyReview,
     onGoalsReview,
     onGithubRepoLinked,
+    githubStatsCron,
+    onGithubRepoStatsSync,
+    onContinuityPrewarm,
+    continuityMorningCron,
+    conductorProactiveCron,
+    conductorIdleNudgeCron,
+    companionAgentAnticipatory,
+    recentDigestRefresh,
+    dailyDigestEmailCron,
+    weeklyDigestEmailCron,
+    gcsCleanupCron,
+    memoryJanitorWeekly,
   ],
 });

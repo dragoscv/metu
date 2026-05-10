@@ -11,7 +11,13 @@ import { goal, goalCheckin, goalLink, target, targetValue } from '@metu/db/schem
 import { goals } from '@metu/core';
 
 const cadence = z.enum(['daily', 'weekly', 'monthly', 'quarterly', 'once']);
-const progressMode = z.enum(['manual', 'from_tasks', 'from_evidence']);
+const progressMode = z.enum([
+  'manual',
+  'from_tasks',
+  'from_projects',
+  'from_decisions',
+  'from_evidence',
+]);
 const status = z.enum(['active', 'paused', 'achieved', 'dropped']);
 const period = z.enum(['daily', 'weekly', 'monthly', 'quarterly', 'yearly', 'once']);
 

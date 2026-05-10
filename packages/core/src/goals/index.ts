@@ -16,13 +16,26 @@
  *   slipping  → no advance in 1× cadence window AND deadline within 2× cadence.
  *   stalled   → no advance in 2× cadence windows OR deadline overdue.
  */
-import { and, desc, eq, gte, sql } from 'drizzle-orm';
+import { and, desc, eq, gte, isNull, sql } from 'drizzle-orm';
 import { getDb } from '@metu/db';
-import { goal, goalCheckin, goalLink, task, timelineEvent } from '@metu/db/schema';
+import {
+  decision,
+  goal,
+  goalCheckin,
+  goalLink,
+  project,
+  task,
+  timelineEvent,
+} from '@metu/db/schema';
 
 export type Drift = 'on_track' | 'slipping' | 'stalled';
 export type Cadence = 'daily' | 'weekly' | 'monthly' | 'quarterly' | 'once';
-export type ProgressMode = 'manual' | 'from_tasks' | 'from_evidence';
+export type ProgressMode =
+  | 'manual'
+  | 'from_tasks'
+  | 'from_projects'
+  | 'from_decisions'
+  | 'from_evidence';
 
 const CADENCE_DAYS: Record<Cadence, number> = {
   daily: 1,
@@ -52,6 +65,10 @@ export interface ReviewResult {
   changed: boolean;
   /** Conductor-friendly suggestion for the next concrete step. */
   nudge?: string;
+  /** True when this review surfaced the goal at full progress for the first time
+   *  (auto-derived modes only — manual goals are user-controlled). The
+   *  Conductor / UI can use this to suggest marking the goal as 'achieved'. */
+  achievementCandidate?: boolean;
 }
 
 export async function reviewGoals(workspaceId: string): Promise<ReviewResult[]> {
@@ -77,6 +94,12 @@ export async function reviewGoals(workspaceId: string): Promise<ReviewResult[]> 
     const next = await computeProgress(workspaceId, g);
     const drift = classifyDrift(g, next.progress, now);
     const changed = next.progress !== g.progress || drift !== 'on_track';
+    const isAutoMode =
+      g.progressMode === 'from_tasks' ||
+      g.progressMode === 'from_projects' ||
+      g.progressMode === 'from_decisions' ||
+      g.progressMode === 'from_evidence';
+    const achievementCandidate = isAutoMode && next.progress >= 1 && g.progress < 1;
 
     await db
       .update(goal)
@@ -88,6 +111,16 @@ export async function reviewGoals(workspaceId: string): Promise<ReviewResult[]> 
       })
       .where(eq(goal.id, g.id));
 
+    if (achievementCandidate) {
+      await db.insert(timelineEvent).values({
+        workspaceId,
+        kind: 'goal.achievement_candidate',
+        title: `"${g.title}" reached 100% — consider marking achieved`,
+        payload: { goalId: g.id, progressMode: g.progressMode },
+        importance: 0.8,
+      });
+    }
+
     results.push({
       goalId: g.id,
       title: g.title,
@@ -96,6 +129,7 @@ export async function reviewGoals(workspaceId: string): Promise<ReviewResult[]> 
       drift,
       changed,
       nudge: next.nudge,
+      achievementCandidate: achievementCandidate || undefined,
     });
   }
 
@@ -121,24 +155,82 @@ async function computeProgress(
       };
     }
     case 'from_tasks': {
-      // Linked tasks via goal_link.
+      // Union of (a) explicitly-pinned tasks (task.goal_id = g.id) and
+      // (b) goal_link evidence tasks. Dedupe by task id so a task pinned AND
+      // linked counts once. A task counts as "done" if its status is 'done'.
       const [counts] = await db
         .select({
-          total: sql<number>`count(*)::int`,
-          done: sql<number>`count(*) filter (where ${task.status} = 'done')::int`,
+          total: sql<number>`count(distinct ${task.id})::int`,
+          done: sql<number>`count(distinct ${task.id}) filter (where ${task.status} = 'done')::int`,
         })
-        .from(goalLink)
-        .innerJoin(task, eq(task.id, goalLink.refId))
-        .where(and(eq(goalLink.goalId, g.id), eq(goalLink.refKind, 'task')));
+        .from(task)
+        .leftJoin(goalLink, and(eq(goalLink.refId, task.id), eq(goalLink.refKind, 'task')))
+        .where(
+          and(
+            eq(task.workspaceId, workspaceId),
+            sql`(${task.goalId} = ${g.id} OR ${goalLink.goalId} = ${g.id})`,
+          ),
+        );
       const total = Number(counts?.total ?? 0);
       const done = Number(counts?.done ?? 0);
       if (total === 0) {
         return {
           progress: 0,
-          nudge: `Link some tasks to "${g.title}" so progress can be tracked.`,
+          nudge: `Pin or link tasks to "${g.title}" so progress can be tracked.`,
         };
       }
       return { progress: clamp01(done / total) };
+    }
+    case 'from_projects': {
+      // Ratio of pinned projects that are 'archived' (the canonical
+      // shipped/done state) over total pinned. Active/paused/killed all
+      // count as not-done. Killed = abandoned, intentionally counted as
+      // not-done so killing a project hurts the goal's progress.
+      const [counts] = await db
+        .select({
+          total: sql<number>`count(*)::int`,
+          done: sql<number>`count(*) filter (where ${project.status} = 'archived')::int`,
+        })
+        .from(project)
+        .where(
+          and(
+            eq(project.workspaceId, workspaceId),
+            eq(project.goalId, g.id),
+            isNull(project.deletedAt),
+          ),
+        );
+      const total = Number(counts?.total ?? 0);
+      const done = Number(counts?.done ?? 0);
+      if (total === 0) {
+        return {
+          progress: 0,
+          nudge: `Pin a project to "${g.title}" so progress can be tracked.`,
+        };
+      }
+      return { progress: clamp01(done / total) };
+    }
+    case 'from_decisions': {
+      // Each pinned decision contributes 0.2 to progress, capped at 1.0.
+      // The intuition: 5 well-reasoned decisions usually means a goal has
+      // been thought through deeply enough to be considered "resolved".
+      const [counts] = await db
+        .select({ n: sql<number>`count(*)::int` })
+        .from(decision)
+        .where(
+          and(
+            eq(decision.workspaceId, workspaceId),
+            eq(decision.goalId, g.id),
+            isNull(decision.deletedAt),
+          ),
+        );
+      const n = Number(counts?.n ?? 0);
+      if (n === 0) {
+        return {
+          progress: 0,
+          nudge: `Log a decision pinned to "${g.title}" to start building clarity.`,
+        };
+      }
+      return { progress: clamp01(n * 0.2) };
     }
     case 'from_evidence': {
       // Heuristic: activity in last cadence window on linked entities + raw

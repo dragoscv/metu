@@ -1,11 +1,13 @@
 'use client';
 import { useState, useTransition } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { Button, Card, CardTitle, Page, PageHeader } from '@metu/ui';
+import { Button, Card, CardTitle, Page, PageHeader, StatusDot } from '@metu/ui';
+import { SdkQuickstart } from './sdk-quickstart';
 import {
   registerAppAction,
   revokeAppAction,
   rotateClientSecretAction,
+  mintAccessTokenAction,
   type RegisterAppResult,
 } from '@/app/actions/apps';
 
@@ -18,6 +20,10 @@ export interface RegisteredApp {
   redirectUris: string[];
   iconUrl: string | null;
   webhookUrl: string | null;
+  /** ISO timestamp of the most recent SDK token use across all of this app's tokens. */
+  lastUsedAt: string | null;
+  /** Count of access tokens currently valid (not revoked, not expired). */
+  activeTokens: number;
 }
 
 export function AppsManager({ apps }: { apps: RegisteredApp[] }) {
@@ -73,6 +79,8 @@ export function AppsManager({ apps }: { apps: RegisteredApp[] }) {
           apps.map((app) => <AppCard key={app.id} app={app} />)
         )}
       </div>
+
+      <SdkQuickstart />
     </Page>
   );
 }
@@ -185,6 +193,10 @@ function SecretCard({ secret, onDismiss }: { secret: RegisterAppResult; onDismis
 function AppCard({ app }: { app: RegisteredApp }) {
   const [pending, startTransition] = useTransition();
   const [rotated, setRotated] = useState<string | null>(null);
+  const [minted, setMinted] = useState<{ token: string; expiresAt: string; scopes: string } | null>(
+    null,
+  );
+  const [mintError, setMintError] = useState<string | null>(null);
   return (
     <Card>
       <div className="flex items-start gap-3">
@@ -202,6 +214,7 @@ function AppCard({ app }: { app: RegisteredApp }) {
             {app.type} · <code className="font-mono text-[11px]">{app.clientId}</code>
           </div>
         </div>
+        <PresenceBadge lastUsedAt={app.lastUsedAt} activeTokens={app.activeTokens} />
       </div>
       <div className="mt-3 text-xs text-[var(--color-fg-muted)]">
         scopes: <code className="font-mono">{app.allowedScopes}</code>
@@ -221,7 +234,34 @@ function AppCard({ app }: { app: RegisteredApp }) {
           New secret (shown once): <code className="break-all font-mono">{rotated}</code>
         </div>
       ) : null}
+      {minted ? (
+        <div className="mt-3 rounded-md border border-[var(--color-warning)] bg-[var(--color-warning-bg,transparent)] p-2 text-xs">
+          <div className="font-medium text-[var(--color-fg)]">Access token (shown once)</div>
+          <code className="mt-1 block break-all font-mono">{minted.token}</code>
+          <div className="mt-1 text-[var(--color-fg-subtle)]">
+            scopes: <code className="font-mono">{minted.scopes}</code> · expires{' '}
+            {new Date(minted.expiresAt).toLocaleDateString()}
+          </div>
+        </div>
+      ) : null}
+      {mintError ? (
+        <div className="mt-2 text-xs text-[var(--color-danger)]">{mintError}</div>
+      ) : null}
       <div className="mt-3 flex justify-end gap-2">
+        <Button
+          variant="ghost"
+          disabled={pending}
+          onClick={() => {
+            setMintError(null);
+            startTransition(async () => {
+              const r = await mintAccessTokenAction({ clientUuid: app.id, ttlDays: 90 });
+              if (r.ok) setMinted({ token: r.token, expiresAt: r.expiresAt, scopes: r.scopes });
+              else setMintError(r.error);
+            });
+          }}
+        >
+          Mint token
+        </Button>
         {app.type !== 'public' ? (
           <Button
             variant="ghost"
@@ -308,4 +348,64 @@ function Pair({ label, value, mono }: { label: string; value: string; mono?: boo
       </dd>
     </div>
   );
+}
+
+/**
+ * Presence dot derived from the most recent SDK token use.
+ *
+ *   < 2 min   → online (green, pulsing)
+ *   < 30 min  → idle (yellow)
+ *   else      → offline (gray)
+ *
+ * Apps with no minted tokens are shown as "no tokens" — distinct from
+ * offline because there is nothing for the user to revoke or look up.
+ */
+function PresenceBadge({
+  lastUsedAt,
+  activeTokens,
+}: {
+  lastUsedAt: string | null;
+  activeTokens: number;
+}) {
+  if (activeTokens === 0 && !lastUsedAt) {
+    return (
+      <span className="text-[10px] uppercase tracking-wider text-[var(--color-fg-subtle)]">
+        no tokens
+      </span>
+    );
+  }
+  const ageMs = lastUsedAt ? Date.now() - new Date(lastUsedAt).getTime() : Infinity;
+  let state: 'success' | 'warning' | 'offline' = 'offline';
+  let label = 'offline';
+  if (ageMs < 2 * 60_000) {
+    state = 'success';
+    label = 'online';
+  } else if (ageMs < 30 * 60_000) {
+    state = 'warning';
+    label = 'idle';
+  }
+  return (
+    <div className="flex flex-col items-end gap-0.5 text-right">
+      <div className="flex items-center gap-1.5">
+        <StatusDot state={state} pulse={state === 'success'} size="sm" />
+        <span className="text-[10px] uppercase tracking-wider text-[var(--color-fg-muted)]">
+          {label}
+        </span>
+      </div>
+      <div className="text-[10px] text-[var(--color-fg-subtle)]">
+        {lastUsedAt ? `seen ${formatAgo(ageMs)}` : 'never used'}
+      </div>
+    </div>
+  );
+}
+
+function formatAgo(ms: number): string {
+  const sec = Math.floor(ms / 1000);
+  if (sec < 60) return `${sec}s ago`;
+  const min = Math.floor(sec / 60);
+  if (min < 60) return `${min}m ago`;
+  const hr = Math.floor(min / 60);
+  if (hr < 24) return `${hr}h ago`;
+  const day = Math.floor(hr / 24);
+  return `${day}d ago`;
 }

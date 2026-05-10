@@ -24,6 +24,35 @@ tauri-plugin-os = "2.2"
 tauri-plugin-deep-link = "2.2"
 tauri-plugin-global-shortcut = "2.2"
 tauri-plugin-single-instance = "2.2"
+# Presence (slice 1 — declared, wired in slices 3/6/7)
+tauri-plugin-clipboard-manager = "2.2"
+tauri-plugin-fs = "2.2"
+tauri-plugin-http = "2.2"
+tauri-plugin-dialog = "2.2"
+tauri-plugin-window-state = "2.2"
+tauri-plugin-positioner = "2.2"
+tauri-plugin-autostart = "2.2"
+tauri-plugin-updater = "2.2"
+
+# Slice 6 — sensory tools (screenshot, window list, a11y tree).
+xcap = "0.0.14"
+image = { version = "0.25", default-features = false, features = ["png", "jpeg"] }
+base64 = "0.22"
+
+# Slice 7 — synthetic input + shell allowlist.
+enigo = "0.2"
+
+# Slice 7b — native window focus / move (Windows only for now;
+# macOS AXUIElement and Linux AT-SPI are future follow-ups).
+[target.'cfg(windows)'.dependencies]
+windows = { version = "0.56", features = [
+  "Win32_Foundation",
+  "Win32_UI_WindowsAndMessaging",
+] }
+# Companion-Agent slice 1 — deep accessibility tree (UI Automation).
+# Default features (`input`, `control`, `pattern`) give us InvokePattern /
+# ValuePattern / TogglePattern out of the box.
+uiautomation = "0.25"
 
 [features]
 default = []

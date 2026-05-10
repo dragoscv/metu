@@ -1,192 +1,567 @@
 /**
  * metu MCP server.
  *
- * Exposes second-brain primitives as MCP tools so any MCP client (Claude
- * Desktop, Cursor, VS Code Copilot via mcp.json) can read and write metu
- * memory.
+ * Exposes the FULL Conductor tool registry as MCP tools so any MCP client
+ * (Claude Desktop, Cursor, VS Code Copilot via mcp.json) can drive the
+ * second brain end-to-end. Every call goes through `runTool()` so
+ * workspace ACL, audit (`tool_call`), cost meters, and recursion limits
+ * apply identically to in-app agent runs.
  *
- * Tools:
- *   metu.recall            — semantic recall over memory
- *   metu.list_projects     — projects with momentum
- *   metu.project_pulse     — pulse for a project
- *   metu.restore_context   — "where was I" briefing
- *   metu.create_capture    — push a capture into the inbox
- *   metu.log_decision      — log an architectural decision
+ * Auth: bearer-token only (`metu_at_*`). Tokens are minted in the web
+ * app's `/apps` UI ("Mint token" on any registered oauthClient). The
+ * token's row determines:
+ *   - `workspaceId` and `userId` for `runTool`
+ *   - `scopes` — calls to tools require `tools:invoke` scope
  *
- * Auth: WORKSPACE_ID + METU_API_TOKEN env (token is a user PAT minted in /settings).
+ * Stdio mode (default): reads `METU_API_TOKEN` once at boot, resolves
+ * the workspace+user, and serves a single tenant.
  *
- * Transports: stdio (local clients) + streamable HTTP (Cloud Run). Default stdio.
+ * HTTP mode (`METU_MCP_HTTP_PORT`): per-request `Authorization: Bearer
+ * metu_at_*` header. Each SSE session resolves its own token, so a
+ * single hosted MCP server can serve many tenants.
  */
+import { createServer, type IncomingMessage, type ServerResponse } from 'node:http';
+import { randomUUID } from 'node:crypto';
+import { and, eq, gt, isNull, lt, or, sql } from 'drizzle-orm';
 import { Server } from '@modelcontextprotocol/sdk/server/index.js';
 import { StdioServerTransport } from '@modelcontextprotocol/sdk/server/stdio.js';
+import { StreamableHTTPServerTransport } from '@modelcontextprotocol/sdk/server/streamableHttp.js';
 import { CallToolRequestSchema, ListToolsRequestSchema } from '@modelcontextprotocol/sdk/types.js';
 import { z } from 'zod';
-import { memory, continuity, projectIntel } from '@metu/core';
-import { listProjects } from '@metu/db/queries';
+import { runTool, TOOLS, type ToolName } from '@metu/core/agent';
+import { runCompanionTurn } from '@metu/core/companion-agent';
+import { hashToken, parseScopes } from '@metu/auth/oauth';
 import { getDb } from '@metu/db';
-import { capture, decision, timelineEvent } from '@metu/db/schema';
+import { oauthToken } from '@metu/db/schema';
 
-const WORKSPACE_ID = process.env.METU_WORKSPACE_ID;
-if (!WORKSPACE_ID) throw new Error('METU_WORKSPACE_ID required');
+// ─── Token resolution ──────────────────────────────────────────────────────
 
-const server = new Server({ name: 'metu', version: '0.1.0' }, { capabilities: { tools: {} } });
+interface ResolvedAuth {
+  workspaceId: string;
+  userId: string;
+  scopes: string[];
+}
 
-const TOOLS = [
-  {
-    name: 'metu.recall',
-    description: 'Semantic recall over the workspace memory',
-    inputSchema: {
-      type: 'object',
-      properties: {
-        query: { type: 'string' },
-        projectId: { type: 'string' },
-        limit: { type: 'number', default: 8 },
-      },
-      required: ['query'],
-    },
-  },
-  {
-    name: 'metu.list_projects',
-    description: 'List active projects with momentum scores',
-    inputSchema: { type: 'object', properties: {} },
-  },
-  {
-    name: 'metu.project_pulse',
-    description: 'Generate a 3-sentence pulse for a project',
-    inputSchema: {
-      type: 'object',
-      properties: { projectId: { type: 'string' } },
-      required: ['projectId'],
-    },
-  },
-  {
-    name: 'metu.restore_context',
-    description: '"Where was I" 4-paragraph briefing for a project',
-    inputSchema: {
-      type: 'object',
-      properties: { projectId: { type: 'string' } },
-      required: ['projectId'],
-    },
-  },
-  {
-    name: 'metu.create_capture',
-    description: 'Capture a thought, decision, or note into the inbox',
-    inputSchema: {
-      type: 'object',
-      properties: {
-        content: { type: 'string' },
-        projectId: { type: 'string' },
-        kind: { type: 'string', default: 'text' },
-      },
-      required: ['content'],
-    },
-  },
-  {
-    name: 'metu.log_decision',
-    description: 'Log an architectural or product decision with rationale',
-    inputSchema: {
-      type: 'object',
-      properties: {
-        title: { type: 'string' },
-        rationale: { type: 'string' },
-        projectId: { type: 'string' },
-      },
-      required: ['title', 'rationale'],
-    },
-  },
-];
-
-server.setRequestHandler(ListToolsRequestSchema, async () => ({ tools: TOOLS }));
-
-server.setRequestHandler(CallToolRequestSchema, async (req) => {
-  const { name, arguments: args = {} } = req.params;
-  const ws = WORKSPACE_ID!;
+async function resolveToken(token: string): Promise<ResolvedAuth | null> {
+  if (!token.startsWith('metu_at_')) return null;
   const db = getDb();
+  const [row] = await db
+    .select()
+    .from(oauthToken)
+    .where(
+      and(
+        eq(oauthToken.tokenHash, hashToken(token)),
+        eq(oauthToken.kind, 'access_token'),
+        isNull(oauthToken.consumedAt),
+        isNull(oauthToken.revokedAt),
+        gt(oauthToken.expiresAt, new Date()),
+      ),
+    )
+    .limit(1);
+  if (!row || !row.userId) return null;
+  // Throttled liveness ping (max once / 60s) — same pattern as
+  // apps/web's findActiveTokenByHash. Surfaces "mcp last seen" on /apps.
+  const sixtySecondsAgo = new Date(Date.now() - 60_000);
+  void db
+    .update(oauthToken)
+    .set({ lastUsedAt: sql`now()` })
+    .where(
+      and(
+        eq(oauthToken.id, row.id),
+        or(isNull(oauthToken.lastUsedAt), lt(oauthToken.lastUsedAt, sixtySecondsAgo)),
+      ),
+    )
+    .catch(() => {});
+  return {
+    workspaceId: row.workspaceId,
+    userId: row.userId,
+    scopes: parseScopes(row.scopes),
+  };
+}
 
-  switch (name) {
-    case 'metu.recall': {
-      const a = z
-        .object({
-          query: z.string(),
-          projectId: z.string().optional(),
-          limit: z.number().optional(),
-        })
-        .parse(args);
-      const rows = await memory.recall({
-        workspaceId: ws,
-        query: a.query,
-        projectId: a.projectId,
-        limit: a.limit ?? 8,
-      });
-      return { content: [{ type: 'text', text: JSON.stringify(rows, null, 2) }] };
-    }
-    case 'metu.list_projects': {
-      const rows = await listProjects(ws);
-      return { content: [{ type: 'text', text: JSON.stringify(rows, null, 2) }] };
-    }
-    case 'metu.project_pulse': {
-      const a = z.object({ projectId: z.string() }).parse(args);
-      const r = await projectIntel.generateProjectPulse(ws, a.projectId);
-      return { content: [{ type: 'text', text: r.pulse }] };
-    }
-    case 'metu.restore_context': {
-      const a = z.object({ projectId: z.string() }).parse(args);
-      const r = await continuity.restoreProjectContext(ws, a.projectId);
-      return { content: [{ type: 'text', text: r.briefing }] };
-    }
-    case 'metu.create_capture': {
-      const a = z
-        .object({
-          content: z.string(),
-          projectId: z.string().optional(),
-          kind: z.string().default('text'),
-        })
-        .parse(args);
-      const [row] = await db
-        .insert(capture)
-        .values({
-          workspaceId: ws,
-          userId: process.env.METU_USER_ID!, // PAT issuer
-          projectId: a.projectId ?? null,
-          kind: a.kind as 'text',
-          status: 'ready',
-          content: a.content,
-          source: 'mcp',
-        })
-        .returning();
-      return { content: [{ type: 'text', text: `captured ${row?.id}` }] };
-    }
-    case 'metu.log_decision': {
-      const a = z
-        .object({
-          title: z.string(),
-          rationale: z.string(),
-          projectId: z.string().optional(),
-        })
-        .parse(args);
-      const [row] = await db
-        .insert(decision)
-        .values({
-          workspaceId: ws,
-          projectId: a.projectId ?? null,
-          title: a.title,
-          rationale: a.rationale,
-        })
-        .returning();
-      await db.insert(timelineEvent).values({
-        workspaceId: ws,
-        projectId: a.projectId ?? null,
-        kind: 'decision.logged',
-        title: a.title,
-        importance: 0.8,
-      });
-      return { content: [{ type: 'text', text: `logged ${row?.id}` }] };
-    }
-    default:
-      throw new Error(`Unknown tool: ${name}`);
-  }
+function hasScope(auth: ResolvedAuth, ...required: string[]): boolean {
+  if (auth.scopes.includes('*')) return true;
+  return required.some((s) => auth.scopes.includes(s));
+}
+
+// Resolved once at boot. Used to render fully-qualified `/audit/<id>` URLs
+// in awaiting_approval messages so MCP clients (which display plain text)
+// produce a clickable link instead of a bare path. Falls back to a token
+// users can paste; never throws.
+const WEB_URL = (process.env.METU_WEB_URL ?? 'https://metu.ro').replace(/\/+$/, '');
+
+function auditUrl(toolCallId: string): string {
+  return `${WEB_URL}/audit/${toolCallId}`;
+}
+
+// ─── MCP tool surface (shared) ─────────────────────────────────────────────
+
+const COMPANION_TOOL_NAME = 'metu.companion_turn';
+const COMPANION_CHAIN_TOOL_NAME = 'metu.companion_chain';
+const companionTurnArgs = z.object({
+  personaSlug: z
+    .string()
+    .min(1)
+    .max(80)
+    .describe('Built-in persona slug, e.g. "metu", "fox", "owl".'),
+  utterance: z.string().min(1).max(4000).describe('What the user said. Plain text.'),
+  eagerness: z
+    .number()
+    .int()
+    .min(0)
+    .max(100)
+    .optional()
+    .describe('0–100. Higher → more likely to escalate to the conductor.'),
 });
 
-const transport = new StdioServerTransport();
-await server.connect(transport);
-console.error('[metu-mcp] connected via stdio');
+const companionChainArgs = companionTurnArgs.extend({
+  followUp: z
+    .string()
+    .min(1)
+    .max(4000)
+    .optional()
+    .describe(
+      'Optional second utterance run *only* if the first turn stayed local. Useful for "try local, then ask deeper".',
+    ),
+});
+
+const COMPANION_MCP_TOOL = {
+  name: COMPANION_TOOL_NAME,
+  description:
+    '[companion-agent] Run one companion-agent turn for a built-in persona. Returns either a local reply or an escalation ack.',
+  inputSchema: z.toJSONSchema(companionTurnArgs) as Record<string, unknown>,
+};
+
+const COMPANION_CHAIN_MCP_TOOL = {
+  name: COMPANION_CHAIN_TOOL_NAME,
+  description:
+    '[companion-agent] Run a companion turn, then either (a) escalate hint if the first turn already escalated, or (b) optionally run a follow-up utterance to deepen the local response. Returns the full chain.',
+  inputSchema: z.toJSONSchema(companionChainArgs) as Record<string, unknown>,
+};
+
+const MCP_TOOLS = [
+  COMPANION_MCP_TOOL,
+  COMPANION_CHAIN_MCP_TOOL,
+  ...Object.values(TOOLS).map((t) => ({
+    name: t.name,
+    description: `[${t.kind}] ${t.description}`,
+    inputSchema: z.toJSONSchema(t.args) as Record<string, unknown>,
+  })),
+];
+
+function stringify(v: unknown): string {
+  if (typeof v === 'string') return v;
+  try {
+    return JSON.stringify(v, null, 2);
+  } catch {
+    return String(v);
+  }
+}
+
+async function dispatchCompanionTurn(
+  auth: ResolvedAuth,
+  args: Record<string, unknown>,
+): Promise<{
+  isError?: boolean;
+  content: { type: 'text'; text: string }[];
+  structuredContent?: Record<string, unknown>;
+}> {
+  if (!hasScope(auth, 'tools:invoke')) {
+    return {
+      isError: true,
+      content: [{ type: 'text', text: 'token missing required scope: tools:invoke' }],
+    };
+  }
+  const parsed = companionTurnArgs.safeParse(args);
+  if (!parsed.success) {
+    return {
+      isError: true,
+      content: [{ type: 'text', text: parsed.error.issues[0]?.message ?? 'invalid args' }],
+    };
+  }
+  try {
+    const result = await runCompanionTurn({
+      workspaceId: auth.workspaceId,
+      userId: auth.userId,
+      personaSlug: parsed.data.personaSlug,
+      utterance: parsed.data.utterance,
+      history: [],
+      eagerness: parsed.data.eagerness ?? 50,
+      surface: 'mcp',
+    });
+    if (result.kind === 'local') {
+      return {
+        content: [{ type: 'text', text: result.text }],
+        structuredContent: { lane: 'local', triage: result.triage },
+      };
+    }
+    return {
+      content: [
+        { type: 'text', text: result.ack },
+        { type: 'text', text: '(escalated to conductor — check the timeline for the full reply)' },
+      ],
+      structuredContent: { lane: 'escalate', triage: result.triage, eventId: result.eventId },
+    };
+  } catch (err) {
+    return {
+      isError: true,
+      content: [
+        {
+          type: 'text',
+          text: `companion turn failed: ${err instanceof Error ? err.message : String(err)}`,
+        },
+      ],
+    };
+  }
+}
+
+async function dispatchCompanionChain(
+  auth: ResolvedAuth,
+  args: Record<string, unknown>,
+): Promise<{
+  isError?: boolean;
+  content: { type: 'text'; text: string }[];
+  structuredContent?: Record<string, unknown>;
+}> {
+  if (!hasScope(auth, 'tools:invoke')) {
+    return {
+      isError: true,
+      content: [{ type: 'text', text: 'token missing required scope: tools:invoke' }],
+    };
+  }
+  const parsed = companionChainArgs.safeParse(args);
+  if (!parsed.success) {
+    return {
+      isError: true,
+      content: [{ type: 'text', text: parsed.error.issues[0]?.message ?? 'invalid args' }],
+    };
+  }
+  try {
+    const first = await runCompanionTurn({
+      workspaceId: auth.workspaceId,
+      userId: auth.userId,
+      personaSlug: parsed.data.personaSlug,
+      utterance: parsed.data.utterance,
+      history: [],
+      eagerness: parsed.data.eagerness ?? 50,
+      surface: 'mcp',
+    });
+    if (first.kind === 'escalated') {
+      return {
+        content: [
+          { type: 'text', text: first.ack },
+          {
+            type: 'text',
+            text: '(first turn escalated — open metu and watch the timeline for the full reply; no follow-up was sent)',
+          },
+        ],
+        structuredContent: {
+          step1: { lane: 'escalate', triage: first.triage, eventId: first.eventId },
+        },
+      };
+    }
+    if (!parsed.data.followUp) {
+      return {
+        content: [{ type: 'text', text: first.text }],
+        structuredContent: { step1: { lane: 'local', triage: first.triage } },
+      };
+    }
+    const second = await runCompanionTurn({
+      workspaceId: auth.workspaceId,
+      userId: auth.userId,
+      personaSlug: parsed.data.personaSlug,
+      utterance: parsed.data.followUp,
+      history: [
+        { role: 'user', content: parsed.data.utterance },
+        { role: 'assistant', content: first.text },
+      ],
+      eagerness: parsed.data.eagerness ?? 50,
+      surface: 'mcp',
+    });
+    if (second.kind === 'escalated') {
+      return {
+        content: [
+          { type: 'text', text: first.text },
+          { type: 'text', text: '---' },
+          { type: 'text', text: second.ack },
+          { type: 'text', text: '(follow-up escalated — check the timeline for the full reply)' },
+        ],
+        structuredContent: {
+          step1: { lane: 'local', triage: first.triage },
+          step2: { lane: 'escalate', triage: second.triage, eventId: second.eventId },
+        },
+      };
+    }
+    return {
+      content: [
+        { type: 'text', text: first.text },
+        { type: 'text', text: '---' },
+        { type: 'text', text: second.text },
+      ],
+      structuredContent: {
+        step1: { lane: 'local', triage: first.triage },
+        step2: { lane: 'local', triage: second.triage },
+      },
+    };
+  } catch (err) {
+    return {
+      isError: true,
+      content: [
+        {
+          type: 'text',
+          text: `companion chain failed: ${err instanceof Error ? err.message : String(err)}`,
+        },
+      ],
+    };
+  }
+}
+
+// Progress notifications: heartbeat while a tool is in flight.
+//
+// MCP clients (Claude Desktop, Cursor) display a spinner that goes stale if
+// they get no signal for ~30s. Many of our tools — `editor.copilot_chat`,
+// `device.*` round-trips, future planner runs — easily take longer than
+// that. Until we plumb real partial output through `runTool` → device
+// dispatcher → hub → vscode_ext (a much bigger change), a periodic
+// heartbeat keeps the UI alive and tells the user *something* is happening.
+const PROGRESS_HEARTBEAT_MS = 1500;
+
+type ProgressToken = string | number;
+type SendProgress = (params: {
+  progressToken: ProgressToken;
+  progress: number;
+  total?: number;
+  message?: string;
+}) => Promise<void>;
+
+async function dispatchToolCall(
+  auth: ResolvedAuth,
+  name: string,
+  args: Record<string, unknown>,
+  progressToken: ProgressToken | undefined,
+  sendProgress: SendProgress,
+) {
+  if (name === COMPANION_TOOL_NAME) {
+    return dispatchCompanionTurn(auth, args);
+  }
+  if (name === COMPANION_CHAIN_TOOL_NAME) {
+    return dispatchCompanionChain(auth, args);
+  }
+  if (!Object.prototype.hasOwnProperty.call(TOOLS, name)) {
+    return {
+      isError: true,
+      content: [{ type: 'text' as const, text: `unknown tool: ${name}` }],
+    };
+  }
+  if (!hasScope(auth, 'tools:invoke')) {
+    return {
+      isError: true,
+      content: [{ type: 'text' as const, text: 'token missing required scope: tools:invoke' }],
+    };
+  }
+
+  // Heartbeat — only when the client opted in by sending a progressToken.
+  let tick = 0;
+  let heartbeat: ReturnType<typeof setInterval> | null = null;
+  if (progressToken !== undefined) {
+    // Fire one immediate ping so the client sees "started" before the first interval.
+    await sendProgress({
+      progressToken,
+      progress: 0,
+      message: `running ${name}…`,
+    }).catch(() => {});
+    heartbeat = setInterval(() => {
+      tick += 1;
+      // `progress` must monotonically increase per spec. Use elapsed seconds.
+      void sendProgress({
+        progressToken,
+        progress: tick * (PROGRESS_HEARTBEAT_MS / 1000),
+        message: `still running ${name}…`,
+      }).catch(() => {});
+    }, PROGRESS_HEARTBEAT_MS);
+  }
+
+  try {
+    const result = await runTool({
+      workspaceId: auth.workspaceId,
+      userId: auth.userId,
+      tool: name as ToolName,
+      args,
+    });
+    if (result.status === 'success') {
+      return {
+        content: [{ type: 'text' as const, text: stringify(result.result ?? { ok: true }) }],
+        structuredContent: { toolCallId: result.toolCallId, status: result.status },
+      };
+    }
+    const detail =
+      result.status === 'awaiting_approval'
+        ? `Awaiting approval. Open ${auditUrl(result.toolCallId)} to approve or reject.`
+        : (result.error ?? `tool ${result.status}`);
+    return {
+      isError: true,
+      content: [
+        { type: 'text' as const, text: `[${result.status}] ${detail}` },
+        { type: 'text' as const, text: `tool_call_id: ${result.toolCallId}` },
+      ],
+    };
+  } finally {
+    if (heartbeat) clearInterval(heartbeat);
+  }
+}
+
+function bindHandlers(s: Server, authProvider: () => ResolvedAuth | null): void {
+  s.setRequestHandler(ListToolsRequestSchema, async () => ({ tools: MCP_TOOLS }));
+  s.setRequestHandler(CallToolRequestSchema, async (req, extra) => {
+    const auth = authProvider();
+    if (!auth) {
+      return {
+        isError: true,
+        content: [{ type: 'text' as const, text: 'unauthorized' }],
+      };
+    }
+    const { name, arguments: args = {} } = req.params;
+    const progressToken = req.params._meta?.progressToken as ProgressToken | undefined;
+    const sendProgress: SendProgress = async (params) => {
+      await extra.sendNotification({
+        method: 'notifications/progress',
+        params,
+      });
+    };
+    return dispatchToolCall(auth, name, args, progressToken, sendProgress);
+  });
+}
+
+// ─── Stdio transport ───────────────────────────────────────────────────────
+
+const stdioToken = process.env.METU_API_TOKEN;
+if (stdioToken) {
+  const auth = await resolveToken(stdioToken);
+  if (!auth) {
+    throw new Error('METU_API_TOKEN is invalid, expired, or revoked. Mint a new one in /apps.');
+  }
+  const stdio = new StdioServerTransport();
+  const server = new Server({ name: 'metu', version: '0.4.0' }, { capabilities: { tools: {} } });
+  bindHandlers(server, () => auth);
+  await server.connect(stdio);
+  console.error(
+    `[metu-mcp] stdio connected · workspace=${auth.workspaceId.slice(0, 8)} · ${MCP_TOOLS.length} tools`,
+  );
+} else {
+  console.error('[metu-mcp] METU_API_TOKEN not set — stdio transport disabled');
+}
+
+// ─── HTTP transport (optional) ─────────────────────────────────────────────
+
+// Cloud Run injects `PORT` (default 8080); local dev uses METU_MCP_HTTP_PORT.
+// Either turns on the Streamable HTTP transport.
+const HTTP_PORT_RAW = process.env.PORT ?? process.env.METU_MCP_HTTP_PORT;
+const HTTP_PORT = HTTP_PORT_RAW ? Number.parseInt(HTTP_PORT_RAW, 10) : null;
+
+if (HTTP_PORT !== null && Number.isFinite(HTTP_PORT)) {
+  startHttpTransport(HTTP_PORT);
+}
+
+if (!stdioToken && (HTTP_PORT === null || !Number.isFinite(HTTP_PORT))) {
+  throw new Error(
+    'No transport configured. Set METU_API_TOKEN (stdio) and/or PORT / METU_MCP_HTTP_PORT (http).',
+  );
+}
+
+function startHttpTransport(port: number): void {
+  // Streamable HTTP (MCP 2025-03-26 spec). Single `/mcp` endpoint:
+  //   - POST without `mcp-session-id` → initialize: spawns a new transport
+  //     + Server, captures auth in closure, registers session.
+  //   - POST/GET with `mcp-session-id` → routed to existing transport.
+  //   - DELETE with `mcp-session-id` → terminates the session.
+  // Each session pins to the auth that opened it; subsequent requests are
+  // re-authorized and rejected if the token now resolves to a different
+  // user/workspace (revocation + hijack protection).
+  interface SessionEntry {
+    transport: StreamableHTTPServerTransport;
+    server: Server;
+    auth: ResolvedAuth;
+  }
+  const sessions = new Map<string, SessionEntry>();
+
+  const httpServer = createServer(async (req, res) => {
+    // Cloud Run startup + liveness probes hit `/health`. Keep it cheap:
+    // no DB call, no auth — just confirm the process is up.
+    if (req.url === '/health' || req.url === '/healthz') {
+      res
+        .writeHead(200, { 'content-type': 'application/json' })
+        .end(JSON.stringify({ ok: true, tools: MCP_TOOLS.length, version: '0.4.0' }));
+      return;
+    }
+    if (!req.url?.startsWith('/mcp')) {
+      res.writeHead(404).end('not found');
+      return;
+    }
+
+    const sessionId = headerValue(req, 'mcp-session-id');
+
+    // Re-authorize on every request so revocation takes effect immediately.
+    const auth = await authorize(req, res);
+    if (!auth) return;
+
+    if (sessionId) {
+      const entry = sessions.get(sessionId);
+      if (!entry) {
+        res.writeHead(404).end('unknown session');
+        return;
+      }
+      if (auth.userId !== entry.auth.userId || auth.workspaceId !== entry.auth.workspaceId) {
+        res.writeHead(403).end('token mismatch for session');
+        return;
+      }
+      await entry.transport.handleRequest(req, res);
+      return;
+    }
+
+    // No session header → must be an initialize POST. Spin up a new
+    // transport and server.
+    if (req.method !== 'POST') {
+      res.writeHead(400).end('missing mcp-session-id');
+      return;
+    }
+
+    const transport = new StreamableHTTPServerTransport({
+      sessionIdGenerator: () => randomUUID(),
+      onsessioninitialized: (id) => {
+        sessions.set(id, { transport, server, auth });
+      },
+      onsessionclosed: (id) => {
+        sessions.delete(id);
+      },
+    });
+    const server = new Server({ name: 'metu', version: '0.4.0' }, { capabilities: { tools: {} } });
+    bindHandlers(server, () => auth);
+    await server.connect(transport);
+    await transport.handleRequest(req, res);
+  });
+
+  httpServer.listen(port, () => {
+    console.error(`[metu-mcp] Streamable HTTP listening on :${port}/mcp`);
+  });
+}
+
+function headerValue(req: IncomingMessage, name: string): string | undefined {
+  const v = req.headers[name];
+  if (Array.isArray(v)) return v[0];
+  return v;
+}
+
+async function authorize(req: IncomingMessage, res: ServerResponse): Promise<ResolvedAuth | null> {
+  const header = req.headers.authorization ?? '';
+  const token = header.startsWith('Bearer ') ? header.slice(7).trim() : '';
+  if (!token) {
+    res.writeHead(401, { 'www-authenticate': 'Bearer realm="metu"' }).end('unauthorized');
+    return null;
+  }
+  const auth = await resolveToken(token);
+  if (!auth) {
+    res.writeHead(401, { 'www-authenticate': 'Bearer realm="metu"' }).end('invalid token');
+    return null;
+  }
+  return auth;
+}

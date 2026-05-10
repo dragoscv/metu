@@ -4,6 +4,16 @@
   "description": "Two-way bridge between VS Code and your second brain.",
   "version": "0.0.1",
   "publisher": "metu",
+  "license": "MIT",
+  "homepage": "https://metu.ro",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/metu-app/metu.git",
+    "directory": "apps/vscode-ext"
+  },
+  "bugs": {
+    "url": "https://github.com/metu-app/metu/issues"
+  },
   "engines": {
     "vscode": "^1.90.0"
   },
@@ -23,23 +33,34 @@
         "category": "metu"
       },
       {
-        "command": "metu.restoreContext",
-        "title": "metu: Where was I?",
-        "category": "metu"
-      },
-      {
-        "command": "metu.logDecision",
-        "title": "metu: Log decision",
-        "category": "metu"
-      },
-      {
         "command": "metu.recall",
         "title": "metu: Recall from memory",
         "category": "metu"
       },
       {
+        "command": "metu.notify",
+        "title": "metu: Send notification",
+        "category": "metu"
+      },
+      {
+        "command": "metu.companionTurn",
+        "title": "metu: Ask companion",
+        "category": "metu"
+      },
+      {
+        "command": "metu.refreshBacklog",
+        "title": "metu: Refresh conductor backlog",
+        "category": "metu",
+        "icon": "$(refresh)"
+      },
+      {
         "command": "metu.signIn",
         "title": "metu: Sign in",
+        "category": "metu"
+      },
+      {
+        "command": "metu.signOut",
+        "title": "metu: Sign out",
         "category": "metu"
       }
     ],
@@ -48,15 +69,33 @@
       "properties": {
         "metu.apiUrl": {
           "type": "string",
-          "default": "https://app.metu.ro"
+          "default": "https://app.metu.ro",
+          "description": "Base URL of your metu instance. The access token is stored in VS Code's SecretStorage and is not exposed here."
         },
-        "metu.workspaceId": {
+        "metu.hubUrl": {
           "type": "string",
-          "default": ""
+          "default": "wss://hub.metu.ro",
+          "description": "WebSocket URL of the metu hub. The extension connects here on sign-in to receive editor.* tool invocations from the Conductor."
         },
-        "metu.apiToken": {
+        "metu.copilotBridge": {
+          "type": "boolean",
+          "default": true,
+          "description": "Allow the Conductor to invoke your local Copilot language model via the editor.copilot_chat tool. Requires GitHub Copilot to be installed and signed in."
+        },
+        "metu.oauthClientId": {
           "type": "string",
-          "default": ""
+          "default": "",
+          "description": "OAuth client_id for the device-authorization flow. When set, 'metu: Sign in' uses RFC 8628 device flow instead of the manual paste fallback."
+        },
+        "metu.scopes": {
+          "type": "string",
+          "default": "openid profile capture:write recall:read notify:write event:read",
+          "description": "Space-separated OAuth scopes requested during sign-in."
+        },
+        "metu.defaultPersona": {
+          "type": "string",
+          "default": "metu",
+          "description": "Built-in persona slug used by 'metu: Ask companion'. Common values: metu, fox, owl."
         }
       }
     },
@@ -67,16 +106,49 @@
         "mac": "cmd+alt+m"
       },
       {
-        "command": "metu.restoreContext",
-        "key": "ctrl+alt+w",
-        "mac": "cmd+alt+w"
+        "command": "metu.recall",
+        "key": "ctrl+alt+r",
+        "mac": "cmd+alt+r"
+      },
+      {
+        "command": "metu.companionTurn",
+        "key": "ctrl+alt+a",
+        "mac": "cmd+alt+a"
       }
-    ]
+    ],
+    "viewsContainers": {
+      "activitybar": [
+        {
+          "id": "metu",
+          "title": "metu",
+          "icon": "$(brain)"
+        }
+      ]
+    },
+    "views": {
+      "metu": [
+        {
+          "id": "metu.conductorBacklog",
+          "name": "Conductor backlog"
+        }
+      ]
+    },
+    "menus": {
+      "view/title": [
+        {
+          "command": "metu.refreshBacklog",
+          "when": "view == metu.conductorBacklog",
+          "group": "navigation"
+        }
+      ]
+    }
   },
   "scripts": {
     "build": "tsc -p .",
+    "typecheck": "tsc -p . --noEmit",
     "watch": "tsc -p . -w",
-    "package": "vsce package --no-dependencies"
+    "package": "pnpm dlx @vscode/vsce@^3.2.1 package --no-dependencies --no-git-tag-version --no-update-package-json -o metu-vscode.vsix",
+    "publish": "pnpm dlx @vscode/vsce@^3.2.1 publish --no-dependencies"
   },
   "devDependencies": {
     "@types/vscode": "^1.90.0",

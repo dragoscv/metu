@@ -18,6 +18,7 @@ import { serve } from '@hono/node-server';
 import type { Server } from 'node:http';
 import { Hono } from 'hono';
 import { WebSocketServer } from 'ws';
+import { log } from '@metu/logger';
 import { authenticateHello } from './auth';
 import { registerInternalRoutes } from './internal';
 import { handleSocket } from './socket';
@@ -36,7 +37,7 @@ app.get('/healthz', (c) =>
 registerInternalRoutes(app);
 
 const server = serve({ fetch: app.fetch, port }, (info) => {
-  console.log(`[hub] http+ws listening on :${info.port}`);
+  log.info('hub.http.listening', { port: info.port });
 }) as Server;
 
 const wss = new WebSocketServer({ server, path: '/ws' });
@@ -60,7 +61,7 @@ wss.on('connection', (ws, req) => {
     return;
   }
   handleSocket(ws, req, { authenticateHello }).catch((err) => {
-    console.error('[hub] socket error', err);
+    log.error('hub.socket.error', undefined, err);
     try {
       ws.close(1011, 'internal_error');
     } catch {
@@ -70,7 +71,7 @@ wss.on('connection', (ws, req) => {
 });
 
 const shutdown = (signal: string) => {
-  console.log(`[hub] ${signal} — shutting down`);
+  log.info('hub.shutdown', { signal });
   wss.close();
   server.close(() => process.exit(0));
 };

@@ -1,9 +1,11 @@
 'use server';
 import { revalidatePath } from 'next/cache';
 import { Inngest } from 'inngest';
+import { z } from 'zod';
 import { auth } from '@metu/auth';
 import { getDb } from '@metu/db';
 import { capture, timelineEvent } from '@metu/db/schema';
+import { log } from '@/lib/logger';
 import {
   parseConversations,
   renderConversation,
@@ -13,6 +15,12 @@ import {
 const inngest = new Inngest({ id: 'metu' });
 
 const MAX_CAPTURE_CONTENT = 200_000; // ~50k tokens worst-case; chunker splits further
+
+const ImportConversationsSchema = z.object({
+  raw: z.string(),
+  format: z.enum(['chatgpt-json', 'claude-json', 'markdown', 'unknown']).optional(),
+  projectId: z.string().uuid().nullable().optional(),
+});
 
 export interface ImportConversationsInput {
   raw: string;
@@ -32,6 +40,9 @@ type ActionResult<T> = { ok: true; data: T } | { ok: false; error: string };
 export async function importConversationsAction(
   input: ImportConversationsInput,
 ): Promise<ActionResult<ImportConversationsResult>> {
+  const safe = ImportConversationsSchema.safeParse(input);
+  if (!safe.success) return { ok: false, error: 'invalid_input' };
+  input = safe.data;
   const session = await auth();
   if (!session) return { ok: false, error: 'Unauthenticated' };
 
@@ -137,13 +148,13 @@ export async function importConversationsAction(
           },
         });
       } catch (err) {
-        console.warn('inngest dispatch failed', err);
+        log.warn('import_conversations.inngest.dispatch_failed', { captureId: row.id }, err);
       }
 
       titles.push(conv.title);
       imported++;
     } catch (err) {
-      console.error('import conversation failed', err);
+      log.error('import_conversations.failed', {}, err);
       skipped++;
     }
   }

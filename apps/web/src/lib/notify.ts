@@ -15,10 +15,12 @@
  */
 import { and, eq } from 'drizzle-orm';
 import { getDb } from '@metu/db';
-import { notification, notificationSubscription } from '@metu/db/schema';
+import { agentPolicy, notification, notificationSubscription } from '@metu/db/schema';
 import webpush from 'web-push';
 import { Expo } from 'expo-server-sdk';
 import { hubBroadcast } from './hub';
+import { isQuietHoursActive } from './quiet-hours';
+import { log } from './logger';
 
 export interface NotifyAction {
   id: string;
@@ -54,8 +56,40 @@ const expo = new Expo({
   accessToken: process.env.EXPO_ACCESS_TOKEN,
 });
 
+type Channel = 'ws' | 'web_push' | 'expo';
+
+interface ResolvedPrefs {
+  mutedChannels: Channel[];
+  quietActive: boolean;
+}
+
+function isQuietActive(qh: Record<string, unknown> | null | undefined): boolean {
+  return isQuietHoursActive(qh);
+}
+
+async function resolvePrefs(workspaceId: string): Promise<ResolvedPrefs> {
+  const db = getDb();
+  const [row] = await db
+    .select({ quietHours: agentPolicy.quietHours, metadata: agentPolicy.metadata })
+    .from(agentPolicy)
+    .where(eq(agentPolicy.workspaceId, workspaceId))
+    .limit(1);
+  if (!row) return { mutedChannels: [], quietActive: false };
+  const meta = (row.metadata ?? {}) as { mutedChannels?: Channel[] };
+  return {
+    mutedChannels: Array.isArray(meta.mutedChannels) ? meta.mutedChannels : [],
+    quietActive: isQuietActive(row.quietHours as Record<string, unknown> | null),
+  };
+}
+
 export async function notify(input: NotifyInput): Promise<{ id: string; delivered: string[] }> {
   const db = getDb();
+  const prefs = await resolvePrefs(input.workspaceId);
+  const urgency = input.urgency ?? 'normal';
+  // Quiet hours suppress non-urgent push channels but never the in-app
+  // record; user still sees it next time they open the inbox.
+  const quietBlocksPush = prefs.quietActive && urgency !== 'critical' && urgency !== 'high';
+
   const [row] = await db
     .insert(notification)
     .values({
@@ -63,7 +97,7 @@ export async function notify(input: NotifyInput): Promise<{ id: string; delivere
       userId: input.userId,
       title: input.title,
       body: input.body ?? null,
-      urgency: input.urgency ?? 'normal',
+      urgency,
       source: input.source ?? 'conductor',
       actionUrl: input.actionUrl ?? null,
       actions: input.actions ?? [],
@@ -75,18 +109,21 @@ export async function notify(input: NotifyInput): Promise<{ id: string; delivere
   const delivered: string[] = [];
 
   // 1) Live fan-out via WS hub.
-  const hubResult = await hubBroadcast({
-    workspaceId: input.workspaceId,
-    envelope: {
-      type: 'event.notification',
-      id: notificationId,
-      title: input.title,
-      body: input.body,
-      urgency: input.urgency ?? 'normal',
-      actionUrl: input.actionUrl,
-      actions: input.actions ?? [],
-    },
-  });
+  const wsMuted = prefs.mutedChannels.includes('ws');
+  const hubResult = wsMuted
+    ? null
+    : await hubBroadcast({
+        workspaceId: input.workspaceId,
+        envelope: {
+          type: 'event.notification',
+          id: notificationId,
+          title: input.title,
+          body: input.body,
+          urgency,
+          actionUrl: input.actionUrl,
+          actions: input.actions ?? [],
+        },
+      });
   if (hubResult && hubResult.delivered > 0) delivered.push(`ws:${hubResult.delivered}`);
 
   // 2) Push subscriptions (web push + expo).
@@ -103,14 +140,17 @@ export async function notify(input: NotifyInput): Promise<{ id: string; delivere
   const webSubs = subs.filter((s) => s.channel === 'web_push');
   const expoSubs = subs.filter((s) => s.channel === 'expo');
 
+  const webMuted = prefs.mutedChannels.includes('web_push') || quietBlocksPush;
+  const expoMuted = prefs.mutedChannels.includes('expo') || quietBlocksPush;
+
   // Web push.
-  if (webSubs.length > 0 && ensureWebPushConfigured()) {
+  if (!webMuted && webSubs.length > 0 && ensureWebPushConfigured()) {
     const payload = JSON.stringify({
       id: notificationId,
       title: input.title,
       body: input.body ?? '',
       url: input.actionUrl ?? '/',
-      urgency: input.urgency ?? 'normal',
+      urgency,
     });
     const results = await Promise.allSettled(
       webSubs.map((s) => {
@@ -135,31 +175,84 @@ export async function notify(input: NotifyInput): Promise<{ id: string; delivere
   }
 
   // Expo push.
-  if (expoSubs.length > 0) {
-    const messages = expoSubs
-      .map((s) => {
-        const tok = (s.payload as { token: string }).token;
-        if (!Expo.isExpoPushToken(tok)) return null;
-        return {
+  if (!expoMuted && expoSubs.length > 0) {
+    // Track which subscription owns each message so dead-token tickets can be
+    // mapped back to the row we need to disable. Expo guarantees tickets are
+    // returned in the same order as the messages array we pass in.
+    type ExpoMsg = {
+      to: string;
+      sound: 'default';
+      title: string;
+      body: string;
+      data: { id: string; url: string };
+      priority: 'high' | 'default';
+    };
+    const items: Array<{ subId: string; msg: ExpoMsg }> = [];
+    for (const s of expoSubs) {
+      const tok = (s.payload as { token: string }).token;
+      if (!Expo.isExpoPushToken(tok)) {
+        // Token shape is wrong → never going to deliver. Disable it
+        // proactively so we don't keep ferrying it through every send.
+        await db
+          .update(notificationSubscription)
+          .set({ enabled: false })
+          .where(eq(notificationSubscription.id, s.id));
+        log.warn('notify.expo.token_invalid', { subId: s.id });
+        continue;
+      }
+      items.push({
+        subId: s.id,
+        msg: {
           to: tok,
-          sound: 'default' as const,
+          sound: 'default',
           title: input.title,
           body: input.body ?? '',
           data: { id: notificationId, url: input.actionUrl ?? '/' },
-          priority: input.urgency === 'critical' ? ('high' as const) : ('default' as const),
-        };
-      })
-      .filter((m): m is NonNullable<typeof m> => m !== null);
-    if (messages.length > 0) {
+          priority: input.urgency === 'critical' ? 'high' : 'default',
+        },
+      });
+    }
+    if (items.length > 0) {
+      // chunkPushNotifications splits into ≤100-message batches but the
+      // mapping by index still holds within each chunk if we slice items
+      // in lock-step.
+      const messages = items.map((i) => i.msg);
       const chunks = expo.chunkPushNotifications(messages);
       let okCount = 0;
+      let cursor = 0;
       for (const chunk of chunks) {
         try {
           const tickets = await expo.sendPushNotificationsAsync(chunk);
-          okCount += tickets.filter((t) => t.status === 'ok').length;
+          for (let i = 0; i < tickets.length; i++) {
+            const ticket = tickets[i];
+            const item = items[cursor + i];
+            if (!ticket || !item) continue;
+            if (ticket.status === 'ok') {
+              okCount++;
+              continue;
+            }
+            // Error ticket — Expo encodes the actionable reason on
+            // details.error. DeviceNotRegistered is permanent; the rest
+            // (MessageTooBig, MessageRateExceeded, MismatchSenderId,
+            // InvalidCredentials) are operator-side and shouldn't disable
+            // the subscription.
+            const reason = (ticket.details as { error?: string } | undefined)?.error ?? 'unknown';
+            log.warn('notify.expo.ticket_error', {
+              subId: item.subId,
+              error: reason,
+              message: ticket.message,
+            });
+            if (reason === 'DeviceNotRegistered') {
+              await db
+                .update(notificationSubscription)
+                .set({ enabled: false })
+                .where(eq(notificationSubscription.id, item.subId));
+            }
+          }
         } catch (err) {
-          console.error('[notify] expo push error', err);
+          log.error('notify.expo.push_failed', { chunkSize: chunk.length }, err);
         }
+        cursor += chunk.length;
       }
       if (okCount > 0) delivered.push(`expo:${okCount}`);
     }

@@ -7,10 +7,15 @@ import {
   listSubGoals,
 } from '@metu/db/queries';
 import { Badge, Button, Card, Page, PageHeader, PageSection } from '@metu/ui';
-import { Pencil } from 'lucide-react';
+import { Pencil, LayoutGrid } from 'lucide-react';
 import Link from 'next/link';
 import { notFound, redirect } from 'next/navigation';
 import { GoalDetailClient } from '@/components/goals/goal-detail-client';
+import {
+  BoardColumnsClient,
+  type BoardSubGoal,
+  type SubGoalStatus,
+} from '@/components/goals/board-columns-client';
 
 interface PageProps {
   params: Promise<{ id: string }>;
@@ -68,12 +73,20 @@ export default async function GoalDetailPage({ params }: PageProps) {
           </>
         }
         actions={
-          <Link href={`/goals/${id}/edit`}>
-            <Button variant="outline" size="sm">
-              <Pencil className="h-4 w-4" />
-              Edit
-            </Button>
-          </Link>
+          <>
+            <Link href={`/goals/${id}/board`}>
+              <Button variant="outline" size="sm">
+                <LayoutGrid className="h-4 w-4" />
+                Board
+              </Button>
+            </Link>
+            <Link href={`/goals/${id}/edit`}>
+              <Button variant="outline" size="sm">
+                <Pencil className="h-4 w-4" />
+                Edit
+              </Button>
+            </Link>
+          </>
         }
       />
 
@@ -115,22 +128,8 @@ export default async function GoalDetailPage({ params }: PageProps) {
       )}
 
       {subs.length > 0 && (
-        <PageSection title="Sub-goals">
-          <ul className="space-y-2">
-            {subs.map((s) => (
-              <li key={s.id}>
-                <Link
-                  href={`/goals/${s.id}`}
-                  className="flex items-center justify-between rounded-lg border border-[var(--color-border)] bg-[var(--color-bg-card)] px-3 py-2 transition hover:border-[var(--color-brand)]"
-                >
-                  <span className="truncate text-sm">{s.title}</span>
-                  <span className="text-xs tabular-nums text-[var(--color-fg-muted)]">
-                    {Math.round(s.progress * 100)}%
-                  </span>
-                </Link>
-              </li>
-            ))}
-          </ul>
+        <PageSection title="Sub-goals" description="Drag a card to change its status">
+          <BoardColumnsClient subs={toBoardSubs(subs)} />
         </PageSection>
       )}
 
@@ -168,4 +167,28 @@ export default async function GoalDetailPage({ params }: PageProps) {
       </PageSection>
     </Page>
   );
+}
+
+const KNOWN_STATUS = new Set<SubGoalStatus>(['active', 'paused', 'achieved', 'dropped']);
+
+function toBoardSubs(
+  subs: Array<{
+    id: string;
+    title: string;
+    progress: number;
+    status: string;
+    drift: string;
+    weight: number;
+    dueAt: Date | null;
+  }>,
+): BoardSubGoal[] {
+  return subs.map((s) => ({
+    id: s.id,
+    title: s.title,
+    progress: s.progress,
+    status: KNOWN_STATUS.has(s.status as SubGoalStatus) ? (s.status as SubGoalStatus) : 'active',
+    drift: s.drift,
+    weight: s.weight,
+    dueAt: s.dueAt ? s.dueAt.toISOString() : null,
+  }));
 }

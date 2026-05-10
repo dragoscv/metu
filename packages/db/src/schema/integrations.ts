@@ -100,6 +100,10 @@ export const aiProviderKind = pgEnum('ai_provider_kind', [
   'copilot',
   'ollama',
   'custom',
+  // Voice (slice 5b — BYOK voice keys reuses provider_credential).
+  'deepgram',
+  'cartesia',
+  'elevenlabs',
 ]);
 
 /** BYOK — encrypted per-workspace AI credentials. */

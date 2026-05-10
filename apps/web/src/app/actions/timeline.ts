@@ -1,4 +1,5 @@
 'use server';
+import { z } from 'zod';
 import { auth } from '@metu/auth';
 import { listTimelineFiltered } from '@metu/db/queries';
 
@@ -21,7 +22,18 @@ export interface LoadMoreInput {
   search: string | null;
 }
 
+const LoadMoreInputSchema = z.object({
+  cursor: z.object({ occurredAt: z.string(), id: z.string().uuid() }).nullable(),
+  kinds: z.array(z.string()),
+  projectId: z.string().uuid().nullable(),
+  since: z.string().nullable(),
+  search: z.string().nullable(),
+});
+
 export async function loadMoreTimelineAction(input: LoadMoreInput) {
+  const parsed = LoadMoreInputSchema.safeParse(input);
+  if (!parsed.success) return { ok: false as const, error: 'invalid_input' };
+  input = parsed.data;
   const session = await auth();
   if (!session) return { ok: false as const, error: 'unauthorized' };
   const wsId = session.user.workspaceId;

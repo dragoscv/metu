@@ -52,6 +52,7 @@ export const createProjectSchema = z.object({
     .max(60)
     .regex(/^[a-z0-9-]+$/, 'lowercase letters, numbers, hyphens only'),
   summary: z.string().max(2000).optional(),
+  goalId: z.uuid().optional(),
   metadata: z
     .object({
       stack: z.array(z.string()).optional(),
@@ -75,6 +76,7 @@ export const createTaskSchema = z.object({
   title: z.string().min(1).max(280),
   body: z.string().max(10_000).optional(),
   projectId: z.uuid().optional(),
+  goalId: z.uuid().optional(),
   status: taskStatusSchema.default('inbox'),
   kind: taskKindSchema.default('shallow'),
   dueAt: z.iso.datetime().optional(),
@@ -145,6 +147,9 @@ export const aiProviderSchema = z.enum([
   'copilot',
   'ollama',
   'custom',
+  'deepgram',
+  'cartesia',
+  'elevenlabs',
 ]);
 export type AiProvider = z.infer<typeof aiProviderSchema>;
 

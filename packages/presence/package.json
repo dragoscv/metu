@@ -1,0 +1,23 @@
+{
+  "name": "@metu/presence",
+  "version": "0.0.1",
+  "private": true,
+  "type": "module",
+  "exports": {
+    ".": "./src/index.ts",
+    "./personas": "./src/personas.ts",
+    "./types": "./src/types.ts"
+  },
+  "scripts": {
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "@metu/protocol": "workspace:*",
+    "@metu/voice": "workspace:*",
+    "zod": "catalog:"
+  },
+  "devDependencies": {
+    "@metu/config": "workspace:*",
+    "typescript": "catalog:"
+  }
+}

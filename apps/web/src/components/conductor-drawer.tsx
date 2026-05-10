@@ -20,8 +20,16 @@ export function ConductorDrawer() {
         setOpen(false);
       }
     };
+    const onToggle = () => setOpen((o) => !o);
+    const onOpen = () => setOpen(true);
     window.addEventListener('keydown', onKey);
-    return () => window.removeEventListener('keydown', onKey);
+    window.addEventListener('conductor:toggle', onToggle);
+    window.addEventListener('conductor:open', onOpen);
+    return () => {
+      window.removeEventListener('keydown', onKey);
+      window.removeEventListener('conductor:toggle', onToggle);
+      window.removeEventListener('conductor:open', onOpen);
+    };
   }, [open]);
 
   return (

@@ -10,11 +10,185 @@
 //!     store (encrypted persistent KV), OS info, deep-link, global-shortcut.
 
 use tauri::{
-    menu::{Menu, MenuItem},
+    menu::{Menu, MenuItem, Submenu},
     tray::{MouseButton, MouseButtonState, TrayIconBuilder, TrayIconEvent},
     Manager, WindowEvent,
 };
 use tauri_plugin_global_shortcut::{Code, GlobalShortcutExt, Modifiers, Shortcut, ShortcutState};
+use tauri_plugin_shell::ShellExt;
+
+mod a11y;
+mod forms;
+mod fs;
+mod input;
+mod screenshot;
+mod see;
+mod shell;
+mod windowing;
+
+// ── Tauri commands (slice 6) ───────────────────────────────────────────────
+
+#[tauri::command]
+async fn device_screenshot(
+    args: screenshot::ScreenshotArgs,
+) -> Result<screenshot::ScreenshotResult, String> {
+    // xcap is sync + may block; punt to a blocking thread so we don't stall
+    // the Tauri event loop.
+    tauri::async_runtime::spawn_blocking(move || screenshot::capture(args))
+        .await
+        .map_err(|e| format!("join_failed: {e}"))?
+}
+
+#[tauri::command]
+async fn device_list_windows() -> Result<Vec<windowing::WindowInfo>, String> {
+    tauri::async_runtime::spawn_blocking(windowing::list_windows)
+        .await
+        .map_err(|e| format!("join_failed: {e}"))?
+}
+
+#[tauri::command]
+async fn device_a11y_tree(args: a11y::A11yArgs) -> Result<a11y::A11yTree, String> {
+    tauri::async_runtime::spawn_blocking(move || a11y::read(args))
+        .await
+        .map_err(|e| format!("join_failed: {e}"))?
+}
+
+// ── Companion-Agent slice 1 — semantic a11y actions ────────────────────────
+
+#[tauri::command]
+async fn device_a11y_find(args: a11y::A11yFindArgs) -> Result<a11y::A11yFindResult, String> {
+    tauri::async_runtime::spawn_blocking(move || a11y::find(args))
+        .await
+        .map_err(|e| format!("join_failed: {e}"))?
+}
+
+#[tauri::command]
+async fn device_a11y_invoke(args: a11y::A11yActionArgs) -> Result<a11y::A11yActionResult, String> {
+    tauri::async_runtime::spawn_blocking(move || a11y::invoke(args))
+        .await
+        .map_err(|e| format!("join_failed: {e}"))?
+}
+
+#[tauri::command]
+async fn device_a11y_set_value(
+    args: a11y::A11yActionArgs,
+) -> Result<a11y::A11yActionResult, String> {
+    tauri::async_runtime::spawn_blocking(move || a11y::set_value(args))
+        .await
+        .map_err(|e| format!("join_failed: {e}"))?
+}
+
+// ── Companion-Agent slice 5 — vision composition ───────────────────────────
+
+#[tauri::command]
+async fn device_see(args: see::SeeArgs) -> Result<see::SeeResult, String> {
+    tauri::async_runtime::spawn_blocking(move || see::see(args))
+        .await
+        .map_err(|e| format!("join_failed: {e}"))?
+}
+
+// ── Slice 7 — synthetic input + shell allowlist ────────────────────────────
+
+#[tauri::command]
+async fn device_type_text(args: input::TypeTextArgs) -> Result<input::InputOk, String> {
+    tauri::async_runtime::spawn_blocking(move || input::type_text(args))
+        .await
+        .map_err(|e| format!("join_failed: {e}"))?
+}
+
+#[tauri::command]
+async fn device_send_keys(args: input::SendKeysArgs) -> Result<input::InputOk, String> {
+    tauri::async_runtime::spawn_blocking(move || input::send_keys(args))
+        .await
+        .map_err(|e| format!("join_failed: {e}"))?
+}
+
+#[tauri::command]
+async fn device_click(args: input::ClickArgs) -> Result<input::InputOk, String> {
+    tauri::async_runtime::spawn_blocking(move || input::click(args))
+        .await
+        .map_err(|e| format!("join_failed: {e}"))?
+}
+
+#[tauri::command]
+async fn device_media_key(args: input::MediaKeyArgs) -> Result<input::InputOk, String> {
+    tauri::async_runtime::spawn_blocking(move || input::media_key(args))
+        .await
+        .map_err(|e| format!("join_failed: {e}"))?
+}
+
+// ── Slice (D14b) — jailed filesystem (METU_FS_ROOTS allowlist) ───────────
+
+#[tauri::command]
+async fn device_fs_read(args: fs::FsReadArgs) -> Result<fs::FsReadResult, String> {
+    tauri::async_runtime::spawn_blocking(move || fs::read(args))
+        .await
+        .map_err(|e| format!("join_failed: {e}"))?
+}
+
+#[tauri::command]
+async fn device_fs_write(args: fs::FsWriteArgs) -> Result<fs::FsWriteResult, String> {
+    tauri::async_runtime::spawn_blocking(move || fs::write(args))
+        .await
+        .map_err(|e| format!("join_failed: {e}"))?
+}
+
+#[tauri::command]
+async fn device_fs_list_roots() -> Result<fs::FsRootsResult, String> {
+    tauri::async_runtime::spawn_blocking(fs::list_roots)
+        .await
+        .map_err(|e| format!("join_failed: {e}"))?
+}
+
+#[tauri::command]
+async fn device_shell_exec(args: shell::ShellExecArgs) -> Result<shell::ShellExecResult, String> {
+    tauri::async_runtime::spawn_blocking(move || shell::exec(args))
+        .await
+        .map_err(|e| format!("join_failed: {e}"))?
+}
+
+// ── Slice 7b — native window focus / move (Windows only for now) ────────
+
+#[derive(serde::Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct FocusWindowArgs {
+    window_id: String,
+}
+
+#[derive(serde::Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct MoveWindowBounds {
+    x: i32,
+    y: i32,
+    w: u32,
+    h: u32,
+}
+
+#[derive(serde::Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct MoveWindowArgs {
+    window_id: String,
+    bounds: MoveWindowBounds,
+}
+
+#[tauri::command]
+async fn device_focus_window(args: FocusWindowArgs) -> Result<serde_json::Value, String> {
+    tauri::async_runtime::spawn_blocking(move || windowing::focus_window(&args.window_id))
+        .await
+        .map_err(|e| format!("join_failed: {e}"))??;
+    Ok(serde_json::json!({ "ok": true }))
+}
+
+#[tauri::command]
+async fn device_move_window(args: MoveWindowArgs) -> Result<serde_json::Value, String> {
+    let MoveWindowArgs { window_id, bounds } = args;
+    tauri::async_runtime::spawn_blocking(move || {
+        windowing::move_window(&window_id, bounds.x, bounds.y, bounds.w, bounds.h)
+    })
+    .await
+    .map_err(|e| format!("join_failed: {e}"))??;
+    Ok(serde_json::json!({ "ok": true }))
+}
 
 fn toggle_main_window<R: tauri::Runtime>(app: &tauri::AppHandle<R>) {
     if let Some(win) = app.get_webview_window("main") {
@@ -26,6 +200,15 @@ fn toggle_main_window<R: tauri::Runtime>(app: &tauri::AppHandle<R>) {
             let _ = win.set_focus();
         }
     }
+}
+
+/// Open a relative path on the configured METU web app in the system browser.
+/// Base URL comes from the `METU_WEB_URL` env var; falls back to https://metu.ro.
+fn open_web_path<R: tauri::Runtime>(app: &tauri::AppHandle<R>, path: &str) {
+    let base = std::env::var("METU_WEB_URL").unwrap_or_else(|_| "https://metu.ro".to_string());
+    let trimmed = base.trim_end_matches('/');
+    let url = format!("{trimmed}{path}");
+    let _ = app.shell().open(url, None);
 }
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
@@ -42,15 +225,63 @@ pub fn run() {
     builder
         .plugin(tauri_plugin_shell::init())
         .plugin(tauri_plugin_notification::init())
+        .plugin(tauri_plugin_clipboard_manager::init())
         .plugin(tauri_plugin_store::Builder::default().build())
         .plugin(tauri_plugin_os::init())
         .plugin(tauri_plugin_deep_link::init())
         .plugin(tauri_plugin_global_shortcut::Builder::new().build())
+        .plugin(tauri_plugin_updater::Builder::new().build())
+        .invoke_handler(tauri::generate_handler![
+            device_screenshot,
+            device_list_windows,
+            device_a11y_tree,
+            device_a11y_find,
+            device_a11y_invoke,
+            device_a11y_set_value,
+            device_see,
+            device_type_text,
+            device_send_keys,
+            device_click,
+            device_media_key,
+            device_fs_read,
+            device_fs_write,
+            device_fs_list_roots,
+            device_shell_exec,
+            device_focus_window,
+            device_move_window,
+            forms::presence_hud_show,
+            forms::presence_hud_hide,
+            forms::presence_hud_toggle,
+            forms::presence_pet_show,
+            forms::presence_pet_hide,
+            forms::presence_pet_set_clickthrough,
+        ])
         .setup(|app| {
             // ── Tray ────────────────────────────────────────────────────
             let show_item = MenuItem::with_id(app, "show", "Show METU", true, None::<&str>)?;
+            let backlog_item = MenuItem::with_id(
+                app,
+                "open_backlog",
+                "Open conductor backlog…",
+                true,
+                None::<&str>,
+            )?;
+            let inbox_item = MenuItem::with_id(
+                app,
+                "open_inbox",
+                "Open notification inbox…",
+                true,
+                None::<&str>,
+            )?;
+            let conductor_submenu = Submenu::with_id_and_items(
+                app,
+                "conductor",
+                "Conductor",
+                true,
+                &[&backlog_item, &inbox_item],
+            )?;
             let quit_item = MenuItem::with_id(app, "quit", "Quit", true, None::<&str>)?;
-            let menu = Menu::with_items(app, &[&show_item, &quit_item])?;
+            let menu = Menu::with_items(app, &[&show_item, &conductor_submenu, &quit_item])?;
             let _tray = TrayIconBuilder::with_id("metu-tray")
                 .menu(&menu)
                 .show_menu_on_left_click(false)
@@ -58,6 +289,8 @@ pub fn run() {
                 .tooltip("METU")
                 .on_menu_event(|app, event| match event.id.as_ref() {
                     "show" => toggle_main_window(app),
+                    "open_backlog" => open_web_path(app, "/dashboard?tab=now"),
+                    "open_inbox" => open_web_path(app, "/inbox"),
                     "quit" => app.exit(0),
                     _ => {}
                 })
@@ -77,10 +310,28 @@ pub fn run() {
             let app_handle = app.handle().clone();
             let toggle_shortcut =
                 Shortcut::new(Some(Modifiers::CONTROL | Modifiers::ALT), Code::KeyM);
+            // Slice 8: Ctrl+Alt+Space summons the full-screen HUD.
+            let app_handle_hud = app.handle().clone();
+            let hud_shortcut =
+                Shortcut::new(Some(Modifiers::CONTROL | Modifiers::ALT), Code::Space);
             app.global_shortcut()
                 .on_shortcut(toggle_shortcut, move |_, _, event| {
                     if event.state == ShortcutState::Pressed {
                         toggle_main_window(&app_handle);
+                    }
+                })?;
+            app.global_shortcut()
+                .on_shortcut(hud_shortcut, move |_, _, event| {
+                    if event.state == ShortcutState::Pressed {
+                        if let Some(win) = app_handle_hud.get_webview_window("hud") {
+                            let visible = win.is_visible().unwrap_or(false);
+                            if visible {
+                                let _ = win.hide();
+                            } else {
+                                let _ = win.show();
+                                let _ = win.set_focus();
+                            }
+                        }
                     }
                 })?;
 

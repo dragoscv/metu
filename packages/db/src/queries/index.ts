@@ -5,3 +5,5 @@ export * from './memory';
 export * from './integrations';
 export * from './external';
 export * from './oauth';
+export * from './audit';
+export * from './continuity';

@@ -1,10 +1,13 @@
 'use server';
 import { revalidatePath } from 'next/cache';
 import { and, eq } from 'drizzle-orm';
+import { z } from 'zod';
 import { auth } from '@metu/auth';
 import { getDb } from '@metu/db';
 import { providerCredential } from '@metu/db/schema';
 import { seal, startDeviceFlow, pollDeviceFlow, getCopilotSession } from '@metu/ai';
+
+const DeviceCodeSchema = z.string().min(1);
 
 export async function startCopilotConnect() {
   const session = await auth();
@@ -28,6 +31,9 @@ export async function startCopilotConnect() {
 }
 
 export async function pollCopilotConnect(deviceCode: string) {
+  const parsed = DeviceCodeSchema.safeParse(deviceCode);
+  if (!parsed.success) return { ok: false as const, error: 'invalid_input' };
+  deviceCode = parsed.data;
   const session = await auth();
   if (!session) return { ok: false as const, error: 'Unauthenticated' };
   if (!deviceCode || typeof deviceCode !== 'string') {

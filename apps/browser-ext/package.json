@@ -1,0 +1,10 @@
+{
+  "name": "@metu/browser-ext",
+  "version": "0.2.0",
+  "private": true,
+  "description": "metu Chrome MV3 extension — capture/recall/notify from any tab.",
+  "scripts": {
+    "package": "node ../../scripts/package-browser-ext.mjs",
+    "package:prod": "node ../../scripts/package-browser-ext.mjs --prod"
+  }
+}

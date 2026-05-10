@@ -3,6 +3,7 @@ import { getDb } from '@metu/db';
 import { project } from '@metu/db/schema';
 import { and, eq, isNull } from 'drizzle-orm';
 import { inngest } from '../client';
+import { parseEvent } from '../schemas';
 
 export const onFocusRecompute = inngest.createFunction(
   {
@@ -13,7 +14,7 @@ export const onFocusRecompute = inngest.createFunction(
   },
   { event: 'focus/recompute' },
   async ({ event, step }) => {
-    const { workspaceId, userId } = event.data;
+    const { workspaceId, userId } = parseEvent('focus/recompute', event.data);
     const result = await step.run('compute-focus', () =>
       focus.computeFocus({ workspaceId, userId }),
     );
@@ -25,7 +26,7 @@ export const onProjectMomentum = inngest.createFunction(
   { id: 'project-momentum', name: 'Project momentum recompute' },
   { event: 'project/momentum-recompute' },
   async ({ event }) => {
-    const { workspaceId, projectId } = event.data;
+    const { workspaceId, projectId } = parseEvent('project/momentum-recompute', event.data);
     return projectIntel.recomputeMomentum(workspaceId, projectId);
   },
 );

@@ -41,6 +41,23 @@ const nextConfig: NextConfig = {
     'telegraf',
   ],
   async headers() {
+    // CSP: 'unsafe-inline' on script-src is currently required because Next.js
+    // App Router emits inline bootstrap scripts without a per-request nonce in
+    // RSC. Revisit when next-safe-action / nonce middleware lands.
+    const csp = [
+      "default-src 'self'",
+      "script-src 'self' 'unsafe-inline' 'unsafe-eval'",
+      "style-src 'self' 'unsafe-inline' https://fonts.googleapis.com",
+      "font-src 'self' https://fonts.gstatic.com data:",
+      "img-src 'self' data: blob: https://*.googleusercontent.com https://avatars.githubusercontent.com https://storage.googleapis.com",
+      "media-src 'self' blob: https://storage.googleapis.com",
+      "connect-src 'self' https: wss:",
+      "frame-ancestors 'none'",
+      "base-uri 'self'",
+      "form-action 'self'",
+      "object-src 'none'",
+      'upgrade-insecure-requests',
+    ].join('; ');
     return [
       {
         source: '/:path*',
@@ -53,6 +70,7 @@ const nextConfig: NextConfig = {
             value: 'max-age=63072000; includeSubDomains; preload',
           },
           { key: 'Permissions-Policy', value: 'microphone=(self), camera=()' },
+          { key: 'Content-Security-Policy', value: csp },
         ],
       },
     ];

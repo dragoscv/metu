@@ -12,6 +12,9 @@ const PROVIDERS = [
   'vertex',
   'ollama',
   'custom',
+  'deepgram',
+  'cartesia',
+  'elevenlabs',
 ] as const;
 
 export function ProviderCredentialForm() {

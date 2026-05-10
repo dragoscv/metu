@@ -36,6 +36,8 @@ export const KNOWN_SCOPES = [
   'tools:invoke',
   'intent:write',
   'creds:borrow',
+  'presence:talk',
+  'audit:read',
   'admin:write',
 ] as const;
 
@@ -109,6 +111,25 @@ export function compareSecret(presented: string, hash: string): boolean {
 
 export type PkceMethod = 'S256' | 'plain';
 
+/** Constant-time string compare. Both inputs hashed to base64url first to
+ *  fix-pad lengths and avoid leaking via early-return on length mismatch. */
+function timingSafeStringEqual(a: string, b: string): boolean {
+  if (a.length !== b.length) {
+    // Still do a constant-work comparison to avoid leaking length via timing
+    // when callers route to this from variable-length inputs.
+    let diff = a.length ^ b.length;
+    for (let i = 0; i < Math.max(a.length, b.length); i++) {
+      diff |= (a.charCodeAt(i % a.length) || 0) ^ (b.charCodeAt(i % b.length) || 0);
+    }
+    return diff === 0 && a.length === b.length;
+  }
+  let diff = 0;
+  for (let i = 0; i < a.length; i++) {
+    diff |= a.charCodeAt(i) ^ b.charCodeAt(i);
+  }
+  return diff === 0;
+}
+
 export function verifyPkce(
   verifier: string,
   challenge: string,
@@ -116,9 +137,9 @@ export function verifyPkce(
 ): boolean {
   if (!verifier || verifier.length < 43 || verifier.length > 128) return false;
   if (!/^[A-Za-z0-9._~-]+$/.test(verifier)) return false;
-  if (method === 'plain') return verifier === challenge;
+  if (method === 'plain') return timingSafeStringEqual(verifier, challenge);
   const computed = createHash('sha256').update(verifier).digest('base64url');
-  return computed === challenge;
+  return timingSafeStringEqual(computed, challenge);
 }
 
 void URL_SAFE_ALPHABET;

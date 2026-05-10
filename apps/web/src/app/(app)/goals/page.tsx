@@ -1,5 +1,10 @@
 import { auth } from '@metu/auth';
-import { goalFacets, listGoalsFiltered, listTargetsFiltered } from '@metu/db/queries';
+import {
+  goalFacets,
+  goalPinnedCounts,
+  listGoalsFiltered,
+  listTargetsFiltered,
+} from '@metu/db/queries';
 import { getDb } from '@metu/db';
 import { goalCheckin } from '@metu/db/schema';
 import { and, asc, eq, inArray } from 'drizzle-orm';
@@ -10,6 +15,7 @@ import { redirect } from 'next/navigation';
 import { GoalsListView } from '@/components/goals/goals-list-view';
 import { TargetsList } from '@/components/goals/targets-list';
 import { CreateGoalForm } from '@/components/goals/create-goal-form';
+import { GoalsSummary } from '@/components/goals/goals-summary';
 
 export const dynamic = 'force-dynamic';
 
@@ -47,9 +53,9 @@ export default async function GoalsPage({
   // Pull check-in history for the visible goals (for sparkline + progress trace)
   const db = getDb();
   const goalIds = goalRows.map((g) => g.id);
-  const checkins =
+  const [checkins, pinned] = await Promise.all([
     goalIds.length > 0
-      ? await db
+      ? db
           .select({
             goalId: goalCheckin.goalId,
             progress: goalCheckin.progress,
@@ -58,7 +64,9 @@ export default async function GoalsPage({
           .from(goalCheckin)
           .where(and(eq(goalCheckin.workspaceId, wsId), inArray(goalCheckin.goalId, goalIds)))
           .orderBy(asc(goalCheckin.occurredAt))
-      : [];
+      : Promise.resolve([] as { goalId: string; progress: number; occurredAt: Date }[]),
+    goalPinnedCounts(wsId, goalIds),
+  ]);
   const historyByGoal = new Map<string, { t: number; v: number }[]>();
   for (const c of checkins) {
     const k = c.goalId;
@@ -81,6 +89,7 @@ export default async function GoalsPage({
     lastProgressAt: g.lastProgressAt ? g.lastProgressAt.toISOString() : null,
     parentGoalId: g.parentGoalId,
     history: historyByGoal.get(g.id) ?? [],
+    pinned: pinned.get(g.id) ?? { tasks: 0, projects: 0, decisions: 0 },
   }));
 
   const targetsForUi = targetRows.map((t) => ({
@@ -105,6 +114,15 @@ export default async function GoalsPage({
       />
 
       <CreateGoalForm />
+
+      <GoalsSummary
+        goals={goalsForUi.map((g) => ({
+          status: g.status,
+          drift: g.drift,
+          progress: g.progress,
+          dueAt: g.dueAt,
+        }))}
+      />
 
       <PageSection id="goals" title="Goals">
         {goalsForUi.length === 0 && hasFilters ? (

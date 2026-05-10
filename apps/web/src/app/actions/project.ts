@@ -15,6 +15,38 @@ import {
 import type { GithubRepo } from './github';
 import { inngest } from '@/inngest/client';
 
+/** Emit a `goal.pinned` (or `goal.unpinned`) timeline event when a task,
+ *  project, or decision changes its goal pin. No-op when nothing changed. */
+async function emitPinEvent(opts: {
+  workspaceId: string;
+  userId: string | undefined;
+  refKind: 'task' | 'project' | 'decision';
+  refId: string;
+  refLabel: string;
+  projectIdForTimeline: string | null;
+  oldGoalId: string | null;
+  newGoalId: string | null;
+}) {
+  if (opts.oldGoalId === opts.newGoalId) return;
+  const db = getDb();
+  const kind = opts.newGoalId ? 'goal.pinned' : 'goal.unpinned';
+  const verb = opts.newGoalId ? 'Pinned' : 'Unpinned';
+  await db.insert(timelineEvent).values({
+    workspaceId: opts.workspaceId,
+    userId: opts.userId ?? null,
+    projectId: opts.projectIdForTimeline,
+    kind,
+    title: `${verb} ${opts.refKind} "${opts.refLabel}"`,
+    payload: {
+      refKind: opts.refKind,
+      refId: opts.refId,
+      goalId: opts.newGoalId ?? opts.oldGoalId,
+      previousGoalId: opts.oldGoalId,
+    },
+    importance: 0.5,
+  });
+}
+
 export async function createProjectAction(input: CreateProjectInput) {
   const session = await auth();
   if (!session) return { ok: false as const, error: 'Unauthenticated' };
@@ -30,6 +62,7 @@ export async function createProjectAction(input: CreateProjectInput) {
       name: parsed.data.name,
       slug: parsed.data.slug,
       summary: parsed.data.summary ?? null,
+      goalId: parsed.data.goalId ?? null,
       metadata: parsed.data.metadata,
     })
     .returning();
@@ -59,6 +92,20 @@ export async function createProjectAction(input: CreateProjectInput) {
 
   revalidatePath('/projects');
   revalidatePath('/dashboard');
+  if (parsed.data.goalId) {
+    revalidatePath('/goals');
+    revalidatePath(`/goals/${parsed.data.goalId}/board`);
+    await emitPinEvent({
+      workspaceId: session.user.workspaceId,
+      userId: session.user.id,
+      refKind: 'project',
+      refId: row.id,
+      refLabel: row.name,
+      projectIdForTimeline: row.id,
+      oldGoalId: null,
+      newGoalId: parsed.data.goalId,
+    });
+  }
   return { ok: true as const, id: row.id };
 }
 
@@ -106,6 +153,7 @@ export async function createTaskAction(input: CreateTaskInput) {
     .values({
       workspaceId: session.user.workspaceId,
       projectId: parsed.data.projectId ?? null,
+      goalId: parsed.data.goalId ?? null,
       title: parsed.data.title,
       body: parsed.data.body ?? null,
       status: parsed.data.status,
@@ -116,6 +164,11 @@ export async function createTaskAction(input: CreateTaskInput) {
   if (!row) return { ok: false as const, error: 'Insert failed' };
   revalidatePath('/dashboard');
   revalidatePath(`/projects/${parsed.data.projectId ?? ''}`);
+  if (parsed.data.goalId) {
+    revalidatePath('/goals');
+    revalidatePath(`/goals/${parsed.data.goalId}`);
+    revalidatePath(`/goals/${parsed.data.goalId}/board`);
+  }
   return { ok: true as const, id: row.id };
 }
 
@@ -175,6 +228,7 @@ export async function updateProjectAction(input: {
   status?: ProjectStatus;
   color?: string | null;
   stack?: string[];
+  goalId?: string | null;
 }) {
   const access = await ownedProject(input.id);
   if (!access.ok) return access;
@@ -184,6 +238,7 @@ export async function updateProjectAction(input: {
   if (input.summary !== undefined) patch.summary = input.summary;
   if (input.stateSummary !== undefined) patch.stateSummary = input.stateSummary;
   if (input.status !== undefined) patch.status = input.status;
+  if (input.goalId !== undefined) patch.goalId = input.goalId;
   if (input.color !== undefined || input.stack !== undefined) {
     const meta = { ...((row.metadata ?? {}) as Record<string, unknown>) };
     if (input.color !== undefined) {
@@ -197,9 +252,27 @@ export async function updateProjectAction(input: {
     patch.metadata = meta;
   }
   if (Object.keys(patch).length === 0) return { ok: true as const, id: input.id };
-  await db.update(project).set(patch).where(eq(project.id, input.id));
+  await db
+    .update(project)
+    .set(patch)
+    .where(and(eq(project.id, input.id), eq(project.workspaceId, access.session.user.workspaceId)));
   revalidatePath('/projects');
   revalidatePath(`/projects/${input.id}`);
+  if (input.goalId !== undefined) {
+    revalidatePath('/goals');
+    if (row.goalId) revalidatePath(`/goals/${row.goalId}/board`);
+    if (input.goalId) revalidatePath(`/goals/${input.goalId}/board`);
+    await emitPinEvent({
+      workspaceId: access.session.user.workspaceId,
+      userId: access.session.user.id,
+      refKind: 'project',
+      refId: row.id,
+      refLabel: row.name,
+      projectIdForTimeline: row.id,
+      oldGoalId: row.goalId,
+      newGoalId: input.goalId,
+    });
+  }
   return { ok: true as const, id: input.id };
 }
 
@@ -214,8 +287,11 @@ export async function restoreProjectAction(id: string) {
 export async function deleteProjectAction(id: string) {
   const access = await ownedProject(id);
   if (!access.ok) return access;
-  const { db } = access;
-  await db.update(project).set({ deletedAt: new Date() }).where(eq(project.id, id));
+  const { db, session } = access;
+  await db
+    .update(project)
+    .set({ deletedAt: new Date() })
+    .where(and(eq(project.id, id), eq(project.workspaceId, session.user.workspaceId)));
   revalidatePath('/projects');
   return { ok: true as const };
 }
@@ -248,6 +324,7 @@ export async function updateTaskAction(input: {
   blockedReason?: string | null;
   dueAt?: string | null;
   projectId?: string | null;
+  goalId?: string | null;
 }) {
   const access = await ownedTask(input.id);
   if (!access.ok) return access;
@@ -265,8 +342,12 @@ export async function updateTaskAction(input: {
   if (input.blockedReason !== undefined) patch.blockedReason = input.blockedReason;
   if (input.dueAt !== undefined) patch.dueAt = input.dueAt ? new Date(input.dueAt) : null;
   if (input.projectId !== undefined) patch.projectId = input.projectId;
+  if (input.goalId !== undefined) patch.goalId = input.goalId;
   if (Object.keys(patch).length === 0) return { ok: true as const, id: input.id };
-  await db.update(task).set(patch).where(eq(task.id, input.id));
+  await db
+    .update(task)
+    .set(patch)
+    .where(and(eq(task.id, input.id), eq(task.workspaceId, session.user.workspaceId)));
   if (input.status === 'done' && row.status !== 'done') {
     await db.insert(timelineEvent).values({
       workspaceId: session.user.workspaceId,
@@ -283,6 +364,20 @@ export async function updateTaskAction(input: {
     revalidatePath(`/projects/${row.projectId}`);
     revalidatePath(`/projects/${row.projectId}/tasks/${row.id}`);
   }
+  if (input.goalId !== undefined) {
+    revalidatePath('/goals');
+    if (input.goalId) revalidatePath(`/goals/${input.goalId}/board`);
+    await emitPinEvent({
+      workspaceId: session.user.workspaceId,
+      userId: session.user.id,
+      refKind: 'task',
+      refId: row.id,
+      refLabel: row.title,
+      projectIdForTimeline: row.projectId,
+      oldGoalId: row.goalId,
+      newGoalId: input.goalId,
+    });
+  }
   return { ok: true as const, id: input.id };
 }
 
@@ -297,8 +392,11 @@ export async function markTaskUndoneAction(id: string) {
 export async function deleteTaskAction(id: string) {
   const access = await ownedTask(id);
   if (!access.ok) return access;
-  const { db, row } = access;
-  await db.update(task).set({ deletedAt: new Date() }).where(eq(task.id, id));
+  const { db, row, session } = access;
+  await db
+    .update(task)
+    .set({ deletedAt: new Date() })
+    .where(and(eq(task.id, id), eq(task.workspaceId, session.user.workspaceId)));
   revalidatePath('/dashboard');
   if (row.projectId) revalidatePath(`/projects/${row.projectId}`);
   return { ok: true as const };
@@ -325,6 +423,7 @@ export async function updateDecisionAction(input: {
   rationale?: string;
   alternatives?: unknown[];
   projectId?: string | null;
+  goalId?: string | null;
 }) {
   const access = await ownedDecision(input.id);
   if (!access.ok) return access;
@@ -334,11 +433,32 @@ export async function updateDecisionAction(input: {
   if (input.rationale !== undefined) patch.rationale = input.rationale;
   if (input.alternatives !== undefined) patch.alternatives = input.alternatives;
   if (input.projectId !== undefined) patch.projectId = input.projectId;
+  if (input.goalId !== undefined) patch.goalId = input.goalId;
   if (Object.keys(patch).length === 0) return { ok: true as const, id: input.id };
-  await db.update(decision).set(patch).where(eq(decision.id, input.id));
+  await db
+    .update(decision)
+    .set(patch)
+    .where(
+      and(eq(decision.id, input.id), eq(decision.workspaceId, access.session.user.workspaceId)),
+    );
   if (row.projectId) {
     revalidatePath(`/projects/${row.projectId}`);
     revalidatePath(`/projects/${row.projectId}/decisions/${row.id}`);
+  }
+  if (input.goalId !== undefined) {
+    revalidatePath('/goals');
+    if (row.goalId) revalidatePath(`/goals/${row.goalId}/board`);
+    if (input.goalId) revalidatePath(`/goals/${input.goalId}/board`);
+    await emitPinEvent({
+      workspaceId: access.session.user.workspaceId,
+      userId: access.session.user.id,
+      refKind: 'decision',
+      refId: row.id,
+      refLabel: row.title,
+      projectIdForTimeline: row.projectId,
+      oldGoalId: row.goalId,
+      newGoalId: input.goalId,
+    });
   }
   revalidatePath('/timeline');
   return { ok: true as const, id: input.id };
@@ -347,8 +467,11 @@ export async function updateDecisionAction(input: {
 export async function deleteDecisionAction(id: string) {
   const access = await ownedDecision(id);
   if (!access.ok) return access;
-  const { db, row } = access;
-  await db.update(decision).set({ deletedAt: new Date() }).where(eq(decision.id, id));
+  const { db, row, session } = access;
+  await db
+    .update(decision)
+    .set({ deletedAt: new Date() })
+    .where(and(eq(decision.id, id), eq(decision.workspaceId, session.user.workspaceId)));
   if (row.projectId) revalidatePath(`/projects/${row.projectId}`);
   return { ok: true as const };
 }

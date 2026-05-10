@@ -276,3 +276,19 @@ export async function getTimelineEventById(workspaceId: string, id: string) {
     .limit(1);
   return row ?? null;
 }
+
+/**
+ * Tiny aggregate used by the sidebar badge: how many timeline_event
+ * rows landed in the last `since`. No ranking, no payload — just a
+ * count so the user knows there is fresh activity to look at.
+ */
+export async function recentTimelineEventCount(workspaceId: string, since: Date) {
+  const db = getDb();
+  const [row] = await db
+    .select({ n: sql<number>`count(*)::int` })
+    .from(timelineEvent)
+    .where(
+      and(eq(timelineEvent.workspaceId, workspaceId), sql`${timelineEvent.occurredAt} >= ${since}`),
+    );
+  return row?.n ?? 0;
+}

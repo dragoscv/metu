@@ -4,8 +4,11 @@ import { revalidatePath } from 'next/cache';
 import { auth } from '@metu/auth';
 import { seal } from '@metu/ai/crypto';
 import { createOauthApp, deleteOauthApp, deleteOauthConnection } from '@metu/db/queries';
+import { getDb } from '@metu/db';
+import { timelineEvent } from '@metu/db/schema';
 import { discoverOidc } from '@/lib/oauth/discover';
 import { callbackUrl } from '@/lib/oauth/pkce';
+import { assertSafeOutboundUrl } from '@/lib/safe-equal';
 
 const slugRegex = /^[a-z0-9](?:[a-z0-9-]{0,38}[a-z0-9])?$/;
 
@@ -44,6 +47,7 @@ export async function discoverOauthAppAction(rawUrl: string): Promise<DiscoverRe
   const parsed = z.string().url().safeParse(rawUrl);
   if (!parsed.success) return { ok: false, error: 'Invalid URL' };
   try {
+    await assertSafeOutboundUrl(parsed.data);
     const d = await discoverOidc(parsed.data);
     return {
       ok: true,
@@ -123,6 +127,17 @@ export async function createOauthAppAction(formData: FormData): Promise<CreateOa
     pkce: parsed.data.pkce ?? true,
   });
 
+  await getDb()
+    .insert(timelineEvent)
+    .values({
+      workspaceId: session.user.workspaceId,
+      userId: session.user.id,
+      kind: 'oauth_app.created',
+      title: `Created OAuth app “${parsed.data.name}”`,
+      payload: { appId, slug: parsed.data.slug, tokenUrl: parsed.data.tokenUrl },
+      importance: 0.7,
+    });
+
   revalidatePath('/integrations');
   return { ok: true, appId, callbackUrl: callbackUrl(appId) };
 }
@@ -131,6 +146,16 @@ export async function deleteOauthAppAction(id: string) {
   const session = await auth();
   if (!session) return { ok: false, error: 'Unauthenticated' as const };
   await deleteOauthApp(session.user.workspaceId, id);
+  await getDb()
+    .insert(timelineEvent)
+    .values({
+      workspaceId: session.user.workspaceId,
+      userId: session.user.id,
+      kind: 'oauth_app.deleted',
+      title: 'Deleted OAuth app',
+      payload: { appId: id },
+      importance: 0.7,
+    });
   revalidatePath('/integrations');
   return { ok: true as const };
 }
@@ -139,6 +164,16 @@ export async function deleteOauthConnectionAction(id: string) {
   const session = await auth();
   if (!session) return { ok: false, error: 'Unauthenticated' as const };
   await deleteOauthConnection(session.user.workspaceId, id);
+  await getDb()
+    .insert(timelineEvent)
+    .values({
+      workspaceId: session.user.workspaceId,
+      userId: session.user.id,
+      kind: 'oauth_connection.removed',
+      title: 'Disconnected OAuth identity',
+      payload: { connectionId: id },
+      importance: 0.6,
+    });
   revalidatePath('/integrations');
   return { ok: true as const };
 }

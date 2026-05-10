@@ -3,7 +3,23 @@ import Link from 'next/link';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { useState, useTransition } from 'react';
 import { motion } from 'framer-motion';
-import { Activity, Bell, Camera, Lock, PowerOff, Radio, Volume2, Wand2 } from 'lucide-react';
+import {
+  Activity,
+  Bell,
+  Camera,
+  Chrome,
+  Code2,
+  Globe,
+  Lock,
+  Monitor,
+  PowerOff,
+  Radio,
+  Smartphone,
+  Terminal,
+  Volume2,
+  Wand2,
+  Workflow,
+} from 'lucide-react';
 import { Card, CardTitle, StatusDot, cn } from '@metu/ui';
 import { toast } from 'sonner';
 import {
@@ -53,6 +69,42 @@ const COMMANDS: {
   { id: 'lock', label: 'Lock', Icon: Lock },
 ];
 
+// Friendly labels + icons for every device kind in `device_kind` enum.
+// Falls back to raw kind text for anything unknown.
+const KIND_META: Record<string, { label: string; Icon: typeof Bell }> = {
+  companion_desktop: { label: 'Companion · desktop', Icon: Monitor },
+  vscode_ext: { label: 'VS Code extension', Icon: Code2 },
+  browser_ext: { label: 'Browser extension', Icon: Chrome },
+  mobile: { label: 'Mobile', Icon: Smartphone },
+  web: { label: 'Web session', Icon: Globe },
+  mcp_client: { label: 'MCP client', Icon: Workflow },
+  external_app: { label: 'External app', Icon: Workflow },
+  cli: { label: 'CLI', Icon: Terminal },
+};
+
+// Which commands each kind can meaningfully execute. Anything not listed
+// hides the entire "Send command" card to avoid promising actions the
+// device wouldn't honor.
+const KIND_COMMANDS: Record<string, ReadonlyArray<(typeof COMMANDS)[number]['id']>> = {
+  companion_desktop: ['ping', 'wake', 'capture', 'speak', 'lock'],
+  mobile: ['ping', 'wake', 'capture', 'speak', 'lock'],
+  vscode_ext: ['ping'],
+  browser_ext: ['ping'],
+  web: ['ping'],
+  mcp_client: ['ping'],
+  external_app: ['ping'],
+  cli: ['ping'],
+};
+
+function kindMeta(kind: string) {
+  return KIND_META[kind] ?? { label: kind, Icon: Wand2 };
+}
+
+function commandsForKind(kind: string) {
+  const allowed = new Set(KIND_COMMANDS[kind] ?? ['ping']);
+  return COMMANDS.filter((c) => allowed.has(c.id));
+}
+
 export function DevicesView({
   devices,
   selectedId,
@@ -92,6 +144,7 @@ export function DevicesView({
       <div className="space-y-2">
         {devices.map((d) => {
           const p = PRESENCE[d.presence];
+          const meta = kindMeta(d.kind);
           const isSel = d.id === selected.id;
           return (
             <motion.button
@@ -109,9 +162,12 @@ export function DevicesView({
               <StatusDot state={p.state} size="sm" pulse={p.state === 'success'} className="mt-1" />
               <div className="min-w-0 flex-1">
                 <div className="truncate text-sm font-medium">{d.name}</div>
-                <div className="truncate text-[11px] text-[var(--color-fg-subtle)]">
-                  {d.kind} · {d.platform}
-                  {d.version ? ` · v${d.version}` : ''}
+                <div className="flex items-center gap-1.5 truncate text-[11px] text-[var(--color-fg-subtle)]">
+                  <meta.Icon className="h-3 w-3 shrink-0" />
+                  <span className="truncate">
+                    {meta.label} · {d.platform}
+                    {d.version ? ` · v${d.version}` : ''}
+                  </span>
                 </div>
                 <div className="mt-1 text-[10px] text-[var(--color-fg-subtle)]">
                   {d.lastSeenAt ? `seen ${new Date(d.lastSeenAt).toLocaleString()}` : 'never seen'}
@@ -167,6 +223,8 @@ function DeviceDetail({ device, events }: { device: DeviceRow; events: DeviceEve
   }
 
   const p = PRESENCE[device.presence];
+  const meta = kindMeta(device.kind);
+  const availableCommands = commandsForKind(device.kind);
   const activity = device.activity as { window?: string; file?: string; idleSec?: number };
 
   return (
@@ -208,7 +266,7 @@ function DeviceDetail({ device, events }: { device: DeviceRow; events: DeviceEve
           </div>
         </div>
         <div className="mt-2 grid gap-2 text-xs text-[var(--color-fg-muted)] sm:grid-cols-2">
-          <Row label="Kind" value={device.kind} />
+          <Row label="Kind" value={meta.label} />
           <Row label="Platform" value={device.platform} />
           <Row label="Version" value={device.version ?? '—'} />
           <Row
@@ -245,7 +303,7 @@ function DeviceDetail({ device, events }: { device: DeviceRow; events: DeviceEve
           Hub-routed envelopes. The device must be online or idle to act on them.
         </p>
         <div className="mt-3 flex flex-wrap gap-2">
-          {COMMANDS.map((c) => (
+          {availableCommands.map((c) => (
             <button
               key={c.id}
               type="button"
@@ -256,6 +314,11 @@ function DeviceDetail({ device, events }: { device: DeviceRow; events: DeviceEve
               <c.Icon className="h-3.5 w-3.5" /> {c.label}
             </button>
           ))}
+          {availableCommands.length <= 1 ? (
+            <span className="self-center text-[11px] text-[var(--color-fg-subtle)]">
+              {meta.label} only honors ping. Use editor / browser tools instead.
+            </span>
+          ) : null}
         </div>
       </Card>
 

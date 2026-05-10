@@ -28,8 +28,10 @@ export async function recomputeMomentum(workspaceId: string, projectId: string) 
 
   const weights: Record<string, number> = {
     'commit.pushed': 1.0,
+    'pr.merged': 0.9,
     'task.completed': 0.8,
     'decision.logged': 0.7,
+    'issue.closed': 0.6,
     'capture.created': 0.3,
   };
 

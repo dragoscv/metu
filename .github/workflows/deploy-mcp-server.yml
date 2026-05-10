@@ -1,0 +1,52 @@
+name: deploy-mcp-server
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'apps/mcp-server/**'
+      - 'packages/**'
+      - '.github/workflows/deploy-mcp-server.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  id-token: write
+
+env:
+  PROJECT_ID: metu-prod-495423
+  REGION: europe-west1
+  SERVICE: metu-mcp-server
+  IMAGE: europe-west1-docker.pkg.dev/metu-prod-495423/containers/metu-mcp-server
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+
+      - id: auth
+        uses: google-github-actions/auth@v2
+        with:
+          workload_identity_provider: ${{ vars.WIF_PROVIDER }}
+          service_account: metu-github-deployer@metu-prod-495423.iam.gserviceaccount.com
+
+      - uses: google-github-actions/setup-gcloud@v2
+
+      - name: Configure docker auth
+        run: gcloud auth configure-docker ${{ env.REGION }}-docker.pkg.dev --quiet
+
+      - name: Build and push image
+        run: |
+          docker build -t $IMAGE:${{ github.sha }} -t $IMAGE:latest -f apps/mcp-server/Dockerfile .
+          docker push $IMAGE:${{ github.sha }}
+          docker push $IMAGE:latest
+
+      - name: Deploy to Cloud Run
+        run: |
+          gcloud run deploy $SERVICE \
+            --image=$IMAGE:${{ github.sha }} \
+            --region=$REGION \
+            --project=$PROJECT_ID \
+            --quiet

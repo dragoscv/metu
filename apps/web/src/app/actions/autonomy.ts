@@ -4,7 +4,7 @@ import { eq, and, isNull } from 'drizzle-orm';
 import { z } from 'zod';
 import { auth } from '@metu/auth';
 import { getDb } from '@metu/db';
-import { agentPolicy, toolAcl, workspace } from '@metu/db/schema';
+import { agentPolicy, timelineEvent, toolAcl, workspace } from '@metu/db/schema';
 
 const autonomyMode = z.enum(['observe', 'ask', 'auto_with_undo', 'autopilot']);
 
@@ -74,9 +74,16 @@ const setToolAclSchema = z.object({
   mode: autonomyMode,
   /** When provided, the override is scoped to that integration only. */
   integrationId: z.string().uuid().nullable().optional(),
+  /**
+   * Where the change came from. Powers timeline instrumentation so we
+   * can later answer "how often does the cost-warning nudge actually
+   * convert?". Default `manual` matches the existing user-driven
+   * <select> path — not logged.
+   */
+  source: z.enum(['manual', 'cost_warning_downgrade']).optional().default('manual'),
 });
 
-export async function setToolAclAction(input: z.infer<typeof setToolAclSchema>) {
+export async function setToolAclAction(input: z.input<typeof setToolAclSchema>) {
   const session = await auth();
   if (!session) return { ok: false as const, error: 'Unauthenticated' };
   const parsed = setToolAclSchema.safeParse(input);
@@ -91,7 +98,7 @@ export async function setToolAclAction(input: z.infer<typeof setToolAclSchema>) 
   const integrationId = parsed.data.integrationId ?? null;
 
   const [existing] = await db
-    .select({ id: toolAcl.id })
+    .select({ id: toolAcl.id, mode: toolAcl.mode })
     .from(toolAcl)
     .where(
       and(
@@ -102,6 +109,8 @@ export async function setToolAclAction(input: z.infer<typeof setToolAclSchema>) 
     )
     .limit(1);
 
+  const previousMode = existing?.mode ?? null;
+
   if (existing) {
     await db.update(toolAcl).set({ mode: parsed.data.mode }).where(eq(toolAcl.id, existing.id));
   } else {
@@ -110,6 +119,29 @@ export async function setToolAclAction(input: z.infer<typeof setToolAclSchema>) 
       tool: parsed.data.tool,
       mode: parsed.data.mode,
       integrationId,
+    });
+  }
+
+  // Instrumentation: only log when the user took the warning's
+  // "Switch to <baseline>" action. Manual select changes stay quiet
+  // to avoid timeline noise on routine config tweaks.
+  if (parsed.data.source === 'cost_warning_downgrade') {
+    await db.insert(timelineEvent).values({
+      workspaceId: wsId,
+      userId: session.user.id,
+      kind: 'autonomy.cost_warning_accepted',
+      title: `Downgraded ${parsed.data.tool} to ${parsed.data.mode}`,
+      body: previousMode
+        ? `Was '${previousMode}', set to '${parsed.data.mode}' from autopilot cost warning.`
+        : `Inherited default; pinned to '${parsed.data.mode}' from autopilot cost warning.`,
+      importance: 0.3,
+      payload: {
+        tool: parsed.data.tool,
+        previousMode,
+        newMode: parsed.data.mode,
+        integrationId,
+        source: 'cost_warning_downgrade',
+      },
     });
   }
 

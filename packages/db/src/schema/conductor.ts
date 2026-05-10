@@ -172,7 +172,7 @@ export const toolCall = pgTable(
     /** Payload required to undo this action (null if non-undoable). */
     undoPayload: jsonb('undo_payload'),
     /** ACL level applied at execution time. */
-    aclMode: text('acl_mode'), // 'observe' | 'ask' | 'auto-with-undo' | 'autopilot'
+    aclMode: text('acl_mode'), // 'observe' | 'ask' | 'auto_with_undo' | 'autopilot'
     /** Estimated $ cost (LLM + side-effect cost). */
     estimatedCostUsd: doublePrecision('estimated_cost_usd'),
     actualCostUsd: doublePrecision('actual_cost_usd'),
@@ -414,8 +414,6 @@ export const oauthClient = pgTable(
       .default('openid profile capture:write recall:read notify:write'),
     /** Webhook URL for server-side event delivery (alternative to WS). */
     webhookUrl: text('webhook_url'),
-    /** Legacy plaintext column — kept for read-only backfill, prefer `webhookSecretHash`. */
-    webhookSecret: text('webhook_secret'),
     /** sha256(secret) used for HMAC verification on inbound webhooks. */
     webhookSecretHash: text('webhook_secret_hash'),
     createdAt: timestamp('created_at', { withTimezone: true })
@@ -475,6 +473,13 @@ export const oauthToken = pgTable(
     expiresAt: timestamp('expires_at', { withTimezone: true }).notNull(),
     consumedAt: timestamp('consumed_at', { withTimezone: true }),
     revokedAt: timestamp('revoked_at', { withTimezone: true }),
+    /**
+     * Last time this token was successfully resolved by a bearer-auth
+     * lookup. Updated lazily (max once / minute) to surface SDK-only
+     * client liveness ("browser-ext last seen 5m ago") without WS
+     * connections. Null until the token's first use.
+     */
+    lastUsedAt: timestamp('last_used_at', { withTimezone: true }),
     createdAt: timestamp('created_at', { withTimezone: true })
       .notNull()
       .default(sql`now()`),

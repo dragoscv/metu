@@ -88,7 +88,71 @@ export interface MetuClient {
   intent(input: IntentCreate): Promise<{ id: string }>;
   borrow(input: BorrowInput): Promise<BorrowResult>;
   event(kind: string, payload: Record<string, unknown>): Promise<void>;
+  /** Pull a snapshot of audit aggregates (requires `audit:read` scope). */
+  auditSummary(input?: AuditSummaryInput): Promise<AuditSummary>;
+  /** Fetch a page of timeline events (requires `event:read` scope). */
+  timeline(input?: TimelineInput): Promise<TimelinePage>;
   connect(hello: Omit<Hello, 'v' | 'type' | 'accessToken'>): Promise<MetuSocket>;
+}
+
+export interface AuditSummaryInput {
+  /** Window expressed as `Nd`, default `7d`. Server caps to 1–365. */
+  since?: string;
+  /** How many entries to return for `topByCost` (1–50, default 5). */
+  top?: number;
+}
+
+export interface AuditSummary {
+  ok: true;
+  window: { sinceDays: number; sinceIso: string };
+  summary: { calls: number; failed: number; awaiting: number; costUsd: number };
+  dailyCost: Array<{ day: string; cost: number; calls: number }>;
+  topByCost: Array<{ tool: string; total: number; calls: number }>;
+  byAclMode: Array<{
+    tool: string;
+    aclMode: string | null;
+    calls: number;
+    successCalls: number;
+    failedCalls: number;
+    rejectedCalls: number;
+    totalCost: number;
+    avgCost: number;
+    maxCost: number;
+  }>;
+}
+
+export interface TimelineInput {
+  /** Filter by one or more event kinds. */
+  kinds?: string[];
+  /** Project id to scope to. */
+  projectId?: string;
+  /** Window expressed as `Nd`, default `7d`. Server caps to 1–365. */
+  since?: string;
+  /** Case-insensitive substring on title + body. */
+  q?: string;
+  /** Page size, 1–100 (default 40). */
+  limit?: number;
+  /** Opaque cursor returned from the previous page. */
+  cursor?: string;
+}
+
+export interface TimelineEvent {
+  id: string;
+  kind: string;
+  title: string | null;
+  body: string | null;
+  payload: unknown;
+  importance: number;
+  projectId: string | null;
+  userId: string | null;
+  occurredAt: string;
+}
+
+export interface TimelinePage {
+  ok: true;
+  window: { sinceDays: number; sinceIso: string };
+  items: TimelineEvent[];
+  nextCursor: string | null;
 }
 
 export interface BorrowInput {
@@ -175,6 +239,26 @@ export function createClient(opts: ClientOptions): MetuClient {
     },
     async event(kind, payload) {
       await request<void>('POST', '/api/sdk/v1/events', { kind, payload });
+    },
+    async auditSummary(input) {
+      const qs = new URLSearchParams();
+      if (input?.since) qs.set('since', input.since);
+      if (typeof input?.top === 'number') qs.set('top', String(input.top));
+      const path = qs.toString()
+        ? `/api/sdk/v1/audit/summary?${qs.toString()}`
+        : '/api/sdk/v1/audit/summary';
+      return request<AuditSummary>('GET', path);
+    },
+    async timeline(input) {
+      const qs = new URLSearchParams();
+      if (input?.kinds) for (const k of input.kinds) qs.append('kind', k);
+      if (input?.projectId) qs.set('project', input.projectId);
+      if (input?.since) qs.set('since', input.since);
+      if (input?.q) qs.set('q', input.q);
+      if (typeof input?.limit === 'number') qs.set('limit', String(input.limit));
+      if (input?.cursor) qs.set('cursor', input.cursor);
+      const path = qs.toString() ? `/api/sdk/v1/timeline?${qs.toString()}` : '/api/sdk/v1/timeline';
+      return request<TimelinePage>('GET', path);
     },
     async connect(hello) {
       if (!opts.hubUrl) throw new Error('hubUrl required for connect()');

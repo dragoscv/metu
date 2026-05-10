@@ -28,3 +28,12 @@ output "wif_provider" {
 output "kms_byok_key" {
   value = google_kms_crypto_key.byok.id
 }
+
+output "mcp_server_url" {
+  value       = google_cloud_run_v2_service.mcp_server.uri
+  description = "Public Streamable HTTP MCP endpoint. Append /mcp; auth via metu_at_* bearer."
+}
+
+output "mcp_server_sa_email" {
+  value = google_service_account.mcp_server.email
+}

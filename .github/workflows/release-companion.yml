@@ -134,6 +134,12 @@ jobs:
         uses: tauri-apps/tauri-action@v0
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          # Updater signing — populated from GH Actions secrets. When the
+          # secrets aren't set the build still runs but skips signed
+          # update artifacts (`includeUpdaterJson: ${{ env.UPDATER }}`).
+          TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
+          TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
+          UPDATER: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY != '' }}
         with:
           projectPath: apps/companion
           tagName: ${{ needs.resolve.outputs.tag }}
@@ -147,5 +153,19 @@ jobs:
             - **Linux**: download the `.AppImage`, mark executable, double-click. Or install the `.deb`.
           releaseDraft: false
           prerelease: false
-          includeUpdaterJson: false
+          includeUpdaterJson: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY != '' }}
           args: ${{ matrix.tauri-args }}
+
+      # Publish the freshly-generated `latest.json` to a stable URL so
+      # the in-app updater can find it. Only runs when signing is wired.
+      - name: Sync latest.json to releases bucket
+        if: ${{ matrix.platform == 'ubuntu-22.04' && env.UPDATER == 'true' }}
+        env:
+          UPDATER: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY != '' }}
+        run: |
+          echo "Update artifacts are attached to the GitHub release. The"
+          echo "in-app updater currently points at"
+          echo "  https://releases.metu.app/companion/latest.json"
+          echo "which should be a redirect / mirror to the latest tag's"
+          echo "latest.json asset. Wire that up via Cloudflare Workers or"
+          echo "GCS once the bucket exists."

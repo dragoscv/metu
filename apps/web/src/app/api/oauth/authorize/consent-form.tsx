@@ -38,6 +38,10 @@ const SCOPE_LABELS: Record<string, { title: string; desc: string }> = {
     title: 'Use tools',
     desc: 'Trigger tool calls in your workspace (subject to your autonomy policy).',
   },
+  'audit:read': {
+    title: 'Read audit log',
+    desc: 'See what tools the Conductor and connected apps have called, and how much they cost.',
+  },
 };
 
 export function ConsentForm({

@@ -10,6 +10,7 @@ import { getDb } from '@metu/db';
 import { goal, workspace } from '@metu/db/schema';
 import { goals } from '@metu/core';
 import { inngest } from '../client';
+import { parseEvent } from '../schemas';
 
 async function workspacesWithActiveGoals(): Promise<string[]> {
   const db = getDb();
@@ -62,7 +63,7 @@ export const onGoalsReview = inngest.createFunction(
   },
   { event: 'goals/review' },
   async ({ event, step }) => {
-    const { workspaceId, reason } = event.data;
+    const { workspaceId, reason } = parseEvent('goals/review', event.data);
     const results = await step.run('review', () => goals.reviewGoals(workspaceId));
 
     // Pick the goal owner — first active goal's userId — for notification routing.

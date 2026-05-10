@@ -96,6 +96,30 @@ Push to `main` triggers `.github/workflows/deploy-worker.yml` which:
 
 First-time manual trigger: **Actions → deploy-worker → Run workflow**.
 
+## 4b. MCP server deploy
+
+`.github/workflows/deploy-mcp-server.yml` mirrors the worker pipeline for
+`apps/mcp-server`. The Cloud Run service is **public** (no IAM auth) — every
+request must carry an `Authorization: Bearer metu_at_…` token minted from
+`/apps`. Endpoint: `https://<mcp-url>/mcp` (Streamable HTTP); health probe
+at `/health`.
+
+Configure MCP clients (Claude Desktop, Cursor) with:
+
+```json
+{
+  "mcpServers": {
+    "metu": {
+      "url": "https://<mcp-url>/mcp",
+      "headers": { "Authorization": "Bearer metu_at_..." }
+    }
+  }
+}
+```
+
+For stdio (local-only, single-tenant): run `pnpm --filter @metu/mcp-server start`
+with `METU_API_TOKEN` set; do not set `PORT` / `METU_MCP_HTTP_PORT`.
+
 ## 5. Database migrations
 
 Schema changes are applied via the `db-migrate` workflow (manual dispatch) so
@@ -121,11 +145,24 @@ needed; everything else is per-user (token entered in app Settings).
 ## 8. Browser extension
 
 ```pwsh
-cd apps/browser-ext
-zip -r ../metu-browser-ext.zip . -x "*.git*"
+pnpm browser-ext:package:prod
 ```
 
-Upload to Chrome Web Store dashboard.
+Emits `apps/browser-ext/dist/metu-browser-ext-<version>.zip` (deterministic — same source ⇒ same SHA-256, sidecar `.sha256` written next to it). The `:prod` variant strips `http://localhost/*` from `host_permissions` and warns if `popup.js` still references localhost.
+
+Upload the zip at <https://chrome.google.com/webstore/devconsole>. Bump the manifest version + add a `CHANGELOG.md` entry before each upload.
+
+For local install, `pnpm browser-ext:package` (no `:prod`) keeps localhost hosts and tags the file `…-dev.zip`.
+
+### Automated GitHub Release
+
+Push to `main` triggers `.github/workflows/release-browser-ext.yml`. The job:
+
+1. Resolves the version from `apps/browser-ext/manifest.json` and asserts `manifest.json` and `package.json` versions are in sync.
+2. Skips if a `browser-ext-v<version>` tag already exists (idempotent — casual edits without a version bump don't release).
+3. Runs `pnpm browser-ext:package:prod` and attaches `.zip` + `.sha256` to a GitHub Release named `METU Browser Extension v<version>`.
+
+Manual dispatch supports `force: true` to rebuild an existing tag.
 
 ## 9. VS Code extension
 

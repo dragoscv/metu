@@ -1,5 +1,5 @@
 'use client';
-import { Button, Input } from '@metu/ui';
+import { Button, Input, Select } from '@metu/ui';
 import { Loader2, Plus, Save, Trash2, X } from 'lucide-react';
 import { useRouter } from 'next/navigation';
 import { useState, useTransition } from 'react';
@@ -10,19 +10,23 @@ export interface DecisionEditData {
   title: string;
   rationale: string;
   alternatives: { name: string; reason?: string }[];
+  goalId: string | null;
 }
 
 export function DecisionEditForm({
   decision,
   backHref,
+  goals,
 }: {
   decision: DecisionEditData;
   backHref: string;
+  goals: { id: string; title: string }[];
 }) {
   const router = useRouter();
   const [title, setTitle] = useState(decision.title);
   const [rationale, setRationale] = useState(decision.rationale);
   const [alts, setAlts] = useState<{ name: string; reason?: string }[]>(decision.alternatives);
+  const [goalId, setGoalId] = useState<string>(decision.goalId ?? '');
   const [error, setError] = useState<string | null>(null);
   const [pendingSave, startSave] = useTransition();
   const [pendingDelete, startDelete] = useTransition();
@@ -30,7 +34,8 @@ export function DecisionEditForm({
   const dirty =
     title !== decision.title ||
     rationale !== decision.rationale ||
-    JSON.stringify(alts) !== JSON.stringify(decision.alternatives);
+    JSON.stringify(alts) !== JSON.stringify(decision.alternatives) ||
+    (decision.goalId ?? '') !== goalId;
 
   const save = () => {
     setError(null);
@@ -40,6 +45,7 @@ export function DecisionEditForm({
         title: title.trim(),
         rationale: rationale.trim(),
         alternatives: alts.filter((a) => a.name.trim().length > 0),
+        goalId: goalId || null,
       });
       if (!res.ok) setError(res.error);
       else router.refresh();
@@ -130,6 +136,21 @@ export function DecisionEditForm({
           {error}
         </div>
       )}
+
+      <div className="space-y-1.5">
+        <label className="text-xs font-medium text-[var(--color-fg-muted)]">Pin to goal</label>
+        <Select value={goalId} onChange={(e) => setGoalId(e.target.value)}>
+          <option value="">— No goal —</option>
+          {goals.map((g) => (
+            <option key={g.id} value={g.id}>
+              {g.title}
+            </option>
+          ))}
+        </Select>
+        <p className="text-[11px] text-[var(--color-fg-subtle)]">
+          Pinning a decision to a goal surfaces it on the goal board as evidence.
+        </p>
+      </div>
 
       <div className="flex flex-wrap items-center justify-between gap-2 border-t border-[var(--color-border)] pt-4">
         <Button variant="danger" size="sm" onClick={onDelete} disabled={pendingDelete}>

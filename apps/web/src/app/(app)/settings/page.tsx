@@ -5,6 +5,7 @@ import { listAvailableProviders, getProviderPolicy } from '@metu/ai';
 import { ProviderCredentialForm } from '@/components/provider-credential-form';
 import { CopilotConnect } from '@/components/copilot-connect';
 import { ProviderPolicyForm } from '@/components/provider-policy-form';
+import { TestNotificationCard } from '@/components/test-notification-card';
 import { loadCopilotIdentity } from '@/lib/copilot-identity';
 
 const PROVIDER_LABELS: Record<string, string> = {
@@ -114,6 +115,8 @@ export default async function SettingsPage() {
         </p>
         <ProviderCredentialForm />
       </Card>
+
+      <TestNotificationCard />
     </Page>
   );
 }

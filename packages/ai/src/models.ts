@@ -75,6 +75,11 @@ export const MODEL_CATALOG: Record<AiProvider, ModelEntry[]> = {
     { id: 'nomic-embed-text', label: 'Nomic Embed', intents: ['embed'] },
   ],
   custom: [],
+  // Voice providers — no LLM models. Listed only so MODEL_CATALOG matches
+  // the AiProvider union (extended for BYOK voice keys in slice 5b).
+  deepgram: [],
+  cartesia: [],
+  elevenlabs: [],
 };
 
 export function modelsForIntent(provider: AiProvider, intent: AiIntent): ModelEntry[] {

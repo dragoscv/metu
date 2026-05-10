@@ -2,12 +2,13 @@
 import { revalidatePath } from 'next/cache';
 import { auth } from '@metu/auth';
 import { focus } from '@metu/core';
+import { log } from '@/lib/logger';
 
 export async function recomputeFocusAction() {
   const session = await auth();
   if (!session) return { ok: false as const, error: 'Unauthenticated' };
   const t0 = Date.now();
-  console.info('[focus.recompute] start', {
+  log.info('focus.recompute.start', {
     workspaceId: session.user.workspaceId,
     userId: session.user.id,
   });
@@ -16,7 +17,7 @@ export async function recomputeFocusAction() {
       workspaceId: session.user.workspaceId,
       userId: session.user.id,
     });
-    console.info('[focus.recompute] ok', {
+    log.info('focus.recompute.ok', {
       ms: Date.now() - t0,
       provider: result.provider,
       modelId: result.modelId,
@@ -30,7 +31,7 @@ export async function recomputeFocusAction() {
       text?: string;
       response?: { body?: unknown };
     };
-    console.error('[focus.recompute] failed', {
+    log.error('focus.recompute.failed', {
       ms: Date.now() - t0,
       name: e?.name,
       message: e?.message,

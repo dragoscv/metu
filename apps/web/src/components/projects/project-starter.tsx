@@ -48,7 +48,7 @@ function slugify(s: string): string {
     .slice(0, 60);
 }
 
-export function ProjectStarter() {
+export function ProjectStarter({ pinGoalId = null }: { pinGoalId?: string | null } = {}) {
   const router = useRouter();
   const [source, setSource] = useState<Source>('choose');
 
@@ -107,6 +107,7 @@ export function ProjectStarter() {
         name: name.trim(),
         slug,
         summary: summary.trim() || undefined,
+        ...(pinGoalId ? { goalId: pinGoalId } : {}),
         metadata: {
           ...(stack.length > 0 ? { stack } : {}),
           ...(color ? { color } : {}),

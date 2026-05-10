@@ -3,9 +3,10 @@ import { revalidatePath } from 'next/cache';
 import { eq, and, isNull } from 'drizzle-orm';
 import { z } from 'zod';
 import { auth } from '@metu/auth';
-import { hashToken, randomToken } from '@metu/auth/oauth';
+import { hashToken, parseScopes, randomToken, scopesAllowed } from '@metu/auth/oauth';
 import { getDb } from '@metu/db';
-import { oauthClient, oauthToken } from '@metu/db/schema';
+import { oauthClient, oauthToken, timelineEvent } from '@metu/db/schema';
+import { issueToken } from '@/lib/oauth-provider';
 import { assertSafeOutboundUrl } from '@/lib/safe-equal';
 
 const slugify = (s: string) =>
@@ -76,8 +77,22 @@ export async function registerAppAction(
     allowedScopes: parsed.data.scopes,
     webhookUrl: parsed.data.webhookUrl ?? null,
     // Store only the hash; the plaintext is returned to the user once below.
-    webhookSecret: null,
     webhookSecretHash: webhookSecretRaw ? hashToken(webhookSecretRaw) : null,
+  });
+
+  await db.insert(timelineEvent).values({
+    workspaceId: wsId,
+    userId: session.user.id,
+    kind: 'app.registered',
+    title: `Registered app “${parsed.data.name}”`,
+    payload: {
+      clientId: clientIdValue,
+      type: parsed.data.type,
+      redirectUris: parsed.data.redirectUris,
+      scopes: parsed.data.scopes,
+      hasWebhook: !!parsed.data.webhookUrl,
+    },
+    importance: 0.7,
   });
 
   revalidatePath('/apps');
@@ -104,6 +119,14 @@ export async function revokeAppAction(clientUuid: string) {
     .update(oauthToken)
     .set({ revokedAt: new Date() })
     .where(and(eq(oauthToken.clientId, clientUuid), isNull(oauthToken.revokedAt)));
+  await db.insert(timelineEvent).values({
+    workspaceId: session.user.workspaceId,
+    userId: session.user.id,
+    kind: 'app.revoked',
+    title: 'Revoked OAuth app',
+    payload: { clientUuid },
+    importance: 0.8,
+  });
   revalidatePath('/apps');
   return { ok: true as const };
 }
@@ -127,7 +150,17 @@ export async function rotateClientSecretAction(clientUuid: string) {
   await db
     .update(oauthClient)
     .set({ clientSecretHash: hashToken(next) })
-    .where(eq(oauthClient.id, clientUuid));
+    .where(
+      and(eq(oauthClient.id, clientUuid), eq(oauthClient.workspaceId, session.user.workspaceId)),
+    );
+  await db.insert(timelineEvent).values({
+    workspaceId: session.user.workspaceId,
+    userId: session.user.id,
+    kind: 'app.secret_rotated',
+    title: 'Rotated OAuth client secret',
+    payload: { clientUuid },
+    importance: 0.8,
+  });
   revalidatePath('/apps');
   return { ok: true as const, clientSecret: next };
 }
@@ -166,10 +199,85 @@ export async function verifyDeviceCodeAction(input: z.infer<typeof verifyDeviceS
     return { ok: false as const, error: 'This code was issued in a different workspace.' };
   }
   if (parsed.data.decision === 'deny') {
-    await db.update(oauthToken).set({ revokedAt: new Date() }).where(eq(oauthToken.id, row.id));
+    await db
+      .update(oauthToken)
+      .set({ revokedAt: new Date() })
+      .where(and(eq(oauthToken.id, row.id), eq(oauthToken.workspaceId, session.user.workspaceId)));
     return { ok: true as const, decision: 'denied' as const };
   }
   // Approve: bind the user_id so the device's polling token call succeeds.
-  await db.update(oauthToken).set({ userId: session.user.id }).where(eq(oauthToken.id, row.id));
+  await db
+    .update(oauthToken)
+    .set({ userId: session.user.id })
+    .where(and(eq(oauthToken.id, row.id), eq(oauthToken.workspaceId, session.user.workspaceId)));
   return { ok: true as const, decision: 'allowed' as const };
+}
+
+// ─── Personal access tokens ────────────────────────────────────────────────
+//
+// Long-lived `metu_at_*` access tokens minted from the cookie-authenticated
+// /apps UI. Used by headless clients that can't run a device flow (notably
+// the MCP server, which needs ONE token in mcp.json). The token is bound to
+// the calling user, scoped to the chosen oauthClient, and resolved by the
+// same `findActiveTokenByHash` path SDK routes already use.
+//
+// Security:
+//   - Only the row hash is stored; plaintext returned once.
+//   - TTL capped at 365d (force rotation; long-lived tokens are a footgun).
+//   - Scopes can't exceed the oauthClient's `allowedScopes` allowlist.
+
+const mintTokenSchema = z.object({
+  clientUuid: z.string().uuid(),
+  scopes: z.string().max(500).optional(),
+  ttlDays: z.number().int().min(1).max(365).default(90),
+});
+
+export async function mintAccessTokenAction(input: z.infer<typeof mintTokenSchema>) {
+  const session = await auth();
+  if (!session) return { ok: false as const, error: 'Unauthenticated' };
+  const parsed = mintTokenSchema.safeParse(input);
+  if (!parsed.success) {
+    return { ok: false as const, error: parsed.error.issues[0]?.message ?? 'Invalid' };
+  }
+  const db = getDb();
+  const [client] = await db
+    .select()
+    .from(oauthClient)
+    .where(
+      and(
+        eq(oauthClient.id, parsed.data.clientUuid),
+        eq(oauthClient.workspaceId, session.user.workspaceId),
+        isNull(oauthClient.revokedAt),
+      ),
+    )
+    .limit(1);
+  if (!client) return { ok: false as const, error: 'App not found.' };
+
+  const allowed = parseScopes(client.allowedScopes);
+  const requested = parsed.data.scopes ? parseScopes(parsed.data.scopes) : allowed;
+  const check = scopesAllowed(requested, allowed);
+  if (!check.ok) {
+    return { ok: false as const, error: `scopes not in allowlist: ${check.missing.join(' ')}` };
+  }
+  if (requested.length === 0) {
+    return { ok: false as const, error: 'At least one scope required.' };
+  }
+
+  const issued = await issueToken({
+    workspaceId: session.user.workspaceId,
+    clientUuid: client.id,
+    userId: session.user.id,
+    kind: 'access_token',
+    scopes: requested,
+    ttlSeconds: parsed.data.ttlDays * 24 * 60 * 60,
+    metadata: { mintedFrom: 'apps_ui', mintedBy: session.user.id },
+  });
+
+  revalidatePath('/apps');
+  return {
+    ok: true as const,
+    token: issued.token,
+    expiresAt: issued.expiresAt.toISOString(),
+    scopes: requested.join(' '),
+  };
 }

@@ -1,19 +1,24 @@
-import { eq } from 'drizzle-orm';
+import { and, eq } from 'drizzle-orm';
 import { getDb } from '@metu/db';
 import { capture, timelineEvent } from '@metu/db/schema';
 import { memory } from '@metu/core';
 import { gcs } from '@metu/integrations';
 import { inngest } from '../client';
+import { parseEvent } from '../schemas';
 
 /** capture.created → transcribe (if voice) → embed → focus.recompute */
 export const onCaptureCreated = inngest.createFunction(
   { id: 'capture-pipeline', name: 'Capture pipeline' },
   { event: 'capture/created' },
   async ({ event, step }) => {
-    const { captureId, workspaceId, userId } = event.data;
+    const { captureId, workspaceId, userId } = parseEvent('capture/created', event.data);
     const db = getDb();
 
-    const [row] = await db.select().from(capture).where(eq(capture.id, captureId)).limit(1);
+    const [row] = await db
+      .select()
+      .from(capture)
+      .where(and(eq(capture.id, captureId), eq(capture.workspaceId, workspaceId)))
+      .limit(1);
     if (!row) return { skipped: 'not found' };
 
     let content = row.content;
@@ -34,11 +39,17 @@ export const onCaptureCreated = inngest.createFunction(
         const json = (await res.json()) as { text: string };
         return json.text;
       });
-      await db.update(capture).set({ content, status: 'ready' }).where(eq(capture.id, captureId));
+      await db
+        .update(capture)
+        .set({ content, status: 'ready' })
+        .where(and(eq(capture.id, captureId), eq(capture.workspaceId, workspaceId)));
     }
 
     if (!content || content.trim().length < 4) {
-      await db.update(capture).set({ status: 'ready' }).where(eq(capture.id, captureId));
+      await db
+        .update(capture)
+        .set({ status: 'ready' })
+        .where(and(eq(capture.id, captureId), eq(capture.workspaceId, workspaceId)));
       return { indexed: 0 };
     }
 

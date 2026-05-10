@@ -12,6 +12,7 @@ import { z } from 'zod';
 import { agent } from '@metu/core';
 import { inngest } from '@/inngest/client';
 import { forbidden, hasScope, resolveSession, unauthorized } from '@/lib/bearer';
+import { rateLimit } from '@/lib/ratelimit';
 
 export const runtime = 'nodejs';
 
@@ -25,6 +26,9 @@ export async function POST(req: Request) {
   const session = await resolveSession(req);
   if (!session) return unauthorized();
   if (!hasScope(session, 'tools:invoke')) return forbidden();
+
+  const limited = await rateLimit('sdk-write', session.userId);
+  if (limited) return limited;
 
   const json = await req.json().catch(() => null);
   const parsed = schema.safeParse(json);

@@ -183,7 +183,9 @@ export async function upsertIntegration(input: UpsertIntegrationInput) {
         lastError: null,
         lastSyncAt: new Date(),
       })
-      .where(eq(integration.id, existing[0].id));
+      .where(
+        and(eq(integration.id, existing[0].id), eq(integration.workspaceId, input.workspaceId)),
+      );
     return existing[0].id;
   }
 

@@ -14,8 +14,9 @@ import { stepCountIs, streamText, type ModelMessage } from 'ai';
 import { auth } from '@metu/auth';
 import { getDb } from '@metu/db';
 import { conversation, message } from '@metu/db/schema';
-import { getModel, buildConductorSystem } from '@metu/ai';
+import { getModel, buildConductorSystem, estimateCostUsd } from '@metu/ai';
 import { agent } from '@metu/core';
+import { log } from '@/lib/logger';
 
 export const runtime = 'nodejs';
 export const maxDuration = 120;
@@ -106,6 +107,7 @@ export async function POST(req: NextRequest) {
     stopWhen: stepCountIs(8),
     onFinish: async ({ text, usage, finishReason }) => {
       try {
+        const costUsd = estimateCostUsd(provider, modelId, usage);
         await db.insert(message).values({
           workspaceId: session.user.workspaceId,
           conversationId: convo.id,
@@ -115,6 +117,7 @@ export async function POST(req: NextRequest) {
           model: modelId,
           inputTokens: usage?.inputTokens ?? null,
           outputTokens: usage?.outputTokens ?? null,
+          costUsd,
           metadata: { finishReason },
         });
         await db
@@ -122,7 +125,7 @@ export async function POST(req: NextRequest) {
           .set({ lastMessageAt: new Date() })
           .where(eq(conversation.id, convo.id));
       } catch (err) {
-        console.error('[conductor.chat] persist failed', err);
+        log.error('conductor.chat.persist_failed', { conversationId: convo.id }, err);
       }
     },
   });

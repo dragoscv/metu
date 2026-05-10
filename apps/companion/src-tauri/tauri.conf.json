@@ -22,6 +22,36 @@
         "alwaysOnTop": false,
         "skipTaskbar": false,
         "visible": true
+      },
+      {
+        "label": "hud",
+        "title": "METU HUD",
+        "url": "index.html#hud",
+        "width": 1280,
+        "height": 800,
+        "resizable": true,
+        "decorations": false,
+        "transparent": true,
+        "alwaysOnTop": true,
+        "skipTaskbar": true,
+        "maximized": true,
+        "visible": false,
+        "focus": false
+      },
+      {
+        "label": "pet",
+        "title": "METU Pet",
+        "url": "index.html#pet",
+        "width": 280,
+        "height": 340,
+        "resizable": false,
+        "decorations": false,
+        "transparent": true,
+        "alwaysOnTop": true,
+        "skipTaskbar": true,
+        "visible": false,
+        "focus": false,
+        "shadow": false
       }
     ],
     "security": {
@@ -44,7 +74,7 @@
     "publisher": "METU",
     "homepage": "https://metu.app",
     "copyright": "Copyright © METU",
-    "createUpdaterArtifacts": false,
+    "createUpdaterArtifacts": "v1Compatible",
     "windows": {
       "nsis": {
         "installMode": "currentUser",
@@ -75,6 +105,12 @@
       "desktop": {
         "schemes": ["metu"]
       }
+    },
+    "updater": {
+      "active": false,
+      "endpoints": ["https://releases.metu.app/companion/latest.json"],
+      "dialog": false,
+      "pubkey": ""
     }
   }
 }

@@ -54,7 +54,12 @@ export function GoalEditForm({ goal }: { goal: GoalEditData }) {
         body: body.trim() || null,
         status: status as 'active' | 'paused' | 'achieved' | 'dropped',
         cadence: cadence as 'daily' | 'weekly' | 'monthly' | 'quarterly' | 'once',
-        progressMode: progressMode as 'manual' | 'from_tasks' | 'from_evidence',
+        progressMode: progressMode as
+          | 'manual'
+          | 'from_tasks'
+          | 'from_projects'
+          | 'from_decisions'
+          | 'from_evidence',
         weight,
         dueAt: dueAt ? new Date(dueAt).toISOString() : null,
       });
@@ -115,6 +120,8 @@ export function GoalEditForm({ goal }: { goal: GoalEditData }) {
           <Select value={progressMode} onChange={(e) => setProgressMode(e.target.value)}>
             <option value="manual">Manual</option>
             <option value="from_tasks">From tasks</option>
+            <option value="from_projects">From projects</option>
+            <option value="from_decisions">From decisions</option>
             <option value="from_evidence">From evidence</option>
           </Select>
         </div>

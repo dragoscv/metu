@@ -4,8 +4,10 @@ import { auth } from '@metu/auth';
 import { integrationKindSchema } from '@metu/types';
 import { upsertIntegration } from '@metu/db/queries';
 import { seal } from '@metu/ai/crypto';
+import { safeEqual } from '@/lib/safe-equal';
 import { webOauthConfig } from '@/lib/integrations/web-oauth-config';
 import { verifyIntegrationToken } from '@/lib/integrations/verifiers';
+import { log } from '@/lib/logger';
 
 function callbackUrlFor(kind: string): string {
   const base = process.env.AUTH_URL ?? process.env.NEXT_PUBLIC_APP_URL ?? 'http://localhost:24890';
@@ -46,7 +48,7 @@ export async function GET(req: Request, { params }: { params: Promise<{ kind: st
       new URL(`/integrations?oauth_error=${encodeURIComponent(oauthError)}`, req.url),
     );
   }
-  if (!code || !state || !stateCookie || state !== stateCookie) {
+  if (!code || !state || !stateCookie || !safeEqual(state, stateCookie)) {
     return NextResponse.redirect(new URL('/integrations?oauth_error=state_mismatch', req.url));
   }
 
@@ -69,12 +71,11 @@ export async function GET(req: Request, { params }: { params: Promise<{ kind: st
   });
   if (!tokenRes.ok) {
     const text = await tokenRes.text().catch(() => '');
-    console.error(
-      '[integrations.oauth] token exchange failed',
+    log.error('integrations.oauth.token_exchange_failed', {
       kind,
-      tokenRes.status,
-      text.slice(0, 500),
-    );
+      status: tokenRes.status,
+      detail: text.slice(0, 500),
+    });
     return NextResponse.redirect(
       new URL(`/integrations?oauth_error=token_${tokenRes.status}`, req.url),
     );

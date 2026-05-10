@@ -3,8 +3,10 @@ import { cookies } from 'next/headers';
 import { auth } from '@metu/auth';
 import { getOauthApp, upsertOauthConnection } from '@metu/db/queries';
 import { open, seal } from '@metu/ai/crypto';
+import { safeEqual, assertSafeOutboundUrl } from '@/lib/safe-equal';
 import { callbackUrl } from '@/lib/oauth/pkce';
 import { probeUserinfo } from '@/lib/oauth/discover';
+import { log } from '@/lib/logger';
 
 export async function GET(req: Request, { params }: { params: Promise<{ appId: string }> }) {
   const session = await auth();
@@ -32,7 +34,7 @@ export async function GET(req: Request, { params }: { params: Promise<{ appId: s
       new URL(`/integrations?oauth_error=${encodeURIComponent(oauthError)}`, req.url),
     );
   }
-  if (!code || !state || !stateCookie || state !== stateCookie) {
+  if (!code || !state || !stateCookie || !safeEqual(state, stateCookie)) {
     return NextResponse.redirect(new URL('/integrations?oauth_error=state_mismatch', req.url));
   }
 
@@ -60,6 +62,12 @@ export async function GET(req: Request, { params }: { params: Promise<{ appId: s
   });
   if (verifier) body.set('code_verifier', verifier);
 
+  try {
+    await assertSafeOutboundUrl(app.tokenUrl);
+  } catch {
+    return NextResponse.redirect(new URL('/integrations?oauth_error=unsafe_token_url', req.url));
+  }
+
   const tokenRes = await fetch(app.tokenUrl, {
     method: 'POST',
     headers: {
@@ -71,7 +79,11 @@ export async function GET(req: Request, { params }: { params: Promise<{ appId: s
 
   if (!tokenRes.ok) {
     const text = await tokenRes.text().catch(() => '');
-    console.error('[oauth] token exchange failed', tokenRes.status, text.slice(0, 500));
+    log.error('oauth.token_exchange.failed', {
+      appId,
+      status: tokenRes.status,
+      body: text.slice(0, 500),
+    });
     return NextResponse.redirect(
       new URL(`/integrations?oauth_error=token_${tokenRes.status}`, req.url),
     );
@@ -91,6 +103,7 @@ export async function GET(req: Request, { params }: { params: Promise<{ appId: s
   // Probe identity
   let probe: Awaited<ReturnType<typeof probeUserinfo>>;
   try {
+    if (app.userinfoUrl) await assertSafeOutboundUrl(app.userinfoUrl);
     probe = await probeUserinfo(tokenJson.access_token, app.userinfoUrl);
   } catch (err) {
     probe = {

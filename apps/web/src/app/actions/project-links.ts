@@ -147,6 +147,22 @@ export async function addProjectLinkAction(input: AddLinkInput) {
           },
         })
         .catch(() => {});
+
+      // Also kick a stats sync so the project page lights up immediately.
+      if (resourceId) {
+        await inngest
+          .send({
+            name: 'github/stats.sync.repo',
+            data: {
+              workspaceId: wsId,
+              integrationId: parsed.data.resource.integrationId,
+              resourceId,
+              repoFullName: parsed.data.resource.externalId,
+              reason: 'link',
+            },
+          })
+          .catch(() => {});
+      }
     }
 
     return { ok: true as const, id: link!.id };
@@ -168,7 +184,9 @@ export async function removeProjectLinkAction(linkId: string) {
     .where(and(eq(projectLink.id, linkId), eq(projectLink.workspaceId, wsId)))
     .limit(1);
   if (!row) return { ok: false as const, error: 'Not found' };
-  await db.delete(projectLink).where(eq(projectLink.id, linkId));
+  await db
+    .delete(projectLink)
+    .where(and(eq(projectLink.id, linkId), eq(projectLink.workspaceId, wsId)));
   revalidatePath('/projects');
   revalidatePath(`/projects/${row.projectId}`);
   return { ok: true as const };
@@ -191,7 +209,9 @@ export async function removeProjectLinkByUrlAction(input: { projectId: string; u
     )
     .limit(1);
   if (!row) return { ok: false as const, error: 'Link not found' };
-  await db.delete(projectLink).where(eq(projectLink.id, row.id));
+  await db
+    .delete(projectLink)
+    .where(and(eq(projectLink.id, row.id), eq(projectLink.workspaceId, wsId)));
   revalidatePath('/projects');
   revalidatePath(`/projects/${input.projectId}`);
   return { ok: true as const };

@@ -1,5 +1,5 @@
 import { auth } from '@metu/auth';
-import { getProject, listProjectLinks } from '@metu/db/queries';
+import { getProject, listGoalsFiltered, listProjectLinks } from '@metu/db/queries';
 import { Page, PageHeader } from '@metu/ui';
 import { notFound, redirect } from 'next/navigation';
 import { ProjectFullForm } from '@/components/projects/project-full-form';
@@ -17,7 +17,10 @@ export default async function ProjectEditPage({ params }: PageProps) {
   const proj = await getProject(session.user.workspaceId, id);
   if (!proj) notFound();
   const meta = (proj.metadata ?? {}) as { color?: string; stack?: string[] };
-  const links = await listProjectLinks(session.user.workspaceId, id);
+  const [links, goals] = await Promise.all([
+    listProjectLinks(session.user.workspaceId, id),
+    listGoalsFiltered({ workspaceId: session.user.workspaceId, status: 'active' }),
+  ]);
 
   return (
     <Page className="mx-auto max-w-3xl">
@@ -37,6 +40,7 @@ export default async function ProjectEditPage({ params }: PageProps) {
           status: proj.status as 'active' | 'paused' | 'archived' | 'killed',
           color: meta.color ?? null,
           stack: Array.isArray(meta.stack) ? meta.stack : [],
+          goalId: proj.goalId ?? null,
           createdAt: proj.createdAt ? proj.createdAt.toISOString() : null,
         }}
         links={links.map((l) => ({
@@ -48,6 +52,7 @@ export default async function ProjectEditPage({ params }: PageProps) {
           metadata: (l.metadata ?? {}) as Record<string, unknown>,
           addedAt: l.addedAt ? l.addedAt.toISOString() : new Date().toISOString(),
         }))}
+        goals={goals.map((g) => ({ id: g.id, title: g.title }))}
       />
     </Page>
   );

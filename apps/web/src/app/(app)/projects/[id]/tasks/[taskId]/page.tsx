@@ -1,5 +1,5 @@
 import { auth } from '@metu/auth';
-import { getProject, getTaskById, listProjects } from '@metu/db/queries';
+import { getProject, getTaskById, listGoalsFiltered, listProjects } from '@metu/db/queries';
 import { Page, PageHeader } from '@metu/ui';
 import { notFound, redirect } from 'next/navigation';
 import { TaskEditForm } from '@/components/projects/task-edit-form';
@@ -12,10 +12,11 @@ export default async function TaskDetailPage({ params }: PageProps) {
   const session = await auth();
   if (!session) redirect('/sign-in');
   const { id, taskId } = await params;
-  const [proj, task, projects] = await Promise.all([
+  const [proj, task, projects, goals] = await Promise.all([
     getProject(session.user.workspaceId, id),
     getTaskById(session.user.workspaceId, taskId),
     listProjects(session.user.workspaceId),
+    listGoalsFiltered({ workspaceId: session.user.workspaceId, status: 'active' }),
   ]);
   if (!proj || !task) notFound();
 
@@ -35,6 +36,7 @@ export default async function TaskDetailPage({ params }: PageProps) {
         task={{
           id: task.id,
           projectId: task.projectId,
+          goalId: task.goalId,
           title: task.title,
           body: task.body,
           status: task.status,
@@ -44,6 +46,7 @@ export default async function TaskDetailPage({ params }: PageProps) {
           dueAt: task.dueAt ? task.dueAt.toISOString() : null,
         }}
         projects={projects.map((p) => ({ id: p.id, name: p.name }))}
+        goals={goals.map((g) => ({ id: g.id, title: g.title }))}
         backHref={`/projects/${id}#tasks`}
       />
     </Page>

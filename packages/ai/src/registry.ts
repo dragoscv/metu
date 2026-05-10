@@ -19,6 +19,7 @@ import { and, desc, eq } from 'drizzle-orm';
 import { getDb } from '@metu/db';
 import { providerCredential, workspace } from '@metu/db/schema';
 import type { AiIntent, AiProvider } from '@metu/types';
+import type { LanguageModel } from 'ai';
 import { open } from './crypto';
 import { copilotFetch, getCopilotSession } from './copilot';
 
@@ -72,6 +73,11 @@ const DEFAULTS: Record<AiProvider, Partial<Record<AiIntent, string>>> = {
     fast: 'llama3.2',
   },
   custom: {},
+  // Voice providers — no LLM intents. Empty maps so DEFAULTS matches the
+  // AiProvider union (extended for BYOK voice keys in slice 5b).
+  deepgram: {},
+  cartesia: {},
+  elevenlabs: {},
 };
 
 const FALLBACK_CHAIN: Record<AiIntent, AiProvider[]> = {
@@ -152,6 +158,14 @@ async function resolveCredential(
   return null;
 }
 
+/**
+ * Public alias of `resolveCredential` for callers outside the model factory
+ * (e.g. the voice token broker, which needs to mint a provider-side
+ * ephemeral session and never returns the BYOK key to the client).
+ */
+export const getProviderCredential = resolveCredential;
+export type { ResolvedCredential };
+
 // ─── Model factory ─────────────────────────────────────────────────────────
 
 export interface GetModelInput {
@@ -166,8 +180,12 @@ export interface GetModelInput {
 export interface ResolvedModel {
   provider: AiProvider;
   modelId: string;
-  /** AI SDK model handle — pass to generateText/streamText/embed. */
-  model: ReturnType<ReturnType<typeof createAnthropic>> | unknown;
+  /**
+   * AI SDK model handle — pass to generateText/streamText/generateObject.
+   * For embed-intent calls cast to the embedding-model parameter shape;
+   * see `packages/core/src/memory/index.ts` for the pattern.
+   */
+  model: LanguageModel;
   source: 'workspace';
 }
 
@@ -190,7 +208,10 @@ export async function getModel(input: GetModelInput): Promise<ResolvedModel> {
     if (!modelId) continue;
     try {
       const model = instantiate(provider, cred, modelId, input.intent);
-      return { provider, modelId, model, source: cred.source };
+      // Embed-intent paths produce embedding models; callers cast back to
+      // EmbeddingModel via the AI SDK's parameter shape (see memory/index.ts).
+      // The widened public type is LanguageModel for the common path.
+      return { provider, modelId, model: model as LanguageModel, source: cred.source };
     } catch (err) {
       console.warn(`[ai] provider ${provider} failed to instantiate`, err);
     }

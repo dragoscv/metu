@@ -46,6 +46,7 @@ export async function planConductor(input: PlanInput): Promise<{
   plan: ConductorPlan;
   provider: string;
   modelId: string;
+  usage: { inputTokens: number | null; outputTokens: number | null };
 }> {
   const db = getDb();
   const since = new Date(Date.now() - LOOKBACK_HOURS * 60 * 60 * 1000);
@@ -175,7 +176,7 @@ Rules:
     intent: 'agentic',
   });
 
-  const { object } = await generateObject({
+  const { object, usage } = await generateObject({
     model: model as Parameters<typeof generateObject>[0]['model'],
     system,
     schema: conductorPlanSchema,
@@ -220,5 +221,13 @@ Rules:
     },
   });
 
-  return { plan: object, provider, modelId };
+  return {
+    plan: object,
+    provider,
+    modelId,
+    usage: {
+      inputTokens: usage?.inputTokens ?? null,
+      outputTokens: usage?.outputTokens ?? null,
+    },
+  };
 }

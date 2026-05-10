@@ -12,6 +12,7 @@ import { getDb } from '@metu/db';
 import { integration, timelineEvent } from '@metu/db/schema';
 import { memory } from '@metu/core';
 import { inngest } from '../client';
+import { parseEvent } from '../schemas';
 
 interface RepoMeta {
   full_name: string;
@@ -58,7 +59,18 @@ export const onGithubRepoLinked = inngest.createFunction(
   },
   { event: 'github/repo.linked' },
   async ({ event, step }) => {
-    const { workspaceId, projectId, integrationId, repoFullName, repoUrl } = event.data;
+    const { workspaceId, projectId, integrationId, repoFullName, repoUrl } = parseEvent(
+      'github/repo.linked',
+      event.data,
+    );
+
+    // Defense in depth: repoFullName is interpolated into the GitHub API
+    // path. Even though host is pinned to api.github.com, a value like
+    // `foo/../../search` would hit unintended endpoints with the
+    // workspace's PAT attached. Restrict to the well-known shape.
+    if (!/^[A-Za-z0-9_.-]+\/[A-Za-z0-9_.-]+$/.test(repoFullName)) {
+      return { ok: false, reason: 'invalid_repo_name' };
+    }
 
     const token = await step.run('token', () => getGithubToken(workspaceId, integrationId));
     if (!token) {

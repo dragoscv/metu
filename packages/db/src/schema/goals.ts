@@ -39,6 +39,8 @@ export const goalCadence = pgEnum('goal_cadence', [
 export const goalProgressMode = pgEnum('goal_progress_mode', [
   'manual', // user-set via check-ins
   'from_tasks', // % of linked tasks completed
+  'from_projects', // % of pinned projects in 'archived' (shipped) status
+  'from_decisions', // 0.2 per pinned decision, capped at 1.0
   'from_evidence', // Conductor infers from timeline/captures
 ]);
 

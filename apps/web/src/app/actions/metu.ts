@@ -9,6 +9,7 @@
  * - reindexGithubRepoAction: re-runs github seeding for an existing link.
  */
 import { and, desc, eq, gte, sql } from 'drizzle-orm';
+import { z } from 'zod';
 import { auth } from '@metu/auth';
 import { getDb } from '@metu/db';
 import {
@@ -23,6 +24,15 @@ import {
 } from '@metu/db/schema';
 import { revalidatePath } from 'next/cache';
 import { inngest } from '@/inngest/client';
+
+const RecentActivityLimitSchema = z.number().int().optional();
+const ReindexGithubRepoSchema = z.object({
+  projectId: z.string().uuid(),
+  integrationId: z.string().uuid(),
+  repoFullName: z.string().min(1),
+  repoUrl: z.string().url(),
+});
+const KickGithubStatsSyncSchema = z.object({ projectId: z.string().uuid().optional() }).optional();
 
 export interface MetuStatus {
   enabled: boolean;
@@ -129,24 +139,54 @@ export async function getMetuOverviewAction(): Promise<
   const thread = await ensureConductorThread(wsId);
 
   const since = new Date(Date.now() - 24 * 60 * 60 * 1000);
+  // "Spent today" — calendar day in UTC, matching how `dailyCostCapUsd` is
+  // enforced. (Per-user-tz would need session preferences plumbed in here.)
+  const startOfToday = new Date();
+  startOfToday.setUTCHours(0, 0, 0, 0);
 
   const [statsRow] = await db
     .select({
       total: sql<number>`count(*)::int`,
       succeeded: sql<number>`count(*) filter (where ${toolCall.status} = 'success')::int`,
       failed: sql<number>`count(*) filter (where ${toolCall.status} = 'failed')::int`,
-      pending: sql<number>`count(*) filter (where ${toolCall.status} = 'awaiting_approval')::int`,
-      cost: sql<number>`coalesce(sum(coalesce(${toolCall.actualCostUsd}, ${toolCall.estimatedCostUsd}, 0)), 0)::float`,
     })
     .from(toolCall)
     .where(and(eq(toolCall.workspaceId, wsId), gte(toolCall.requestedAt, since)));
+
+  // Pending approval is global (no time window) — older asks should still
+  // surface in the count and match the list rendered below.
+  const [pendingCountRow] = await db
+    .select({ n: sql<number>`count(*)::int` })
+    .from(toolCall)
+    .where(and(eq(toolCall.workspaceId, wsId), eq(toolCall.status, 'awaiting_approval')));
+
+  // Cost today = LLM spend (assistant messages) + tool-call cost.
+  const [toolCostRow] = await db
+    .select({
+      cost: sql<number>`coalesce(sum(coalesce(${toolCall.actualCostUsd}, ${toolCall.estimatedCostUsd}, 0)), 0)::float`,
+    })
+    .from(toolCall)
+    .where(and(eq(toolCall.workspaceId, wsId), gte(toolCall.requestedAt, startOfToday)));
+
+  const [msgCostRow] = await db
+    .select({
+      cost: sql<number>`coalesce(sum(coalesce(${message.costUsd}, 0)), 0)::float`,
+    })
+    .from(message)
+    .where(
+      and(
+        eq(message.workspaceId, wsId),
+        eq(message.role, 'assistant'),
+        gte(message.createdAt, startOfToday),
+      ),
+    );
 
   const stats: MetuStats24h = {
     toolCalls: statsRow?.total ?? 0,
     succeeded: statsRow?.succeeded ?? 0,
     failed: statsRow?.failed ?? 0,
-    pendingApproval: statsRow?.pending ?? 0,
-    costUsd: statsRow?.cost ?? 0,
+    pendingApproval: pendingCountRow?.n ?? 0,
+    costUsd: (toolCostRow?.cost ?? 0) + (msgCostRow?.cost ?? 0),
   };
 
   const [latestPulse] = await db
@@ -303,6 +343,9 @@ export interface AgentActivityRow {
 export async function getRecentAgentActivityAction(
   limit = 30,
 ): Promise<{ ok: true; data: AgentActivityRow[] } | { ok: false; error: string }> {
+  const parsed = RecentActivityLimitSchema.safeParse(limit);
+  if (!parsed.success) return { ok: false, error: 'invalid_input' };
+  limit = parsed.data ?? 30;
   const session = await auth();
   if (!session) return { ok: false, error: 'Unauthenticated' };
   const db = getDb();
@@ -357,6 +400,9 @@ export async function reindexGithubRepoAction(input: {
   repoFullName: string;
   repoUrl: string;
 }) {
+  const parsed = ReindexGithubRepoSchema.safeParse(input);
+  if (!parsed.success) return { ok: false as const, error: 'invalid_input' };
+  input = parsed.data;
   const session = await auth();
   if (!session) return { ok: false as const, error: 'Unauthenticated' };
   await inngest
@@ -372,5 +418,87 @@ export async function reindexGithubRepoAction(input: {
       },
     })
     .catch(() => {});
+
+  // Also refresh stats so the dashboard reflects new commits/PRs/issues.
+  const db = getDb();
+  const [res] = await db
+    .select({ id: integrationResource.id })
+    .from(integrationResource)
+    .where(
+      and(
+        eq(integrationResource.workspaceId, session.user.workspaceId),
+        eq(integrationResource.provider, 'github'),
+        eq(integrationResource.externalId, input.repoFullName),
+      ),
+    )
+    .limit(1);
+  if (res) {
+    await inngest
+      .send({
+        name: 'github/stats.sync.repo',
+        data: {
+          workspaceId: session.user.workspaceId,
+          integrationId: input.integrationId,
+          resourceId: res.id,
+          repoFullName: input.repoFullName,
+          reason: 'manual-reindex',
+        },
+      })
+      .catch(() => {});
+  }
+
   return { ok: true as const };
+}
+
+/**
+ * Kick a stats refresh for every GitHub repo in the workspace, optionally
+ * narrowed to a single project. Used by the "Refresh stats" button on
+ * /projects/[id] and surfaced as a manual control on /metu.
+ */
+export async function kickGithubStatsSyncAction(input?: { projectId?: string }) {
+  const parsed = KickGithubStatsSyncSchema.safeParse(input);
+  if (!parsed.success) return { ok: false as const, error: 'invalid_input' };
+  input = parsed.data;
+  const session = await auth();
+  if (!session) return { ok: false as const, error: 'Unauthenticated' };
+  const db = getDb();
+  const wsId = session.user.workspaceId;
+
+  const conds = [
+    eq(projectLink.workspaceId, wsId),
+    eq(projectLink.provider, 'github'),
+    eq(projectLink.kind, 'repo'),
+  ];
+  if (input?.projectId) conds.push(eq(projectLink.projectId, input.projectId));
+
+  const rows = await db
+    .select({
+      resourceId: integrationResource.id,
+      integrationId: integrationResource.integrationId,
+      repoFullName: integrationResource.externalId,
+    })
+    .from(projectLink)
+    .innerJoin(integrationResource, eq(integrationResource.id, projectLink.resourceId))
+    .where(and(...conds));
+
+  let queued = 0;
+  for (const r of rows) {
+    if (!r.integrationId) continue;
+    await inngest
+      .send({
+        name: 'github/stats.sync.repo',
+        data: {
+          workspaceId: wsId,
+          integrationId: r.integrationId,
+          resourceId: r.resourceId,
+          repoFullName: r.repoFullName,
+          reason: 'manual',
+        },
+      })
+      .catch(() => {});
+    queued++;
+  }
+  if (input?.projectId) revalidatePath(`/projects/${input.projectId}`);
+  revalidatePath('/projects');
+  return { ok: true as const, queued };
 }

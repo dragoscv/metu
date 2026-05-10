@@ -6,6 +6,7 @@ import { NextResponse } from 'next/server';
 import { RecallQuerySchema } from '@metu/protocol';
 import { memory } from '@metu/core';
 import { forbidden, hasScope, resolveSession, unauthorized } from '@/lib/bearer';
+import { rateLimit } from '@/lib/ratelimit';
 
 export const runtime = 'nodejs';
 
@@ -13,6 +14,9 @@ export async function POST(req: Request) {
   const session = await resolveSession(req);
   if (!session) return unauthorized();
   if (!hasScope(session, 'recall:read')) return forbidden();
+
+  const limited = await rateLimit('sdk-write', session.userId);
+  if (limited) return limited;
 
   const json = await req.json().catch(() => null);
   const parsed = RecallQuerySchema.safeParse(json);

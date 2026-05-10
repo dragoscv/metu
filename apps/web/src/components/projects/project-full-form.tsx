@@ -28,15 +28,18 @@ export interface ProjectFullFormData {
   status: 'active' | 'paused' | 'archived' | 'killed';
   color: string | null;
   stack: string[];
+  goalId: string | null;
   createdAt: string | null;
 }
 
 export function ProjectFullForm({
   project,
   links,
+  goals,
 }: {
   project: ProjectFullFormData;
   links: LinkRow[];
+  goals: { id: string; title: string }[];
 }) {
   const router = useRouter();
   const [error, setError] = useState<string | null>(null);
@@ -54,6 +57,13 @@ export function ProjectFullForm({
       <StatusSection project={project} onError={setError} onSaved={() => router.refresh()} />
 
       <StackSection project={project} onError={setError} onSaved={() => router.refresh()} />
+
+      <GoalPinSection
+        project={project}
+        goals={goals}
+        onError={setError}
+        onSaved={() => router.refresh()}
+      />
 
       <LinksSection projectId={project.id} links={links} />
 
@@ -234,6 +244,58 @@ function StackSection({
         <Button onClick={save} disabled={!dirty || pending} size="sm">
           {pending ? <Loader2 className="h-4 w-4 animate-spin" /> : <Save className="h-4 w-4" />}
           Save stack
+        </Button>
+      </SectionFooter>
+    </Section>
+  );
+}
+
+// ----------------- Goal pin -----------------
+
+function GoalPinSection({
+  project,
+  goals,
+  onError,
+  onSaved,
+}: {
+  project: ProjectFullFormData;
+  goals: { id: string; title: string }[];
+  onError: (e: string | null) => void;
+  onSaved: () => void;
+}) {
+  const [goalId, setGoalId] = useState<string>(project.goalId ?? '');
+  const [pending, start] = useTransition();
+  const dirty = (project.goalId ?? '') !== goalId;
+
+  const save = () => {
+    onError(null);
+    start(async () => {
+      const res = await updateProjectAction({
+        id: project.id,
+        goalId: goalId || null,
+      });
+      if (!res.ok) onError(res.error);
+      else onSaved();
+    });
+  };
+
+  return (
+    <Section
+      title="Pin to goal"
+      subtitle="Pinning a project to a goal makes it appear as a workstream on the goal board."
+    >
+      <Select value={goalId} onChange={(e) => setGoalId(e.target.value)} className="max-w-md">
+        <option value="">— No goal —</option>
+        {goals.map((g) => (
+          <option key={g.id} value={g.id}>
+            {g.title}
+          </option>
+        ))}
+      </Select>
+      <SectionFooter>
+        <Button onClick={save} disabled={!dirty || pending} size="sm">
+          {pending ? <Loader2 className="h-4 w-4 animate-spin" /> : <Save className="h-4 w-4" />}
+          Save pin
         </Button>
       </SectionFooter>
     </Section>

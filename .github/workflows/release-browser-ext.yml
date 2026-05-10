@@ -1,0 +1,140 @@
+name: release-browser-ext
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'apps/browser-ext/**'
+      - 'scripts/package-browser-ext.mjs'
+      - '.github/workflows/release-browser-ext.yml'
+  workflow_dispatch:
+    inputs:
+      version:
+        description: 'Version to release (e.g. 0.2.0). Reads from apps/browser-ext/manifest.json if empty.'
+        required: false
+      force:
+        description: 'Rebuild even if the tag already exists'
+        type: boolean
+        default: false
+
+concurrency:
+  group: release-browser-ext-${{ github.ref }}
+  cancel-in-progress: false
+
+permissions:
+  contents: write
+
+jobs:
+  # Gate: read manifest version, skip if the tag exists. Mirrors release-companion
+  # so casual edits without a version bump don't trigger a rebuild.
+  resolve:
+    runs-on: ubuntu-latest
+    outputs:
+      version: ${{ steps.ver.outputs.version }}
+      tag: ${{ steps.ver.outputs.tag }}
+      should_release: ${{ steps.ver.outputs.should_release }}
+    steps:
+      - uses: actions/checkout@v4
+        with: { fetch-depth: 0 }
+      - id: ver
+        shell: bash
+        env:
+          INPUT_VERSION: ${{ github.event.inputs.version }}
+          FORCE: ${{ github.event.inputs.force }}
+        run: |
+          VERSION="$INPUT_VERSION"
+          if [[ -z "$VERSION" ]]; then
+            VERSION=$(node -p "require('./apps/browser-ext/manifest.json').version")
+          fi
+          MANIFEST_VERSION=$(node -p "require('./apps/browser-ext/manifest.json').version")
+          PKG_VERSION=$(node -p "require('./apps/browser-ext/package.json').version")
+          if [[ "$MANIFEST_VERSION" != "$PKG_VERSION" ]]; then
+            echo "::error::manifest.json version ($MANIFEST_VERSION) and package.json version ($PKG_VERSION) are out of sync. Bump both before releasing."
+            exit 1
+          fi
+          TAG="browser-ext-v$VERSION"
+          echo "version=$VERSION" >> "$GITHUB_OUTPUT"
+          echo "tag=$TAG" >> "$GITHUB_OUTPUT"
+          if [[ "$FORCE" == "true" ]]; then
+            echo "should_release=true" >> "$GITHUB_OUTPUT"
+            echo "Forced rebuild requested."
+          elif git rev-parse "refs/tags/$TAG" >/dev/null 2>&1; then
+            echo "should_release=false" >> "$GITHUB_OUTPUT"
+            echo "Tag $TAG already exists — skipping. Bump apps/browser-ext/manifest.json + package.json to publish a new version."
+          else
+            echo "should_release=true" >> "$GITHUB_OUTPUT"
+            echo "Tag $TAG is new — proceeding with release."
+          fi
+
+  release:
+    needs: resolve
+    if: needs.resolve.outputs.should_release == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: pnpm/action-setup@v4
+        with: { version: 9.15.0 }
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: 'pnpm'
+
+      - name: Install workspace deps
+        run: pnpm install --frozen-lockfile
+
+      - name: Build production zip
+        run: pnpm browser-ext:package:prod
+
+      - name: Locate artifacts
+        id: artifacts
+        shell: bash
+        run: |
+          VERSION="${{ needs.resolve.outputs.version }}"
+          ZIP="apps/browser-ext/dist/metu-browser-ext-$VERSION.zip"
+          SHA="$ZIP.sha256"
+          if [[ ! -f "$ZIP" || ! -f "$SHA" ]]; then
+            echo "::error::Expected artifacts missing: $ZIP and/or $SHA"
+            ls -la apps/browser-ext/dist/ || true
+            exit 1
+          fi
+          SIZE=$(wc -c < "$ZIP" | tr -d ' ')
+          DIGEST=$(awk '{print $1}' "$SHA")
+          echo "zip=$ZIP" >> "$GITHUB_OUTPUT"
+          echo "sha=$SHA" >> "$GITHUB_OUTPUT"
+          echo "size=$SIZE" >> "$GITHUB_OUTPUT"
+          echo "digest=$DIGEST" >> "$GITHUB_OUTPUT"
+          echo "Built $ZIP ($SIZE bytes, sha256=$DIGEST)"
+
+      - name: Create GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ needs.resolve.outputs.tag }}
+          name: 'METU Browser Extension v${{ needs.resolve.outputs.version }}'
+          draft: false
+          prerelease: false
+          files: |
+            ${{ steps.artifacts.outputs.zip }}
+            ${{ steps.artifacts.outputs.sha }}
+          body: |
+            See [CHANGELOG](https://github.com/${{ github.repository }}/blob/main/apps/browser-ext/CHANGELOG.md) for details.
+
+            ### Install (manual)
+            1. Download `metu-browser-ext-${{ needs.resolve.outputs.version }}.zip`.
+            2. Unzip into a folder.
+            3. Open `chrome://extensions`, enable **Developer mode**, click **Load unpacked**, pick the folder.
+
+            ### Verify
+            ```
+            sha256:  ${{ steps.artifacts.outputs.digest }}
+            size:    ${{ steps.artifacts.outputs.size }} bytes
+            ```
+            The build is deterministic — same source produces the same SHA-256.
+
+            ### Chrome Web Store
+            The same zip is uploaded to the WebStore for review. Stable users will receive
+            it via auto-update once published.
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

@@ -13,6 +13,7 @@
  */
 import { revalidatePath } from 'next/cache';
 import { and, desc, eq, gte, sql } from 'drizzle-orm';
+import { log } from '@/lib/logger';
 import { z } from 'zod';
 import { auth } from '@metu/auth';
 import { getDb } from '@metu/db';
@@ -367,12 +368,10 @@ export async function generateNextProfileQuestionAction(args?: {
             allowMultiSelect: chipsRes.object.allowMultiSelect ?? normalized.allowMultiSelect,
           };
         } else {
-          console.warn('[profile-wizard] chips fallback returned < 2 chips', {
-            chips,
-          });
+          log.warn('profile_wizard.chips.fallback_short', { chips });
         }
       } catch (chipErr) {
-        console.warn('[profile-wizard] chips fallback failed', {
+        log.warn('profile_wizard.chips.fallback_failed', {
           message: chipErr instanceof Error ? chipErr.message : String(chipErr),
         });
       }

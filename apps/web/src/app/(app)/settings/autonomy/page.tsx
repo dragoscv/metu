@@ -3,6 +3,7 @@ import { redirect } from 'next/navigation';
 import { eq } from 'drizzle-orm';
 import { getDb } from '@metu/db';
 import { agentPolicy, integration, toolAcl, workspace } from '@metu/db/schema';
+import { toolCallAclWarnings } from '@metu/db/queries';
 import { agent } from '@metu/core';
 import { Page, PageHeader } from '@metu/ui';
 import { AutonomyForm, type AutonomyMode } from '@/components/autonomy-form';
@@ -74,6 +75,12 @@ export default async function AutonomyPage() {
     .from(integration)
     .where(eq(integration.workspaceId, wsId));
 
+  // 14d window matches the default /audit period; gives us a steady
+  // sample for any tool that runs more than ~once a week.
+  const since = new Date(Date.now() - 14 * 24 * 60 * 60 * 1000);
+  const warnings = await toolCallAclWarnings({ workspaceId: wsId, since });
+  const warningsByTool = new Map(warnings.map((w) => [w.tool, w]));
+
   const tools = agent.listTools();
   const defaultMode = (policyRow?.defaultMode as AutonomyMode | undefined) ?? 'ask';
 
@@ -87,6 +94,7 @@ export default async function AutonomyPage() {
     const override = wsAclMap.get(t.name) ?? null;
     const effective: AutonomyMode =
       t.kind === 'read' ? 'autopilot' : (override ?? defaultMode ?? KIND_DEFAULT[t.kind]);
+    const w = warningsByTool.get(t.name);
     return {
       name: t.name,
       description: t.description,
@@ -94,6 +102,16 @@ export default async function AutonomyPage() {
       effective,
       override,
       scopable: SCOPED_TOOLS.has(t.name),
+      costWarning: w
+        ? {
+            baselineMode: w.baselineMode,
+            multiplier: w.multiplier,
+            autopilotAvg: w.autopilotAvg,
+            baselineAvg: w.baselineAvg,
+            autopilotCalls: w.autopilotCalls,
+            baselineCalls: w.baselineCalls,
+          }
+        : null,
     };
   });
 
@@ -109,6 +127,11 @@ export default async function AutonomyPage() {
         integrationStatus: i.status,
         effective: t.effective,
         override: scopedAclMap.get(`${t.name}::${i.id}`) ?? null,
+        // Workspace-level cost stat. We do not (yet) track integration_id on
+        // tool_call, so the multiplier is computed across all calls for this
+        // tool. The nudge is still actionable per-integration: downgrading
+        // the override drops autopilot for THAT integration only.
+        costWarning: t.costWarning,
       })),
     );
 

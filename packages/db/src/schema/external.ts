@@ -1,6 +1,15 @@
 /** External resources discovered/cached from integrations + their assignment to projects. */
 import { relations, sql } from 'drizzle-orm';
-import { index, jsonb, pgTable, text, timestamp, uniqueIndex, uuid } from 'drizzle-orm/pg-core';
+import {
+  index,
+  integer,
+  jsonb,
+  pgTable,
+  text,
+  timestamp,
+  uniqueIndex,
+  uuid,
+} from 'drizzle-orm/pg-core';
 import { user } from './auth';
 import { integration } from './integrations';
 import { project } from './project';
@@ -120,5 +129,96 @@ export const projectLinkRelations = relations(projectLink, ({ one }) => ({
   addedByUser: one(user, {
     fields: [projectLink.addedBy],
     references: [user.id],
+  }),
+}));
+
+/**
+ * Per-repo GitHub statistics snapshot. Refreshed every ~2h by a cron job and
+ * on demand via `kickGithubStatsSyncAction`. One row per linked repo
+ * (uniquely keyed by `resourceId`).
+ *
+ * The Conductor reads this through the `github_repo_stats` agent tool to
+ * ground claims about activity, and the project detail page renders the
+ * heatmap + counts directly from this row.
+ */
+export const githubRepoStats = pgTable(
+  'github_repo_stats',
+  {
+    id: uuid('id')
+      .primaryKey()
+      .default(sql`gen_random_uuid()`),
+    workspaceId: uuid('workspace_id')
+      .notNull()
+      .references(() => workspace.id, { onDelete: 'cascade' }),
+    /** FK → integration_resource (the cached GitHub repo). Unique. */
+    resourceId: uuid('resource_id')
+      .notNull()
+      .references(() => integrationResource.id, { onDelete: 'cascade' }),
+    /** Mirror of resource.externalId for ergonomic queries. */
+    repoFullName: text('repo_full_name').notNull(),
+    defaultBranch: text('default_branch'),
+    primaryLanguage: text('primary_language'),
+    /** {language: bytes} from /repos/{owner}/{repo}/languages. */
+    languageBytes: jsonb('language_bytes')
+      .notNull()
+      .default(sql`'{}'::jsonb`),
+    stargazers: integer('stargazers').notNull().default(0),
+    forks: integer('forks').notNull().default(0),
+    watchers: integer('watchers').notNull().default(0),
+    openIssues: integer('open_issues').notNull().default(0),
+    openPullRequests: integer('open_pull_requests').notNull().default(0),
+    /** Activity windows attributed to the integration owner (workspace user). */
+    commitsLast7d: integer('commits_last_7d').notNull().default(0),
+    commitsLast30d: integer('commits_last_30d').notNull().default(0),
+    additionsLast30d: integer('additions_last_30d').notNull().default(0),
+    deletionsLast30d: integer('deletions_last_30d').notNull().default(0),
+    mergedPrsLast30d: integer('merged_prs_last_30d').notNull().default(0),
+    closedIssuesLast30d: integer('closed_issues_last_30d').notNull().default(0),
+    /** Consecutive days with ≥1 commit by the user, ending today. */
+    currentStreakDays: integer('current_streak_days').notNull().default(0),
+    /** 52 buckets (newest last) of weekly commit counts from /stats/commit_activity. */
+    weeklyCommitHistogram: jsonb('weekly_commit_histogram')
+      .notNull()
+      .default(sql`'[]'::jsonb`),
+    /** Top contributors: [{login, contributions, avatarUrl}]. */
+    topContributors: jsonb('top_contributors')
+      .notNull()
+      .default(sql`'[]'::jsonb`),
+    /** Recent commits cache: [{sha, message, authorLogin, url, authoredAt}]. */
+    recentCommits: jsonb('recent_commits')
+      .notNull()
+      .default(sql`'[]'::jsonb`),
+    /** Recently merged PRs by user: [{number, title, url, mergedAt}]. */
+    recentMergedPrs: jsonb('recent_merged_prs')
+      .notNull()
+      .default(sql`'[]'::jsonb`),
+    /** Recently closed issues authored or assigned to user: [{number, title, url, closedAt}]. */
+    recentClosedIssues: jsonb('recent_closed_issues')
+      .notNull()
+      .default(sql`'[]'::jsonb`),
+    lastCommitAt: timestamp('last_commit_at', { withTimezone: true }),
+    lastSyncedAt: timestamp('last_synced_at', { withTimezone: true })
+      .notNull()
+      .default(sql`now()`),
+    lastSyncError: text('last_sync_error'),
+    createdAt: timestamp('created_at', { withTimezone: true })
+      .notNull()
+      .default(sql`now()`),
+  },
+  (t) => [
+    uniqueIndex('github_repo_stats_resource_idx').on(t.resourceId),
+    index('github_repo_stats_workspace_idx').on(t.workspaceId),
+    index('github_repo_stats_full_name_idx').on(t.repoFullName),
+  ],
+);
+
+export const githubRepoStatsRelations = relations(githubRepoStats, ({ one }) => ({
+  workspace: one(workspace, {
+    fields: [githubRepoStats.workspaceId],
+    references: [workspace.id],
+  }),
+  resource: one(integrationResource, {
+    fields: [githubRepoStats.resourceId],
+    references: [integrationResource.id],
   }),
 }));

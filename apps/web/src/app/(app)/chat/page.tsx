@@ -60,6 +60,7 @@ export default async function ConductorPage({
       createdAt: message.createdAt,
       model: message.model,
       provider: message.provider,
+      metadata: message.metadata,
     })
     .from(message)
     .where(eq(message.conversationId, target.id))
@@ -88,14 +89,19 @@ export default async function ConductorPage({
     <ConductorChat
       conversationId={target.id}
       title={target.title}
-      initialMessages={messages.map((m) => ({
-        id: m.id,
-        role: m.role as 'system' | 'user' | 'assistant' | 'tool',
-        content: m.content,
-        createdAt: new Date(m.createdAt).toISOString(),
-        model: m.model,
-        provider: m.provider,
-      }))}
+      initialMessages={messages.map((m) => {
+        const meta = (m.metadata ?? {}) as Record<string, unknown>;
+        const triggerReason = typeof meta.triggerReason === 'string' ? meta.triggerReason : null;
+        return {
+          id: m.id,
+          role: m.role as 'system' | 'user' | 'assistant' | 'tool',
+          content: m.content,
+          createdAt: new Date(m.createdAt).toISOString(),
+          model: m.model,
+          provider: m.provider,
+          triggerReason,
+        };
+      })}
       initialToolCalls={toolCalls.map((tc) => ({
         id: tc.id,
         tool: tc.tool,

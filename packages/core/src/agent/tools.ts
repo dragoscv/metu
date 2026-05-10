@@ -16,15 +16,22 @@ import { z } from 'zod';
 import { getDb } from '@metu/db';
 import {
   capture,
+  continuityBriefing,
   decision,
+  goal,
+  githubRepoStats,
   integration,
   notification,
   project,
+  projectLink,
   task,
   timelineEvent,
 } from '@metu/db/schema';
 import { callRemoteTool, type ExternalMcpConfig } from '@metu/integrations/mcp';
 import * as memoryEngine from '../memory';
+import { restoreProjectContext } from '../continuity';
+import { DEVICE_TOOLS } from './device-tools';
+import { EDITOR_TOOLS } from './editor-tools';
 
 interface RecallRow {
   id: string;
@@ -39,6 +46,12 @@ export type ToolKind = 'read' | 'low_risk' | 'high_risk';
 export interface ToolContext {
   workspaceId: string;
   userId: string;
+  /**
+   * The `tool_call.id` row created by `runTool` for this invocation. Device
+   * tools use it as the `tool.invoke` envelope id so the eventual
+   * `tool.result` from the device matches the awaited promise.
+   */
+  toolCallId?: string;
 }
 
 export interface ToolDefinition<TArgs extends z.ZodTypeAny, TResult = unknown> {
@@ -87,6 +100,80 @@ const recallTool: ToolDefinition<typeof recallArgs> = {
         sourceId: h.source_id,
       })),
     };
+  },
+};
+
+// ─── github_repo_stats ─────────────────────────────────────────────────────
+
+const githubRepoStatsArgs = z.object({
+  projectId: z.string().uuid().optional().describe('Narrow to repos linked to a specific project.'),
+  repoFullName: z
+    .string()
+    .optional()
+    .describe('Match a single repo by "owner/name". Takes precedence over projectId.'),
+  limit: z.number().int().min(1).max(20).default(10),
+});
+
+const githubRepoStatsTool: ToolDefinition<typeof githubRepoStatsArgs> = {
+  name: 'github_repo_stats',
+  description:
+    'Latest GitHub activity snapshot per linked repo: commits 7d/30d, open PRs, open issues, merged PRs 30d, primary language, streak. Use to ground claims about coding work and momentum.',
+  kind: 'read',
+  args: githubRepoStatsArgs,
+  async execute(args, ctx) {
+    const db = getDb();
+    const baseSelect = {
+      repoFullName: githubRepoStats.repoFullName,
+      primaryLanguage: githubRepoStats.primaryLanguage,
+      stargazers: githubRepoStats.stargazers,
+      openIssues: githubRepoStats.openIssues,
+      openPullRequests: githubRepoStats.openPullRequests,
+      commitsLast7d: githubRepoStats.commitsLast7d,
+      commitsLast30d: githubRepoStats.commitsLast30d,
+      mergedPrsLast30d: githubRepoStats.mergedPrsLast30d,
+      closedIssuesLast30d: githubRepoStats.closedIssuesLast30d,
+      currentStreakDays: githubRepoStats.currentStreakDays,
+      lastCommitAt: githubRepoStats.lastCommitAt,
+      lastSyncedAt: githubRepoStats.lastSyncedAt,
+    };
+
+    if (args.repoFullName) {
+      const rows = await db
+        .select(baseSelect)
+        .from(githubRepoStats)
+        .where(
+          and(
+            eq(githubRepoStats.workspaceId, ctx.workspaceId),
+            eq(githubRepoStats.repoFullName, args.repoFullName),
+          ),
+        )
+        .limit(args.limit);
+      return { result: rows };
+    }
+
+    if (args.projectId) {
+      const rows = await db
+        .select(baseSelect)
+        .from(githubRepoStats)
+        .innerJoin(projectLink, eq(projectLink.resourceId, githubRepoStats.resourceId))
+        .where(
+          and(
+            eq(githubRepoStats.workspaceId, ctx.workspaceId),
+            eq(projectLink.projectId, args.projectId),
+          ),
+        )
+        .orderBy(desc(githubRepoStats.commitsLast7d))
+        .limit(args.limit);
+      return { result: rows };
+    }
+
+    const rows = await db
+      .select(baseSelect)
+      .from(githubRepoStats)
+      .where(eq(githubRepoStats.workspaceId, ctx.workspaceId))
+      .orderBy(desc(githubRepoStats.commitsLast7d))
+      .limit(args.limit);
+    return { result: rows };
   },
 };
 
@@ -195,12 +282,69 @@ const createTaskTool: ToolDefinition<typeof createTaskArgs> = {
       undoPayload: { taskId: row!.id },
     };
   },
-  async undo(payload) {
+  async undo(payload, ctx) {
     const db = getDb();
     await db
       .update(task)
       .set({ deletedAt: new Date(), status: 'dropped' })
-      .where(eq(task.id, String(payload.taskId)));
+      .where(and(eq(task.id, String(payload.taskId)), eq(task.workspaceId, ctx.workspaceId)));
+  },
+};
+
+// ─── pin_to_goal ───────────────────────────────────────────────────────────
+
+const pinToGoalArgs = z.object({
+  refKind: z.enum(['task', 'project', 'decision']),
+  refId: z.string().uuid(),
+  goalId: z.string().uuid().nullable().describe('Goal id to pin to, or null to unpin.'),
+});
+
+const pinToGoalTool: ToolDefinition<typeof pinToGoalArgs> = {
+  name: 'pin_to_goal',
+  description:
+    'Pin a task, project, or decision to a goal so it counts toward goal progress and shows on the goal board. Pass goalId=null to unpin.',
+  kind: 'low_risk',
+  args: pinToGoalArgs,
+  async execute(args, ctx) {
+    const db = getDb();
+    const tableMap = { task, project, decision } as const;
+    const t = tableMap[args.refKind];
+    // Verify ownership + load previous goal
+    const [existing] = await db
+      .select({ id: t.id, goalId: t.goalId })
+      .from(t)
+      .where(and(eq(t.id, args.refId), eq(t.workspaceId, ctx.workspaceId)))
+      .limit(1);
+    if (!existing) throw new Error(`${args.refKind} not found`);
+    if (args.goalId) {
+      const [g] = await db
+        .select({ id: goal.id })
+        .from(goal)
+        .where(and(eq(goal.id, args.goalId), eq(goal.workspaceId, ctx.workspaceId)))
+        .limit(1);
+      if (!g) throw new Error('goal not found');
+    }
+    if (existing.goalId === args.goalId) {
+      return { result: { changed: false, previousGoalId: existing.goalId } };
+    }
+    await db
+      .update(t)
+      .set({ goalId: args.goalId })
+      .where(and(eq(t.id, args.refId), eq(t.workspaceId, ctx.workspaceId)));
+    return {
+      result: { changed: true, previousGoalId: existing.goalId, newGoalId: args.goalId },
+      undoPayload: { refKind: args.refKind, refId: args.refId, previousGoalId: existing.goalId },
+    };
+  },
+  async undo(payload, ctx) {
+    const db = getDb();
+    const tableMap = { task, project, decision } as const;
+    const refKind = String(payload.refKind) as 'task' | 'project' | 'decision';
+    const t = tableMap[refKind];
+    await db
+      .update(t)
+      .set({ goalId: (payload.previousGoalId as string | null) ?? null })
+      .where(and(eq(t.id, String(payload.refId)), eq(t.workspaceId, ctx.workspaceId)));
   },
 };
 
@@ -238,12 +382,14 @@ const proposeDecisionTool: ToolDefinition<typeof proposeDecisionArgs> = {
       undoPayload: { decisionId: row!.id },
     };
   },
-  async undo(payload) {
+  async undo(payload, ctx) {
     const db = getDb();
     await db
       .update(decision)
       .set({ deletedAt: new Date() })
-      .where(eq(decision.id, String(payload.decisionId)));
+      .where(
+        and(eq(decision.id, String(payload.decisionId)), eq(decision.workspaceId, ctx.workspaceId)),
+      );
   },
 };
 
@@ -280,7 +426,7 @@ const tagCaptureTool: ToolDefinition<typeof tagCaptureArgs> = {
         projectId: args.projectId === undefined ? before.projectId : args.projectId,
         metadata: nextMeta,
       })
-      .where(eq(capture.id, args.captureId));
+      .where(and(eq(capture.id, args.captureId), eq(capture.workspaceId, ctx.workspaceId)));
     return {
       result: { ok: true },
       undoPayload: {
@@ -290,7 +436,7 @@ const tagCaptureTool: ToolDefinition<typeof tagCaptureArgs> = {
       },
     };
   },
-  async undo(payload) {
+  async undo(payload, ctx) {
     const db = getDb();
     await db
       .update(capture)
@@ -298,7 +444,9 @@ const tagCaptureTool: ToolDefinition<typeof tagCaptureArgs> = {
         projectId: (payload.prevProjectId as string | null) ?? null,
         metadata: (payload.prevMetadata as Record<string, unknown>) ?? {},
       })
-      .where(eq(capture.id, String(payload.captureId)));
+      .where(
+        and(eq(capture.id, String(payload.captureId)), eq(capture.workspaceId, ctx.workspaceId)),
+      );
   },
 };
 
@@ -365,6 +513,54 @@ const logObservationTool: ToolDefinition<typeof logObservationArgs> = {
   },
 };
 
+// ─── restore_continuity ────────────────────────────────────────────────────
+
+const restoreContinuityArgs = z.object({
+  projectId: z.string().uuid().describe('Project to brief on.'),
+});
+
+const restoreContinuityTool: ToolDefinition<typeof restoreContinuityArgs> = {
+  name: 'restore_continuity',
+  description:
+    'Generate a "where was I?" briefing for a project: 4 paragraphs over the last decisions, blockers, captures, and events ending in the smallest next step. Persists the result so future page loads land on it. Use when the user asks "what was I doing on X?" or before proposing the next move on a long-paused project.',
+  // Generates derived state and persists it; treated as low_risk so the
+  // default ACL is auto-with-undo, but we provide no undo (the briefing
+  // is purely informational and superseded by the next regeneration).
+  kind: 'low_risk',
+  args: restoreContinuityArgs,
+  async execute(args, ctx) {
+    const db = getDb();
+    const [proj] = await db
+      .select({ id: project.id, name: project.name })
+      .from(project)
+      .where(and(eq(project.id, args.projectId), eq(project.workspaceId, ctx.workspaceId)))
+      .limit(1);
+    if (!proj) throw new Error('project_not_found');
+
+    const generated = await restoreProjectContext(ctx.workspaceId, args.projectId);
+    const [inserted] = await db
+      .insert(continuityBriefing)
+      .values({
+        workspaceId: ctx.workspaceId,
+        projectId: args.projectId,
+        briefing: generated.briefing,
+        modelProvider: generated.provider,
+        modelId: generated.modelId,
+      })
+      .returning();
+    return {
+      result: {
+        projectId: args.projectId,
+        projectName: proj.name,
+        briefing: generated.briefing,
+        provider: generated.provider,
+        modelId: generated.modelId,
+        briefingId: inserted?.id ?? null,
+      },
+    };
+  },
+};
+
 // ─── Registry ──────────────────────────────────────────────────────────────
 
 // ─── external_invoke ───────────────────────────────────────────────────────
@@ -419,12 +615,17 @@ export const TOOLS = {
   recall: recallTool,
   list_projects: listProjectsTool,
   list_tasks: listTasksTool,
+  github_repo_stats: githubRepoStatsTool,
   create_task: createTaskTool,
+  pin_to_goal: pinToGoalTool,
   propose_decision: proposeDecisionTool,
   tag_capture: tagCaptureTool,
   notify_user: notifyTool,
   log_observation: logObservationTool,
+  restore_continuity: restoreContinuityTool,
   external_invoke: externalInvokeTool,
+  ...DEVICE_TOOLS,
+  ...EDITOR_TOOLS,
 } as const satisfies Record<string, ToolDefinition<z.ZodTypeAny>>;
 
 export type ToolName = keyof typeof TOOLS;

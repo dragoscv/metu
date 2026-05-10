@@ -55,6 +55,13 @@ const limiters: Record<string, Limiter> = {
   'oauth-device': buildLimiter('rl:oauth-device', 10, 60),
   'oauth-revoke': buildLimiter('rl:oauth-revoke', 30, 60),
   'sdk-write': buildLimiter('rl:sdk-write', 120, 60),
+  // Voice broker: minting Realtime sessions hits a paid BYOK endpoint and a
+  // human can only realistically open ~1 per minute. Cap fairly tightly.
+  'voice-realtime': buildLimiter('rl:voice-realtime', 5, 60),
+  // Whisper transcription per push-to-talk press. Each call is a paid
+  // upstream BYOK request — 30/min is plenty for human pace, low enough
+  // to deter accidental loops.
+  'voice-transcribe': buildLimiter('rl:voice-transcribe', 30, 60),
 };
 
 export type LimiterKind = keyof typeof limiters;

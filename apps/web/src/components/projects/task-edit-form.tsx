@@ -24,6 +24,7 @@ const KIND = [
 export interface TaskEditData {
   id: string;
   projectId: string | null;
+  goalId: string | null;
   title: string;
   body: string | null;
   status: string;
@@ -43,10 +44,12 @@ function dateInputValue(iso: string | null) {
 export function TaskEditForm({
   task,
   projects,
+  goals,
   backHref,
 }: {
   task: TaskEditData;
   projects: { id: string; name: string }[];
+  goals: { id: string; title: string }[];
   backHref: string;
 }) {
   const router = useRouter();
@@ -60,6 +63,7 @@ export function TaskEditForm({
   const [blockedReason, setBlockedReason] = useState(task.blockedReason ?? '');
   const [dueAt, setDueAt] = useState(dateInputValue(task.dueAt));
   const [projectId, setProjectId] = useState(task.projectId ?? '');
+  const [goalId, setGoalId] = useState(task.goalId ?? '');
   const [error, setError] = useState<string | null>(null);
   const [pendingSave, startSave] = useTransition();
   const [pendingDelete, startDelete] = useTransition();
@@ -72,7 +76,8 @@ export function TaskEditForm({
     leverage !== (typeof task.leverageScore === 'number' ? String(task.leverageScore) : '') ||
     blockedReason !== (task.blockedReason ?? '') ||
     dueAt !== dateInputValue(task.dueAt) ||
-    projectId !== (task.projectId ?? '');
+    projectId !== (task.projectId ?? '') ||
+    goalId !== (task.goalId ?? '');
 
   const save = () => {
     setError(null);
@@ -88,6 +93,7 @@ export function TaskEditForm({
         blockedReason: blockedReason.trim() || null,
         dueAt: dueAt || null,
         projectId: projectId || null,
+        goalId: goalId || null,
       });
       if (!res.ok) setError(res.error);
       else router.refresh();
@@ -181,6 +187,21 @@ export function TaskEditForm({
             </option>
           ))}
         </Select>
+      </div>
+
+      <div className="space-y-1.5">
+        <label className="text-xs font-medium text-[var(--color-fg-muted)]">Pin to goal</label>
+        <Select value={goalId} onChange={(e) => setGoalId(e.target.value)}>
+          <option value="">— No goal —</option>
+          {goals.map((g) => (
+            <option key={g.id} value={g.id}>
+              {g.title}
+            </option>
+          ))}
+        </Select>
+        <p className="text-[11px] text-[var(--color-fg-subtle)]">
+          Pinning a task to a goal makes it appear as a milestone on the goal board.
+        </p>
       </div>
 
       {error && (

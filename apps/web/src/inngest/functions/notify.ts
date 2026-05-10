@@ -7,6 +7,7 @@
  */
 import { inngest } from '../client';
 import { notify } from '@/lib/notify';
+import { parseEvent } from '../schemas';
 
 export const onConductorNotify = inngest.createFunction(
   {
@@ -16,17 +17,18 @@ export const onConductorNotify = inngest.createFunction(
   },
   { event: 'conductor/notify' },
   async ({ event, step }) => {
+    const data = parseEvent('conductor/notify', event.data);
     const result = await step.run('notify', () =>
       notify({
-        workspaceId: event.data.workspaceId,
-        userId: event.data.userId,
-        title: event.data.title,
-        body: event.data.body,
-        urgency: event.data.urgency,
-        source: event.data.source ?? 'conductor',
-        actionUrl: event.data.actionUrl,
-        actions: event.data.actions,
-        metadata: event.data.metadata,
+        workspaceId: data.workspaceId,
+        userId: data.userId,
+        title: data.title,
+        body: data.body,
+        urgency: data.urgency,
+        source: data.source ?? 'conductor',
+        actionUrl: data.actionUrl,
+        actions: data.actions,
+        metadata: data.metadata,
       }),
     );
     return result;

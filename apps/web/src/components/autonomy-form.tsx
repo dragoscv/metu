@@ -30,6 +30,14 @@ export interface ToolRow {
   effective: AutonomyMode;
   override: AutonomyMode | null;
   scopable?: boolean;
+  costWarning?: {
+    baselineMode: 'ask' | 'auto_with_undo';
+    multiplier: number;
+    autopilotAvg: number;
+    baselineAvg: number;
+    autopilotCalls: number;
+    baselineCalls: number;
+  } | null;
 }
 
 export interface ScopedAclRow {
@@ -40,6 +48,8 @@ export interface ScopedAclRow {
   integrationStatus: string;
   effective: AutonomyMode;
   override: AutonomyMode | null;
+  /** Same shape as ToolRow.costWarning — computed at workspace level. */
+  costWarning?: ToolRow['costWarning'];
 }
 
 export interface PolicyState {
@@ -220,13 +230,30 @@ export function AutonomyForm({
 
 function ScopedRowCmp({ r, pending }: { r: ScopedAclRow; pending: boolean }) {
   const [, startTransition] = useTransition();
+  const showWarning = r.costWarning && (r.effective === 'autopilot' || r.override === 'autopilot');
   return (
-    <li className="flex flex-wrap items-center gap-3 py-2.5">
+    <li className="flex flex-wrap items-start gap-3 py-2.5">
       <div className="min-w-[260px] flex-1">
         <div className="text-sm font-medium">{r.integrationLabel}</div>
         <div className="text-xs text-[var(--color-fg-subtle)]">
           <span className="font-mono">{r.tool}</span> · {r.integrationKind} · {r.integrationStatus}
         </div>
+        {showWarning && r.costWarning ? (
+          <CostWarning
+            warning={r.costWarning}
+            onDowngrade={() => {
+              startTransition(async () => {
+                await setToolAclAction({
+                  tool: r.tool,
+                  mode: r.costWarning!.baselineMode,
+                  integrationId: r.integrationId,
+                  source: 'cost_warning_downgrade',
+                });
+              });
+            }}
+            pending={pending}
+          />
+        ) : null}
       </div>
       <select
         defaultValue={r.override ?? ''}
@@ -259,13 +286,29 @@ function ScopedRowCmp({ r, pending }: { r: ScopedAclRow; pending: boolean }) {
 
 function ToolRowCmp({ t, pending }: { t: ToolRow; pending: boolean }) {
   const [, startTransition] = useTransition();
+  const showWarning = t.costWarning && (t.effective === 'autopilot' || t.override === 'autopilot');
   return (
-    <li className="flex flex-wrap items-center gap-3 py-2.5">
+    <li className="flex flex-wrap items-start gap-3 py-2.5">
       <div className="min-w-[260px] flex-1">
         <div className="font-mono text-sm">{t.name}</div>
         <div className="text-xs text-[var(--color-fg-subtle)]">
           {t.kind} · {t.description}
         </div>
+        {showWarning && t.costWarning ? (
+          <CostWarning
+            warning={t.costWarning}
+            onDowngrade={() => {
+              startTransition(async () => {
+                await setToolAclAction({
+                  tool: t.name,
+                  mode: t.costWarning!.baselineMode,
+                  source: 'cost_warning_downgrade',
+                });
+              });
+            }}
+            pending={pending}
+          />
+        ) : null}
       </div>
       <select
         defaultValue={t.override ?? ''}
@@ -287,6 +330,40 @@ function ToolRowCmp({ t, pending }: { t: ToolRow; pending: boolean }) {
         ))}
       </select>
     </li>
+  );
+}
+
+function CostWarning({
+  warning,
+  onDowngrade,
+  pending,
+}: {
+  warning: NonNullable<ToolRow['costWarning']>;
+  onDowngrade: () => void;
+  pending: boolean;
+}) {
+  return (
+    <div className="border-[var(--color-warning)]/40 bg-[var(--color-warning)]/5 mt-1.5 flex flex-wrap items-center gap-2 rounded-md border px-2 py-1.5 text-[11px] text-[var(--color-warning)]">
+      <span>⚠</span>
+      <span className="text-[var(--color-fg)]">
+        Autopilot avg <span className="font-mono">${warning.autopilotAvg.toFixed(4)}</span> ·{' '}
+        {warning.autopilotCalls} call{warning.autopilotCalls === 1 ? '' : 's'}
+        {' — '}
+        <span className="font-semibold">{warning.multiplier.toFixed(1)}×</span> the{' '}
+        {MODE_LABELS[warning.baselineMode]} avg of{' '}
+        <span className="font-mono">${warning.baselineAvg.toFixed(4)}</span>
+        {' over '}
+        {warning.baselineCalls} call{warning.baselineCalls === 1 ? '' : 's'}.
+      </span>
+      <button
+        type="button"
+        onClick={onDowngrade}
+        disabled={pending}
+        className="hover:bg-[var(--color-warning)]/10 ml-auto rounded border border-current px-2 py-0.5 text-[11px] font-medium disabled:opacity-50"
+      >
+        Switch to {MODE_LABELS[warning.baselineMode]}
+      </button>
+    </div>
   );
 }
 

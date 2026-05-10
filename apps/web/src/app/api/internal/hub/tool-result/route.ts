@@ -8,11 +8,12 @@
  */
 import { NextResponse } from 'next/server';
 import { z } from 'zod';
-import { and, eq } from 'drizzle-orm';
+import { and, eq, inArray } from 'drizzle-orm';
 import { getDb } from '@metu/db';
 import { toolCall } from '@metu/db/schema';
 import { inngest } from '@/inngest/client';
 import { safeEqual } from '@/lib/safe-equal';
+import { resolvePendingDeviceTool } from '@/lib/device-bridge';
 
 export const runtime = 'nodejs';
 
@@ -41,6 +42,10 @@ export async function POST(req: Request) {
   }
 
   const db = getDb();
+  // Idempotent: only flip rows that are still in-flight. If `runTool` (or
+  // `approveToolCall`) already wrote a terminal status because its own
+  // dispatcher promise resolved first, leave the existing row alone — the
+  // device just sent us a duplicate ack.
   await db
     .update(toolCall)
     .set({
@@ -53,6 +58,7 @@ export async function POST(req: Request) {
       and(
         eq(toolCall.id, parsed.data.toolCallId),
         eq(toolCall.workspaceId, parsed.data.workspaceId),
+        inArray(toolCall.status, ['running', 'awaiting_approval', 'approved', 'pending']),
       ),
     );
 
@@ -61,6 +67,15 @@ export async function POST(req: Request) {
     name: 'conductor/tick',
     data: { workspaceId: parsed.data.workspaceId, reason: 'tool.result' },
   });
+
+  // Settle any in-process awaiter (device.* tools dispatched via the bridge).
+  resolvePendingDeviceTool(
+    parsed.data.toolCallId,
+    parsed.data.workspaceId,
+    parsed.data.ok,
+    parsed.data.result,
+    parsed.data.error,
+  );
 
   return NextResponse.json({ ok: true });
 }

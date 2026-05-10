@@ -1,0 +1,15 @@
+name = "metu-companion-updater"
+main = "worker.js"
+compatibility_date = "2025-04-01"
+
+# Set this to whichever GitHub repo publishes the companion latest.json asset.
+# Override per-environment via `wrangler secret put` or the dashboard.
+[vars]
+RELEASES_REPO = "metu-app/metu"
+
+# Optional: set GITHUB_TOKEN as a secret to bump the API rate limit.
+# wrangler secret put GITHUB_TOKEN
+
+[[routes]]
+pattern = "releases.metu.app/companion/*"
+zone_name = "metu.app"

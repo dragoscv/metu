@@ -1,6 +1,15 @@
 import { and, desc, eq, isNull, sql, type SQL, asc } from 'drizzle-orm';
 import { getDb } from '../client';
-import { goal, goalCheckin, goalLink, target, targetValue } from '../schema';
+import {
+  decision,
+  goal,
+  goalCheckin,
+  goalLink,
+  project,
+  target,
+  targetValue,
+  task,
+} from '../schema';
 
 export interface ListGoalsParams {
   workspaceId: string;
@@ -96,6 +105,121 @@ export async function listGoalEvidence(workspaceId: string, goalId: string) {
     .from(goalLink)
     .where(and(eq(goalLink.workspaceId, workspaceId), eq(goalLink.goalId, goalId)))
     .orderBy(desc(goalLink.addedAt));
+}
+
+/** Tasks owned directly by a goal (task.goal_id = goalId). Distinct from
+ *  evidence-linked tasks via goal_link, which represent looser association. */
+export async function listGoalDirectTasks(workspaceId: string, goalId: string) {
+  const db = getDb();
+  return db
+    .select()
+    .from(task)
+    .where(and(eq(task.workspaceId, workspaceId), eq(task.goalId, goalId), isNull(task.deletedAt)))
+    .orderBy(desc(task.updatedAt));
+}
+
+/** Projects pinned directly to a goal (project.goal_id = goalId). */
+export async function listGoalDirectProjects(workspaceId: string, goalId: string) {
+  const db = getDb();
+  return db
+    .select({
+      id: project.id,
+      name: project.name,
+      slug: project.slug,
+      summary: project.summary,
+      status: project.status,
+      momentumScore: project.momentumScore,
+      lastMeaningfulActivityAt: project.lastMeaningfulActivityAt,
+    })
+    .from(project)
+    .where(
+      and(
+        eq(project.workspaceId, workspaceId),
+        eq(project.goalId, goalId),
+        isNull(project.deletedAt),
+      ),
+    )
+    .orderBy(desc(project.momentumScore), desc(project.updatedAt));
+}
+
+/** Decisions pinned directly to a goal (decision.goal_id = goalId). */
+export async function listGoalDirectDecisions(workspaceId: string, goalId: string) {
+  const db = getDb();
+  return db
+    .select({
+      id: decision.id,
+      title: decision.title,
+      rationale: decision.rationale,
+      decidedAt: decision.decidedAt,
+      projectId: decision.projectId,
+    })
+    .from(decision)
+    .where(
+      and(
+        eq(decision.workspaceId, workspaceId),
+        eq(decision.goalId, goalId),
+        isNull(decision.deletedAt),
+      ),
+    )
+    .orderBy(desc(decision.decidedAt));
+}
+
+/** Aggregate counts of pinned tasks/projects/decisions for many goals at once.
+ *  Used on the goals listing page to render small badges per goal. */
+export async function goalPinnedCounts(
+  workspaceId: string,
+  goalIds: string[],
+): Promise<Map<string, { tasks: number; projects: number; decisions: number }>> {
+  const map = new Map<string, { tasks: number; projects: number; decisions: number }>();
+  if (goalIds.length === 0) return map;
+  const db = getDb();
+  const [tasks, projects, decisions] = await Promise.all([
+    db
+      .select({ goalId: task.goalId, n: sql<number>`count(*)::int` })
+      .from(task)
+      .where(
+        and(
+          eq(task.workspaceId, workspaceId),
+          isNull(task.deletedAt),
+          sql`${task.goalId} = any(${goalIds})`,
+        ),
+      )
+      .groupBy(task.goalId),
+    db
+      .select({ goalId: project.goalId, n: sql<number>`count(*)::int` })
+      .from(project)
+      .where(
+        and(
+          eq(project.workspaceId, workspaceId),
+          isNull(project.deletedAt),
+          sql`${project.goalId} = any(${goalIds})`,
+        ),
+      )
+      .groupBy(project.goalId),
+    db
+      .select({ goalId: decision.goalId, n: sql<number>`count(*)::int` })
+      .from(decision)
+      .where(
+        and(
+          eq(decision.workspaceId, workspaceId),
+          isNull(decision.deletedAt),
+          sql`${decision.goalId} = any(${goalIds})`,
+        ),
+      )
+      .groupBy(decision.goalId),
+  ]);
+  const ensure = (id: string) => {
+    let v = map.get(id);
+    if (!v) {
+      v = { tasks: 0, projects: 0, decisions: 0 };
+      map.set(id, v);
+    }
+    return v;
+  };
+  for (const r of tasks) if (r.goalId) ensure(r.goalId).tasks = Number(r.n);
+  for (const r of projects) if (r.goalId) ensure(r.goalId).projects = Number(r.n);
+  for (const r of decisions) if (r.goalId) ensure(r.goalId).decisions = Number(r.n);
+  return map;
 }
 
 export async function listGoalTargets(workspaceId: string, goalId: string) {

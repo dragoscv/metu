@@ -7,16 +7,19 @@
     :root {
       --brand: oklch(0.71 0.18 290);
       --bg: oklch(0.18 0.02 280);
+      --bg-elev: oklch(0.22 0.02 280);
       --fg: oklch(0.96 0.01 280);
       --muted: oklch(0.65 0.02 280);
       --border: oklch(0.28 0.02 280);
+      --danger: oklch(0.65 0.18 25);
+      --ok: oklch(0.72 0.16 150);
     }
 
     body {
-      font: 13px/1.4 system-ui;
+      font: 13px/1.4 system-ui, -apple-system, Segoe UI, sans-serif;
       margin: 0;
       padding: 12px;
-      width: 320px;
+      width: 340px;
       background: var(--bg);
       color: var(--fg);
     }
@@ -24,33 +27,46 @@
     h1 {
       font-size: 14px;
       margin: 0 0 8px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 8px;
     }
 
-    textarea {
+    .dot {
+      width: 8px;
+      height: 8px;
+      border-radius: 50%;
+      background: var(--muted);
+      flex: 0 0 auto;
+    }
+
+    .dot.ok {
+      background: var(--ok);
+    }
+
+    .dot.err {
+      background: var(--danger);
+    }
+
+    textarea,
+    input {
       width: 100%;
-      min-height: 90px;
-      background: oklch(0.22 0.02 280);
+      background: var(--bg-elev);
       color: var(--fg);
       border: 1px solid var(--border);
       border-radius: 8px;
       padding: 8px;
       box-sizing: border-box;
-      resize: vertical;
-    }
-
-    input {
-      width: 100%;
-      background: oklch(0.22 0.02 280);
-      color: var(--fg);
-      border: 1px solid var(--border);
-      border-radius: 8px;
-      padding: 6px 8px;
-      box-sizing: border-box;
       font: inherit;
     }
 
+    textarea {
+      min-height: 90px;
+      resize: vertical;
+    }
+
     button {
-      margin-top: 8px;
       width: 100%;
       background: var(--brand);
       color: white;
@@ -59,6 +75,13 @@
       padding: 8px;
       font-weight: 600;
       cursor: pointer;
+      margin-top: 8px;
+    }
+
+    button.secondary {
+      background: transparent;
+      color: var(--fg);
+      border: 1px solid var(--border);
     }
 
     .row {
@@ -67,33 +90,149 @@
       margin-top: 8px;
     }
 
+    .row > * {
+      flex: 1;
+    }
+
     .muted {
       color: var(--muted);
       font-size: 11px;
+      margin: 6px 0 0;
     }
 
-    details {
+    .tabs {
+      display: flex;
+      gap: 4px;
+      margin: 4px 0 8px;
+      border-bottom: 1px solid var(--border);
+    }
+
+    .tabs button {
+      flex: 1;
+      margin: 0;
+      background: transparent;
+      color: var(--muted);
+      border: 0;
+      border-radius: 0;
+      padding: 6px 0;
+      border-bottom: 2px solid transparent;
+      font-weight: 500;
+    }
+
+    .tabs button.active {
+      color: var(--fg);
+      border-bottom-color: var(--brand);
+    }
+
+    .pane {
+      display: none;
+    }
+
+    .pane.active {
+      display: block;
+    }
+
+    details summary {
+      cursor: pointer;
+      color: var(--muted);
       margin-top: 10px;
     }
 
-    summary {
+    .hits {
+      margin: 8px 0 0;
+      padding: 0;
+      list-style: none;
+      max-height: 240px;
+      overflow-y: auto;
+    }
+
+    .hit {
+      padding: 8px;
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      margin-bottom: 6px;
       cursor: pointer;
+    }
+
+    .hit:hover {
+      background: var(--bg-elev);
+    }
+
+    .hit .score {
       color: var(--muted);
+      font-size: 11px;
+      margin-left: 6px;
+    }
+
+    .status {
+      margin-top: 6px;
+      font-size: 11px;
+      color: var(--muted);
+      min-height: 14px;
     }
   </style>
 </head>
 
 <body>
-  <h1>Capture to metu</h1>
-  <textarea id="content" placeholder="What's on your mind?"></textarea>
-  <button id="save">Capture</button>
+  <h1>
+    <span>metu</span>
+    <span id="dot" class="dot" title="Not signed in"></span>
+  </h1>
+
+  <div class="tabs">
+    <button class="tab-btn active" data-pane="capture">Capture</button>
+    <button class="tab-btn" data-pane="recall">Recall</button>
+    <button class="tab-btn" data-pane="notify">Notify</button>
+    <button class="tab-btn" data-pane="ask">Ask</button>
+  </div>
+
+  <section id="pane-capture" class="pane active">
+    <textarea id="content" placeholder="What's on your mind?"></textarea>
+    <p class="muted" id="prefillHint" style="display:none;margin:0 0 6px;font-size:11px;">
+      Pre-filled from selection.
+      <button type="button" id="prefillClear" style="background:none;border:0;color:inherit;text-decoration:underline;cursor:pointer;padding:0;font:inherit;">clear</button>
+    </p>
+    <button id="save">Capture</button>
+    <p class="muted" id="captureStatus"></p>
+  </section>
+
+  <section id="pane-recall" class="pane">
+    <input id="recallQuery" placeholder="Recall from memory…" />
+    <button id="recallGo">Search</button>
+    <ul id="hits" class="hits"></ul>
+    <p class="status" id="recallStatus"></p>
+  </section>
+
+  <section id="pane-notify" class="pane">
+    <input id="notifyTitle" placeholder="Notification title" />
+    <textarea id="notifyBody" placeholder="Body (optional)"></textarea>
+    <button id="notifyGo">Send notification</button>
+    <p class="status" id="notifyStatus"></p>
+  </section>
+
+  <section id="pane-ask" class="pane">
+    <input id="askPersona" placeholder="Persona slug (default: metu)" />
+    <textarea id="askUtterance" placeholder="Ask metu anything…"></textarea>
+    <label class="row" style="font-size:12px;">
+      <input id="askIncludeTab" type="checkbox" checked />
+      Include current tab URL + title
+    </label>
+    <button id="askGo">Ask</button>
+    <p class="status" id="askStatus"></p>
+    <pre id="askReply" class="muted" style="white-space:pre-wrap;margin-top:8px;"></pre>
+  </section>
+
   <details>
     <summary>Settings</summary>
     <div class="row"><input id="apiUrl" placeholder="https://app.metu.ro" /></div>
-    <div class="row"><input id="token" placeholder="API token" /></div>
-    <button id="saveCfg">Save config</button>
-    <p class="muted">Generate a token at app.metu.ro/settings.</p>
+    <div class="row"><input id="token" placeholder="Access token" type="password" /></div>
+    <div class="row">
+      <button id="saveCfg">Save</button>
+      <button id="signOut" class="secondary">Sign out</button>
+    </div>
+    <p class="muted">Generate a token at app.metu.ro/settings. The token lives in this browser only — it does not sync across machines.</p>
   </details>
+
   <script src="popup.js"></script>
 </body>
 

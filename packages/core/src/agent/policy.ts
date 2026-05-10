@@ -9,9 +9,16 @@
  *        low_risk   → auto_with_undo
  *        high_risk  → ask
  */
-import { and, eq, isNull } from 'drizzle-orm';
+import { and, eq, isNull, sql, ne } from 'drizzle-orm';
 import { getDb } from '@metu/db';
-import { agentPolicy, toolAcl, toolCall as toolCallTable, timelineEvent } from '@metu/db/schema';
+import {
+  agentPolicy,
+  toolAcl,
+  toolCall as toolCallTable,
+  timelineEvent,
+  notification,
+  workspace,
+} from '@metu/db/schema';
 import { getTool, type ToolContext, type ToolKind } from './tools';
 
 export type AutonomyMode = 'observe' | 'ask' | 'auto_with_undo' | 'autopilot';
@@ -93,6 +100,83 @@ function extractIntegrationId(toolName: string, args: unknown): string | null {
   return typeof v === 'string' ? v : null;
 }
 
+/**
+ * Per-workspace daily spend + autonomous-action caps.
+ *
+ * Counts only non-`ask` modes against the action cap (an `ask` requires a
+ * human gate, so it's not "autonomous"). Read-only `read`-kind tools also
+ * skip the action count to keep recall/search free.
+ *
+ * Returns `{ ok: true }` when within budget, or `{ ok: false, reason }`
+ * with a short reason string suitable for storing on tool_call.error.
+ */
+export type CapDecision = { ok: true } | { ok: false; reason: string; kind: 'cost' | 'action' };
+
+export async function checkCaps(
+  workspaceId: string,
+  toolKind: ToolKind,
+  aclMode: AutonomyMode,
+): Promise<CapDecision> {
+  const db = getDb();
+  const [ws] = await db
+    .select({ unlimitedAi: workspace.unlimitedAi })
+    .from(workspace)
+    .where(eq(workspace.id, workspaceId))
+    .limit(1);
+  if (ws?.unlimitedAi) return { ok: true };
+
+  const [policy] = await db
+    .select({
+      dailyCostCapUsd: agentPolicy.dailyCostCapUsd,
+      dailyActionCap: agentPolicy.dailyActionCap,
+    })
+    .from(agentPolicy)
+    .where(eq(agentPolicy.workspaceId, workspaceId))
+    .limit(1);
+
+  // No policy row yet — schema defaults are 2 USD / 50 actions; treat as
+  // open until the user creates one (autonomy-form seeds it on first save).
+  if (!policy) return { ok: true };
+
+  const sinceMidnight = sql`date_trunc('day', now())`;
+  const [agg] = await db
+    .select({
+      cost: sql<number>`coalesce(sum(${toolCallTable.actualCostUsd}), 0)::float8`,
+      autonomous: sql<number>`count(*) filter (where ${toolCallTable.aclMode} in ('autopilot','auto_with_undo'))::int`,
+    })
+    .from(toolCallTable)
+    .where(
+      and(
+        eq(toolCallTable.workspaceId, workspaceId),
+        sql`${toolCallTable.requestedAt} >= ${sinceMidnight}`,
+        ne(toolCallTable.status, 'rejected'),
+      ),
+    );
+  const spent = Number(agg?.cost ?? 0);
+  const autonomous = Number(agg?.autonomous ?? 0);
+
+  if (policy.dailyCostCapUsd != null && spent >= policy.dailyCostCapUsd) {
+    return {
+      ok: false,
+      kind: 'cost',
+      reason: `daily cost cap exceeded ($${spent.toFixed(2)} / $${policy.dailyCostCapUsd})`,
+    };
+  }
+  if (
+    policy.dailyActionCap != null &&
+    aclMode !== 'ask' &&
+    toolKind !== 'read' &&
+    autonomous >= policy.dailyActionCap
+  ) {
+    return {
+      ok: false,
+      kind: 'action',
+      reason: `daily action cap exceeded (${autonomous} / ${policy.dailyActionCap})`,
+    };
+  }
+  return { ok: true };
+}
+
 export interface RunToolInput {
   workspaceId: string;
   userId: string;
@@ -103,8 +187,6 @@ export interface RunToolInput {
   args: unknown;
   /** Explicit integration scope for ACL evaluation. Auto-extracted from args when omitted. */
   integrationId?: string | null;
-  /** Skip ACL check (server-side trusted). */
-  bypassAcl?: boolean;
   /** Recursion depth; tools that themselves call runTool should pass depth+1. */
   depth?: number;
 }
@@ -153,13 +235,11 @@ export async function runTool(input: RunToolInput): Promise<RunToolResult> {
     validationError = `unknown tool: ${input.tool}`;
   }
 
-  const aclMode: AutonomyMode = input.bypassAcl
-    ? 'autopilot'
-    : await resolveAcl(
-        input.workspaceId,
-        input.tool,
-        input.integrationId ?? extractIntegrationId(input.tool, parsedArgs),
-      );
+  const aclMode: AutonomyMode = await resolveAcl(
+    input.workspaceId,
+    input.tool,
+    input.integrationId ?? extractIntegrationId(input.tool, parsedArgs),
+  );
 
   const [row] = await db
     .insert(toolCallTable)
@@ -184,7 +264,9 @@ export async function runTool(input: RunToolInput): Promise<RunToolResult> {
         error: validationError,
         finishedAt: new Date(),
       })
-      .where(eq(toolCallTable.id, toolCallId));
+      .where(
+        and(eq(toolCallTable.id, toolCallId), eq(toolCallTable.workspaceId, input.workspaceId)),
+      );
     return { toolCallId, status: 'failed', error: validationError };
   }
 
@@ -197,7 +279,9 @@ export async function runTool(input: RunToolInput): Promise<RunToolResult> {
         decidedAt: new Date(),
         finishedAt: new Date(),
       })
-      .where(eq(toolCallTable.id, toolCallId));
+      .where(
+        and(eq(toolCallTable.id, toolCallId), eq(toolCallTable.workspaceId, input.workspaceId)),
+      );
     return { toolCallId, status: 'rejected', error: 'observe-only mode' };
   }
 
@@ -205,7 +289,9 @@ export async function runTool(input: RunToolInput): Promise<RunToolResult> {
     await db
       .update(toolCallTable)
       .set({ status: 'awaiting_approval' })
-      .where(eq(toolCallTable.id, toolCallId));
+      .where(
+        and(eq(toolCallTable.id, toolCallId), eq(toolCallTable.workspaceId, input.workspaceId)),
+      );
     await db.insert(timelineEvent).values({
       workspaceId: input.workspaceId,
       userId: input.userId,
@@ -218,16 +304,61 @@ export async function runTool(input: RunToolInput): Promise<RunToolResult> {
     return { toolCallId, status: 'awaiting_approval' };
   }
 
+  // autopilot / auto_with_undo: enforce per-workspace daily caps before exec.
+  const cap = await checkCaps(input.workspaceId, tool!.kind, aclMode);
+  if (!cap.ok) {
+    await db
+      .update(toolCallTable)
+      .set({
+        status: 'failed',
+        error: cap.reason,
+        decidedAt: new Date(),
+        finishedAt: new Date(),
+      })
+      .where(
+        and(eq(toolCallTable.id, toolCallId), eq(toolCallTable.workspaceId, input.workspaceId)),
+      );
+    await db.insert(timelineEvent).values({
+      workspaceId: input.workspaceId,
+      userId: input.userId,
+      kind: 'conductor.cap.exceeded',
+      title:
+        cap.kind === 'cost' ? 'Daily AI spend cap reached' : 'Daily autonomous action cap reached',
+      body: cap.reason,
+      importance: 0.8,
+      payload: { toolCallId, tool: input.tool, kind: cap.kind },
+    });
+    // Also push a notification so the user notices the cap hit, not just an
+    // audit row buried in the timeline. Inserted directly (not via
+    // `conductor/notify` Inngest event) to keep `@metu/core` free of
+    // workflow-engine deps; the notify Inngest function still picks this up
+    // via its DB-poll path on the next tick.
+    await db.insert(notification).values({
+      workspaceId: input.workspaceId,
+      userId: input.userId,
+      title:
+        cap.kind === 'cost' ? 'Daily AI spend cap reached' : 'Daily autonomous action cap reached',
+      body: `Skipped ${input.tool} — ${cap.reason}. Adjust caps in Settings → Autonomy.`,
+      urgency: 'high',
+      source: 'conductor',
+      actionUrl: '/settings/autonomy',
+      actions: [{ id: 'open-settings', label: 'Open settings', kind: 'open' }],
+      metadata: { toolCallId, tool: input.tool, capKind: cap.kind },
+    });
+    return { toolCallId, status: 'failed', error: cap.reason };
+  }
+
   // autopilot or auto_with_undo: execute now.
   await db
     .update(toolCallTable)
     .set({ status: 'running', decidedAt: new Date() })
-    .where(eq(toolCallTable.id, toolCallId));
+    .where(and(eq(toolCallTable.id, toolCallId), eq(toolCallTable.workspaceId, input.workspaceId)));
 
   try {
     const ctx: ToolContext = {
       workspaceId: input.workspaceId,
       userId: input.userId,
+      toolCallId,
     };
     const { result, undoPayload } = await tool!.execute(parsedArgs as never, ctx);
     await db
@@ -238,14 +369,18 @@ export async function runTool(input: RunToolInput): Promise<RunToolResult> {
         undoPayload: undoPayload ?? null,
         finishedAt: new Date(),
       })
-      .where(eq(toolCallTable.id, toolCallId));
+      .where(
+        and(eq(toolCallTable.id, toolCallId), eq(toolCallTable.workspaceId, input.workspaceId)),
+      );
     return { toolCallId, status: 'success', result };
   } catch (err) {
     const msg = err instanceof Error ? err.message : String(err);
     await db
       .update(toolCallTable)
       .set({ status: 'failed', error: msg, finishedAt: new Date() })
-      .where(eq(toolCallTable.id, toolCallId));
+      .where(
+        and(eq(toolCallTable.id, toolCallId), eq(toolCallTable.workspaceId, input.workspaceId)),
+      );
     return { toolCallId, status: 'failed', error: msg };
   }
 }
@@ -270,15 +405,48 @@ export async function approveToolCall(
   const tool = getTool(row.tool);
   if (!tool) return { toolCallId, status: 'failed', error: 'unknown tool' };
 
+  // Re-check ACL: the user (or another admin) may have flipped the workspace
+  // into observe-only between proposal and approval. Honour the kill-switch.
+  const integrationId = extractIntegrationId(row.tool, row.args as Record<string, unknown> | null);
+  const currentMode = await resolveAcl(workspaceId, row.tool, integrationId);
+  if (currentMode === 'observe') {
+    await db
+      .update(toolCallTable)
+      .set({
+        status: 'rejected',
+        error: 'workspace switched to observe-only',
+        decidedAt: new Date(),
+        finishedAt: new Date(),
+      })
+      .where(and(eq(toolCallTable.id, toolCallId), eq(toolCallTable.workspaceId, workspaceId)));
+    return { toolCallId, status: 'rejected', error: 'workspace switched to observe-only' };
+  }
+
+  // Re-check caps so an explicit approval can't bypass the daily budget.
+  const cap = await checkCaps(workspaceId, tool.kind, currentMode);
+  if (!cap.ok) {
+    await db
+      .update(toolCallTable)
+      .set({
+        status: 'failed',
+        error: cap.reason,
+        decidedAt: new Date(),
+        finishedAt: new Date(),
+      })
+      .where(and(eq(toolCallTable.id, toolCallId), eq(toolCallTable.workspaceId, workspaceId)));
+    return { toolCallId, status: 'failed', error: cap.reason };
+  }
+
   await db
     .update(toolCallTable)
     .set({ status: 'running', decidedAt: new Date() })
-    .where(eq(toolCallTable.id, toolCallId));
+    .where(and(eq(toolCallTable.id, toolCallId), eq(toolCallTable.workspaceId, workspaceId)));
 
   try {
     const { result, undoPayload } = await tool.execute(row.args as never, {
       workspaceId,
       userId,
+      toolCallId,
     });
     await db
       .update(toolCallTable)
@@ -288,14 +456,14 @@ export async function approveToolCall(
         undoPayload: undoPayload ?? null,
         finishedAt: new Date(),
       })
-      .where(eq(toolCallTable.id, toolCallId));
+      .where(and(eq(toolCallTable.id, toolCallId), eq(toolCallTable.workspaceId, workspaceId)));
     return { toolCallId, status: 'success', result };
   } catch (err) {
     const msg = err instanceof Error ? err.message : String(err);
     await db
       .update(toolCallTable)
       .set({ status: 'failed', error: msg, finishedAt: new Date() })
-      .where(eq(toolCallTable.id, toolCallId));
+      .where(and(eq(toolCallTable.id, toolCallId), eq(toolCallTable.workspaceId, workspaceId)));
     return { toolCallId, status: 'failed', error: msg };
   }
 }
@@ -332,5 +500,5 @@ export async function undoToolCall(workspaceId: string, toolCallId: string) {
   await db
     .update(toolCallTable)
     .set({ status: 'undone', finishedAt: new Date() })
-    .where(eq(toolCallTable.id, toolCallId));
+    .where(and(eq(toolCallTable.id, toolCallId), eq(toolCallTable.workspaceId, workspaceId)));
 }

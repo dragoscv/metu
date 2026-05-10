@@ -2,35 +2,35 @@
   "version": "2.0.0",
   "tasks": [
     {
-      "label": "metu: ⚡ start everything",
+      "label": "⚡ start everything",
       "dependsOrder": "sequence",
-      "dependsOn": ["metu: infra up", "metu: dev (web + worker + inngest)"],
+      "dependsOn": ["infra up", "dev (web + worker + inngest)"],
       "group": { "kind": "build", "isDefault": true },
       "problemMatcher": []
     },
     {
-      "label": "metu: infra up",
+      "label": "infra up",
       "type": "shell",
       "command": "docker compose up -d --wait; docker compose --profile init up minio-init",
       "presentation": { "reveal": "always", "panel": "shared", "clear": true },
       "problemMatcher": []
     },
     {
-      "label": "metu: infra down",
+      "label": "infra down",
       "type": "shell",
       "command": "docker compose down",
       "presentation": { "reveal": "always", "panel": "shared" },
       "problemMatcher": []
     },
     {
-      "label": "metu: infra reset (DESTROYS data)",
+      "label": "infra reset (DESTROYS data)",
       "type": "shell",
       "command": "docker compose down -v",
       "presentation": { "reveal": "always", "panel": "shared" },
       "problemMatcher": []
     },
     {
-      "label": "metu: infra logs",
+      "label": "infra logs",
       "type": "shell",
       "command": "docker compose logs -f",
       "presentation": { "reveal": "always", "panel": "dedicated" },
@@ -38,7 +38,7 @@
       "problemMatcher": []
     },
     {
-      "label": "metu: db studio",
+      "label": "db studio",
       "type": "shell",
       "command": "pnpm --filter @metu/db studio",
       "isBackground": true,
@@ -46,12 +46,12 @@
       "problemMatcher": []
     },
     {
-      "label": "metu: dev (web + worker + inngest)",
-      "dependsOn": ["metu: web dev", "metu: worker dev"],
+      "label": "dev (web + worker + inngest)",
+      "dependsOn": ["web dev", "worker dev"],
       "problemMatcher": []
     },
     {
-      "label": "metu: web dev",
+      "label": "web dev",
       "type": "shell",
       "command": "pnpm --filter @metu/web dev",
       "isBackground": true,
@@ -67,7 +67,7 @@
       }
     },
     {
-      "label": "metu: worker dev",
+      "label": "worker dev",
       "type": "shell",
       "command": "pnpm --filter @metu/worker dev",
       "isBackground": true,
@@ -83,7 +83,7 @@
       }
     },
     {
-      "label": "metu: mobile (Expo)",
+      "label": "mobile (Expo)",
       "type": "shell",
       "command": "pnpm --filter @metu/mobile start",
       "isBackground": true,
@@ -91,14 +91,14 @@
       "problemMatcher": []
     },
     {
-      "label": "metu: clean web cache",
+      "label": "clean web cache",
       "type": "shell",
       "command": "Remove-Item -Recurse -Force -ErrorAction SilentlyContinue apps/web/.next, apps/web/.turbo, apps/web/node_modules/.cache; Write-Host 'Web cache cleaned.'",
       "presentation": { "reveal": "always", "panel": "shared", "clear": true },
       "problemMatcher": []
     },
     {
-      "label": "metu: open services",
+      "label": "open services",
       "type": "shell",
       "command": "Start-Process http://localhost:24890; Start-Process http://localhost:24893; Start-Process http://localhost:24895; Start-Process http://localhost:24894",
       "presentation": { "reveal": "silent", "panel": "shared" },
@@ -107,10 +107,10 @@
   ],
   "statusbar.menu.hiddenTasks": [],
   "statusbar.list.hiddenTasks": [
-    "metu: infra up",
-    "metu: infra down",
-    "metu: infra reset (DESTROYS data)",
-    "metu: infra logs",
-    "metu: db studio"
+    "infra up",
+    "infra down",
+    "infra reset (DESTROYS data)",
+    "infra logs",
+    "db studio"
   ]
 }

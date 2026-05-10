@@ -2,11 +2,13 @@ import {
   Brain,
   Briefcase,
   CheckCircle2,
+  CreditCard,
   FileText,
   GitBranch,
   Inbox,
   Key,
   Lightbulb,
+  MegaphoneOff,
   MessageSquare,
   Sparkles,
   Target,
@@ -52,8 +54,32 @@ const META: Record<string, KindMeta> = {
   'goal.checkin': { label: 'Goal check-in', icon: TrendingUp, tone: 'info', group: 'goal' },
   'target.value': { label: 'Target value', icon: TrendingUp, tone: 'info', group: 'goal' },
   'conductor.observation': { label: 'Conductor', icon: Sparkles, tone: 'brand', group: 'system' },
+  'conductor.escalation.completed': {
+    label: 'Escalation done',
+    icon: MegaphoneOff,
+    tone: 'success',
+    group: 'system',
+  },
   'intent.received': { label: 'Intent', icon: Zap, tone: 'warning', group: 'system' },
   'creds.borrowed': { label: 'Creds borrowed', icon: Key, tone: 'warning', group: 'system' },
+  'subscription.activated': {
+    label: 'Subscription activated',
+    icon: CreditCard,
+    tone: 'success',
+    group: 'billing',
+  },
+  'subscription.updated': {
+    label: 'Subscription updated',
+    icon: CreditCard,
+    tone: 'info',
+    group: 'billing',
+  },
+  'subscription.canceled': {
+    label: 'Subscription canceled',
+    icon: CreditCard,
+    tone: 'warning',
+    group: 'billing',
+  },
 };
 
 const FALLBACK: KindMeta = { label: 'Event', icon: FileText, tone: 'neutral', group: 'other' };
@@ -70,6 +96,7 @@ export function kindMeta(kind: string): KindMeta {
   if (prefix === 'goal') return META['goal.created']!;
   if (prefix === 'target') return META['target.value']!;
   if (prefix === 'conductor') return META['conductor.observation']!;
+  if (prefix === 'subscription') return META['subscription.updated']!;
   return FALLBACK;
 }
 

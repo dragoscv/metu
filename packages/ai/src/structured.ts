@@ -21,9 +21,15 @@
 import { generateObject, generateText, NoObjectGeneratedError } from 'ai';
 import { z } from 'zod';
 
+/**
+ * `model` is whatever the AI SDK accepts on its `generateObject` input. We
+ * derive it from the SDK's own parameter shape so this stays in sync with
+ * AI SDK v5 upgrades without leaking `any`.
+ */
+type AIModel = Parameters<typeof generateObject>[0]['model'];
+
 export interface GenerateStructuredInput<T> {
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  model: any;
+  model: AIModel;
   schema: z.ZodType<T>;
   schemaName?: string;
   schemaDescription?: string;

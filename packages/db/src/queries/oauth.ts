@@ -44,11 +44,30 @@ export async function getOauthApp(workspaceId: string, id: string) {
   return (rows[0] ?? null) as OauthAppRow | null;
 }
 
+/**
+ * Public OAuth app metadata, without sealed-secret material.
+ *
+ * The full {@link OauthAppRow} is workspace-scoped (see {@link getOauthApp}).
+ * This unscoped lookup is used by callback paths that need the app's URLs
+ * before the user is known — and at no point should those callers see the
+ * encrypted client_secret. Strip it at the source.
+ */
+export type OauthAppPublicRow = Omit<
+  OauthAppRow,
+  'clientSecretCiphertext' | 'clientSecretIv' | 'clientSecretTag'
+>;
+
 /** Lookup without workspace check — used by callback before we know the user. */
-export async function getOauthAppById(id: string) {
+export async function getOauthAppById(id: string): Promise<OauthAppPublicRow | null> {
   const db = getDb();
   const rows = await db.select().from(oauthApp).where(eq(oauthApp.id, id)).limit(1);
-  return (rows[0] ?? null) as OauthAppRow | null;
+  const row = rows[0] as OauthAppRow | undefined;
+  if (!row) return null;
+  const { clientSecretCiphertext: _c, clientSecretIv: _iv, clientSecretTag: _t, ...safe } = row;
+  void _c;
+  void _iv;
+  void _t;
+  return safe;
 }
 
 export interface CreateOauthAppInput {
@@ -193,7 +212,12 @@ export async function upsertOauthConnection(input: UpsertOauthConnectionInput) {
         lastError: null,
         lastSyncAt: new Date(),
       })
-      .where(eq(oauthConnection.id, existing[0].id));
+      .where(
+        and(
+          eq(oauthConnection.id, existing[0].id),
+          eq(oauthConnection.workspaceId, input.workspaceId),
+        ),
+      );
     return existing[0].id;
   }
   const inserted = await db

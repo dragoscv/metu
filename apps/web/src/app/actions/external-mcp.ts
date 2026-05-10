@@ -11,7 +11,7 @@ import { z } from 'zod';
 import { and, eq } from 'drizzle-orm';
 import { auth } from '@metu/auth';
 import { getDb } from '@metu/db';
-import { integration } from '@metu/db/schema';
+import { integration, timelineEvent } from '@metu/db/schema';
 import { listRemoteTools, sealToken, type ExternalMcpConfig } from '@metu/integrations/mcp';
 import { assertSafeOutboundUrl } from '@/lib/safe-equal';
 
@@ -83,6 +83,21 @@ export async function connectExternalMcpAction(
     })
     .returning();
 
+  await db.insert(timelineEvent).values({
+    workspaceId: session.user.workspaceId,
+    userId: session.user.id,
+    kind: 'integration.connected',
+    title: `Connected external MCP “${parsed.data.label}”`,
+    payload: {
+      integrationId: row!.id,
+      kind: 'external_mcp',
+      host: externalId,
+      toolPrefix: parsed.data.toolPrefix,
+      toolCount: probe.tools.length,
+    },
+    importance: 0.7,
+  });
+
   revalidatePath('/integrations');
   return { ok: true, id: row!.id, tools: probe.tools.length };
 }
@@ -110,7 +125,7 @@ export async function refreshExternalMcpAction(id: string) {
     await db
       .update(integration)
       .set({ status: 'error', lastError: probe.error })
-      .where(eq(integration.id, id));
+      .where(and(eq(integration.id, id), eq(integration.workspaceId, session.user.workspaceId)));
     return { ok: false as const, error: probe.error };
   }
   const next: ExternalMcpConfig = {
@@ -125,7 +140,7 @@ export async function refreshExternalMcpAction(id: string) {
       lastSyncAt: new Date(),
       lastError: null,
     })
-    .where(eq(integration.id, id));
+    .where(and(eq(integration.id, id), eq(integration.workspaceId, session.user.workspaceId)));
   revalidatePath('/integrations');
   return { ok: true as const, tools: probe.tools.length };
 }
@@ -143,6 +158,14 @@ export async function removeExternalMcpAction(id: string) {
         eq(integration.kind, 'external_mcp'),
       ),
     );
+  await db.insert(timelineEvent).values({
+    workspaceId: session.user.workspaceId,
+    userId: session.user.id,
+    kind: 'integration.removed',
+    title: 'Removed external MCP integration',
+    payload: { integrationId: id, kind: 'external_mcp' },
+    importance: 0.7,
+  });
   revalidatePath('/integrations');
   return { ok: true as const };
 }

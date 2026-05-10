@@ -16,6 +16,9 @@ import { goal, target } from '@metu/db/schema';
 import { BrainDump } from '@/components/brain-dump';
 import { RecomputeFocusButton } from '@/components/recompute-focus';
 import { DashboardTabs } from '@/components/dashboard-tabs';
+import { ConductorBacklog } from '@/components/conductor-backlog';
+import { ContinuityStrip } from '@/components/continuity-strip';
+import { PlanTabClient } from '@/components/dashboard/plan-tab-client';
 
 export default async function Dashboard({
   searchParams,
@@ -66,8 +69,10 @@ export default async function Dashboard({
           blocked={blocked}
         />
       )}
+      {tab === 'now' && <ContinuityStrip workspaceId={workspaceId} />}
+      {tab === 'now' && <ConductorBacklog workspaceId={workspaceId} />}
       {tab === 'inbox' && <InboxTab workspaceId={workspaceId} />}
-      {tab === 'plan' && <PlanTab openTasks={openTasks} blocked={blocked} />}
+      {tab === 'plan' && <PlanTabClient openTasks={openTasks} blocked={blocked} />}
       {tab === 'widgets' && (
         <WidgetsTab workspaceId={workspaceId} momentumProjects={momentumProjects} />
       )}
@@ -310,81 +315,6 @@ async function InboxTab({ workspaceId }: { workspaceId: string }) {
         </Link>
       </Card>
     </div>
-  );
-}
-
-function PlanTab({
-  openTasks,
-  blocked,
-}: {
-  openTasks: {
-    id: string;
-    title: string;
-    kind: string;
-    dueAt: Date | null;
-    projectId: string | null;
-  }[];
-  blocked: { id: string; title: string; blockedReason: string | null }[];
-}) {
-  const today = new Date();
-  today.setHours(0, 0, 0, 0);
-  const tomorrow = new Date(today);
-  tomorrow.setDate(tomorrow.getDate() + 1);
-
-  const dueToday = openTasks.filter((t) => t.dueAt && new Date(t.dueAt) < tomorrow);
-  const dueLater = openTasks.filter((t) => t.dueAt && new Date(t.dueAt) >= tomorrow).slice(0, 10);
-  const undated = openTasks.filter((t) => !t.dueAt).slice(0, 10);
-
-  return (
-    <div className="grid gap-4 md:grid-cols-3">
-      <PlanColumn title="Due today" tasks={dueToday} accent="text-[var(--color-brand)]" />
-      <PlanColumn title="Upcoming" tasks={dueLater} accent="text-[var(--color-fg)]" />
-      <PlanColumn title="Undated" tasks={undated} accent="text-[var(--color-fg-muted)]" />
-      {blocked.length > 0 && (
-        <Card className="md:col-span-3">
-          <CardTitle>Blocked</CardTitle>
-          <ul className="mt-3 grid gap-2 md:grid-cols-2">
-            {blocked.map((t) => (
-              <li key={t.id} className="rounded-md border border-[var(--color-border)] p-3 text-sm">
-                <div className="font-medium">{t.title}</div>
-                {t.blockedReason && (
-                  <div className="mt-1 text-xs text-[var(--color-fg-muted)]">{t.blockedReason}</div>
-                )}
-              </li>
-            ))}
-          </ul>
-        </Card>
-      )}
-    </div>
-  );
-}
-
-function PlanColumn({
-  title,
-  tasks,
-  accent,
-}: {
-  title: string;
-  tasks: { id: string; title: string; dueAt: Date | null; projectId: string | null }[];
-  accent: string;
-}) {
-  return (
-    <Card>
-      <CardTitle className={accent}>{title}</CardTitle>
-      <ul className="mt-3 space-y-2 text-sm">
-        {tasks.length === 0 && <li className="text-[var(--color-fg-subtle)]">—</li>}
-        {tasks.map((t) => (
-          <li key={t.id} className="rounded-md border border-[var(--color-border)] px-3 py-2">
-            <div className="truncate">{t.title}</div>
-            {t.dueAt && (
-              <div className="mt-0.5 text-[11px] text-[var(--color-fg-subtle)]">
-                {new Date(t.dueAt).toLocaleDateString()}
-              </div>
-            )}
-          </li>
-        ))}
-      </ul>
-    </Card>
   );
 }
 

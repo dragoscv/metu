@@ -110,8 +110,26 @@ services:
     image: inngest/inngest:latest
     container_name: metu-inngest
     restart: unless-stopped
+    # Local-dev tuning:
+    #   --tick 1000          executor queue poll: 150ms (default) → 1s. Cuts
+    #                        idle CPU from ~5% to <1%. Adds at most ~1s
+    #                        latency to job pickup, irrelevant locally.
+    #   --poll-interval 30   SDK re-discovery: 5s → 30s. Next.js HMR re-pings
+    #                        /api/inngest on every save, so updates are still
+    #                        picked up immediately during active development.
+    #   --no-discovery       (kept) don't autoscan localhost ports.
     command:
-      ['inngest', 'dev', '-u', 'http://host.docker.internal:24890/api/inngest', '--no-discovery']
+      [
+        'inngest',
+        'dev',
+        '-u',
+        'http://host.docker.internal:24890/api/inngest',
+        '--no-discovery',
+        '--tick',
+        '1000',
+        '--poll-interval',
+        '30',
+      ]
     ports:
       - '24893:8288' # Dev UI + event API (host: 24893, container: 8288)
     extra_hosts:

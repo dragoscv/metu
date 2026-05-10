@@ -34,7 +34,10 @@
     "companion:build": "pnpm companion:icons && pnpm --filter @metu/companion tauri:build",
     "release:companion": "node scripts/release-companion.mjs",
     "release:companion:minor": "node scripts/release-companion.mjs minor",
-    "release:companion:major": "node scripts/release-companion.mjs major"
+    "release:companion:major": "node scripts/release-companion.mjs major",
+    "browser-ext:package": "node scripts/package-browser-ext.mjs",
+    "browser-ext:package:prod": "node scripts/package-browser-ext.mjs --prod",
+    "lint:actions": "node scripts/check-actionlint.mjs --all"
   },
   "devDependencies": {
     "turbo": "catalog:",

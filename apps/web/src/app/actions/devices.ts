@@ -1,17 +1,32 @@
 'use server';
 import { randomUUID } from 'node:crypto';
 import { revalidatePath } from 'next/cache';
+import { z } from 'zod';
 import { auth } from '@metu/auth';
 import { getDb } from '@metu/db';
 import { device } from '@metu/db/schema';
 import { and, eq } from 'drizzle-orm';
 import { hubBroadcast } from '@/lib/hub';
 
+const SendDeviceCommandSchema = z.object({
+  deviceId: z.string().uuid(),
+  command: z.enum(['wake', 'lock', 'capture', 'speak', 'open_url', 'ping']),
+  payload: z.record(z.string(), z.unknown()).optional(),
+});
+const RenameDeviceSchema = z.object({
+  deviceId: z.string().uuid(),
+  name: z.string(),
+});
+const UnpairDeviceSchema = z.object({ deviceId: z.string().uuid() });
+
 export async function sendDeviceCommandAction(input: {
   deviceId: string;
   command: 'wake' | 'lock' | 'capture' | 'speak' | 'open_url' | 'ping';
   payload?: Record<string, unknown>;
 }) {
+  const parsed = SendDeviceCommandSchema.safeParse(input);
+  if (!parsed.success) return { ok: false as const, error: 'invalid_input' };
+  input = parsed.data;
   const session = await auth();
   if (!session) return { ok: false as const, error: 'Unauthenticated' };
 
@@ -39,6 +54,9 @@ export async function sendDeviceCommandAction(input: {
 }
 
 export async function renameDeviceAction(input: { deviceId: string; name: string }) {
+  const parsed = RenameDeviceSchema.safeParse(input);
+  if (!parsed.success) return { ok: false as const, error: 'invalid_input' };
+  input = parsed.data;
   const session = await auth();
   if (!session) return { ok: false as const, error: 'Unauthenticated' };
   if (!input.name.trim()) return { ok: false as const, error: 'Name required' };
@@ -53,6 +71,9 @@ export async function renameDeviceAction(input: { deviceId: string; name: string
 }
 
 export async function unpairDeviceAction(input: { deviceId: string }) {
+  const parsed = UnpairDeviceSchema.safeParse(input);
+  if (!parsed.success) return { ok: false as const, error: 'invalid_input' };
+  input = parsed.data;
   const session = await auth();
   if (!session) return { ok: false as const, error: 'Unauthenticated' };
   const db = getDb();

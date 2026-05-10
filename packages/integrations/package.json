@@ -11,7 +11,8 @@
     "./stripe": "./src/stripe/index.ts",
     "./vercel": "./src/vercel/index.ts",
     "./gcs": "./src/gcs/index.ts",
-    "./mcp": "./src/mcp/index.ts"
+    "./mcp": "./src/mcp/index.ts",
+    "./secrets": "./src/secrets.ts"
   },
   "dependencies": {
     "@metu/ai": "workspace:*",

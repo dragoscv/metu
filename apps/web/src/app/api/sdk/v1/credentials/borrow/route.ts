@@ -21,6 +21,7 @@ import { integration, timelineEvent } from '@metu/db/schema';
 import { open as openSealed } from '@metu/ai';
 import { agent } from '@metu/core';
 import { forbidden, hasScope, resolveSession, unauthorized } from '@/lib/bearer';
+import { rateLimit } from '@/lib/ratelimit';
 
 export const runtime = 'nodejs';
 
@@ -36,6 +37,9 @@ export async function POST(req: Request) {
   const session = await resolveSession(req);
   if (!session) return unauthorized();
   if (!hasScope(session, 'creds:borrow')) return forbidden();
+
+  const limited = await rateLimit('sdk-write', session.userId);
+  if (limited) return limited;
 
   const json = await req.json().catch(() => null);
   const parsed = BorrowSchema.safeParse(json);

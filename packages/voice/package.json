@@ -1,0 +1,33 @@
+{
+  "name": "@metu/voice",
+  "version": "0.0.1",
+  "private": true,
+  "type": "module",
+  "exports": {
+    ".": "./src/index.ts",
+    "./types": "./src/types.ts",
+    "./registry": "./src/registry.ts",
+    "./router": "./src/router.ts",
+    "./openai-realtime": "./src/openai-realtime.ts",
+    "./anthropic-realtime": "./src/anthropic-realtime.ts",
+    "./deepgram": "./src/deepgram.ts",
+    "./local-whisper": "./src/local-whisper.ts",
+    "./tts-proxy": "./src/tts-proxy.ts",
+    "./piper": "./src/piper.ts",
+    "./pipeline": "./src/pipeline.ts",
+    "./porcupine": "./src/porcupine.ts",
+    "./open-wake-word": "./src/open-wake-word.ts",
+    "./wake-router": "./src/wake-router.ts"
+  },
+  "scripts": {
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "@metu/protocol": "workspace:*",
+    "zod": "catalog:"
+  },
+  "devDependencies": {
+    "@metu/config": "workspace:*",
+    "typescript": "catalog:"
+  }
+}

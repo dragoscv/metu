@@ -1,12 +1,21 @@
 'use server';
 import { revalidatePath } from 'next/cache';
+import { z } from 'zod';
 import { auth } from '@metu/auth';
 import { getDb } from '@metu/db';
 import { capture, timelineEvent } from '@metu/db/schema';
 import { and, eq, isNull } from 'drizzle-orm';
 import { Inngest } from 'inngest';
+import { log } from '@/lib/logger';
 
 const inngest = new Inngest({ id: 'metu' });
+
+const UpdateCaptureSchema = z.object({
+  id: z.string().uuid(),
+  content: z.string().nullable().optional(),
+  projectId: z.string().uuid().nullable().optional(),
+});
+const CaptureIdSchema = z.string().uuid();
 
 async function ensureCaptureOwnership(id: string) {
   const session = await auth();
@@ -26,6 +35,9 @@ export async function updateCaptureAction(input: {
   content?: string | null;
   projectId?: string | null;
 }) {
+  const parsed = UpdateCaptureSchema.safeParse(input);
+  if (!parsed.success) return { ok: false as const, error: 'invalid_input' };
+  input = parsed.data;
   const access = await ensureCaptureOwnership(input.id);
   if (!access.ok) return access;
   const { db, session } = access;
@@ -33,7 +45,10 @@ export async function updateCaptureAction(input: {
   if (input.content !== undefined) patch.content = input.content;
   if (input.projectId !== undefined) patch.projectId = input.projectId;
   if (Object.keys(patch).length === 0) return { ok: true as const, id: input.id };
-  await db.update(capture).set(patch).where(eq(capture.id, input.id));
+  await db
+    .update(capture)
+    .set(patch)
+    .where(and(eq(capture.id, input.id), eq(capture.workspaceId, session.user.workspaceId)));
   if ('projectId' in patch) {
     await db.insert(timelineEvent).values({
       workspaceId: session.user.workspaceId,
@@ -51,15 +66,24 @@ export async function updateCaptureAction(input: {
 }
 
 export async function deleteCaptureAction(id: string) {
+  const parsed = CaptureIdSchema.safeParse(id);
+  if (!parsed.success) return { ok: false as const, error: 'invalid_input' };
+  id = parsed.data;
   const access = await ensureCaptureOwnership(id);
   if (!access.ok) return access;
-  const { db } = access;
-  await db.update(capture).set({ deletedAt: new Date() }).where(eq(capture.id, id));
+  const { db, session } = access;
+  await db
+    .update(capture)
+    .set({ deletedAt: new Date() })
+    .where(and(eq(capture.id, id), eq(capture.workspaceId, session.user.workspaceId)));
   revalidatePath('/inbox');
   return { ok: true as const };
 }
 
 export async function retryCaptureAction(id: string) {
+  const parsed = CaptureIdSchema.safeParse(id);
+  if (!parsed.success) return { ok: false as const, error: 'invalid_input' };
+  id = parsed.data;
   const access = await ensureCaptureOwnership(id);
   if (!access.ok) return access;
   const { db, session, row } = access;
@@ -80,7 +104,7 @@ export async function retryCaptureAction(id: string) {
       },
     });
   } catch (err) {
-    console.warn('inngest dispatch failed', err);
+    log.warn('captures.inngest.dispatch_failed', {}, err);
   }
   revalidatePath('/inbox');
   revalidatePath(`/inbox/${id}`);

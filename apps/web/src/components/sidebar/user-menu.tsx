@@ -7,6 +7,7 @@ import {
   Check,
   ChevronRight,
   ChevronUp,
+  CreditCard,
   Gauge,
   LogOut,
   Monitor,
@@ -149,6 +150,7 @@ function RootMenu({
         <MenuLink href="/settings/profile" icon={User} label="Profile" onClick={onClose} />
         <MenuLink href="/settings" icon={Settings} label="Settings" onClick={onClose} />
         <MenuLink href="/settings/autonomy" icon={Gauge} label="Autonomy" onClick={onClose} />
+        <MenuLink href="/settings/billing" icon={CreditCard} label="Billing" onClick={onClose} />
         <button
           type="button"
           onClick={onOpenTheme}

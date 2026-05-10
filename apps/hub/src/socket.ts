@@ -11,8 +11,10 @@ import { getDb } from '@metu/db';
 import { device, deviceEvent } from '@metu/db/schema';
 import { and, eq } from 'drizzle-orm';
 import { ClientEventSchema, HelloSchema, PROTOCOL_VERSION } from '@metu/protocol';
+import { log } from '@metu/logger';
 import type { AuthenticatedToken } from './auth';
 import { registry, type Connection } from './registry';
+import { consumeConnBudget, newConnBudget, MAX_FRAME_BYTES } from './limits';
 
 const PING_INTERVAL_MS = 30_000;
 const HANDSHAKE_TIMEOUT_MS = 10_000;
@@ -32,6 +34,7 @@ export async function handleSocket(
 
   let conn: Connection | null = null;
   let pingTimer: NodeJS.Timeout | null = null;
+  const budget = newConnBudget();
 
   const handshakeTimer = setTimeout(() => {
     if (!conn) {
@@ -41,9 +44,21 @@ export async function handleSocket(
   }, HANDSHAKE_TIMEOUT_MS);
 
   ws.on('message', async (raw) => {
+    // Reject oversized frames before parsing.
+    const buf = raw as Buffer;
+    if (buf.byteLength > MAX_FRAME_BYTES) {
+      send({ v: 1, type: 'error', error: 'frame_too_large' });
+      ws.close(1009, 'frame_too_large');
+      return;
+    }
+    if (!consumeConnBudget(budget)) {
+      send({ v: 1, type: 'error', error: 'rate_limited' });
+      ws.close(4008, 'rate_limited');
+      return;
+    }
     let json: unknown;
     try {
-      json = JSON.parse(raw.toString());
+      json = JSON.parse(buf.toString());
     } catch {
       send({ v: 1, type: 'error', error: 'invalid_json' });
       return;
@@ -201,7 +216,7 @@ export async function handleSocket(
               }),
             });
           } catch (err) {
-            console.error('[hub] tool.result forward failed', err);
+            log.error('hub.tool_result.forward_failed', { toolCallId: ev.id }, err);
           }
         }
         break;
@@ -221,7 +236,7 @@ export async function handleSocket(
           .set({ presence: 'offline', lastSeenAt: new Date() })
           .where(eq(device.id, conn.deviceId));
       } catch (err) {
-        console.error('[hub] failed to mark device offline', err);
+        log.error('hub.device.mark_offline_failed', { deviceId: conn.deviceId }, err);
       }
     }
   };

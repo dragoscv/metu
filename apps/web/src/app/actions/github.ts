@@ -10,7 +10,56 @@ import {
 import { integration, task, timelineEvent } from '@metu/db/schema';
 import { and, eq, sql } from 'drizzle-orm';
 import { revalidatePath } from 'next/cache';
+import { z } from 'zod';
 import { addProjectLinkAction } from './project-links';
+
+const GithubRepoSchema = z.object({
+  id: z.number(),
+  fullName: z.string(),
+  name: z.string(),
+  owner: z.string(),
+  description: z.string().nullable(),
+  private: z.boolean(),
+  url: z.string().url(),
+  language: z.string().nullable(),
+  defaultBranch: z.string(),
+  stars: z.number(),
+  pushedAt: z.string().nullable(),
+  ownerAvatarUrl: z.string().nullable(),
+  fork: z.boolean(),
+  archived: z.boolean(),
+});
+const ListGithubReposSchema = z.object({
+  integrationId: z.string().uuid(),
+  search: z.string().optional(),
+  perPage: z.number().optional(),
+  owner: z.string().optional(),
+});
+const AssignGithubRepoSchema = z.object({
+  projectId: z.string().uuid(),
+  integrationId: z.string().uuid(),
+  repo: GithubRepoSchema,
+});
+const GetGithubRepoDetailSchema = z.object({
+  owner: z.string().min(1),
+  repo: z.string().min(1),
+});
+const ImportGithubIssuesSchema = z.object({
+  projectId: z.string().uuid(),
+  owner: z.string().min(1),
+  repo: z.string().min(1),
+  kinds: z.object({ issues: z.boolean(), pulls: z.boolean() }),
+});
+const CreateGithubRepoSchema = z.object({
+  integrationId: z.string().uuid(),
+  name: z.string(),
+  description: z.string().optional(),
+  private: z.boolean().optional(),
+  autoInit: z.boolean().optional(),
+  owner: z.string().optional(),
+});
+const ListGithubOwnersSchema = z.object({ integrationId: z.string().uuid() });
+const GetGithubRepoByUrlSchema = z.object({ url: z.string().url() });
 
 export interface GithubAccount {
   id: string;
@@ -138,6 +187,9 @@ export async function listGithubReposAction(input: {
   perPage?: number;
   owner?: string;
 }) {
+  const parsed = ListGithubReposSchema.safeParse(input);
+  if (!parsed.success) return { ok: false as const, error: 'invalid_input' };
+  input = parsed.data;
   const session = await auth();
   if (!session) return { ok: false as const, error: 'Unauthenticated' };
   const tok = await getGithubToken(session.user.workspaceId, input.integrationId);
@@ -213,6 +265,9 @@ export async function assignGithubRepoAction(input: {
   integrationId: string;
   repo: GithubRepo;
 }) {
+  const parsed = AssignGithubRepoSchema.safeParse(input);
+  if (!parsed.success) return { ok: false as const, error: 'invalid_input' };
+  input = parsed.data;
   return addProjectLinkAction({
     projectId: input.projectId,
     provider: 'github',
@@ -311,6 +366,9 @@ async function pickGithubIntegrationForRepo(
 }
 
 export async function getGithubRepoDetailAction(input: { owner: string; repo: string }) {
+  const parsed = GetGithubRepoDetailSchema.safeParse(input);
+  if (!parsed.success) return { ok: false as const, error: 'invalid_input' };
+  input = parsed.data;
   const session = await auth();
   if (!session) return { ok: false as const, error: 'Unauthenticated' };
   const fullName = `${input.owner}/${input.repo}`;
@@ -440,6 +498,9 @@ export async function importGithubIssuesAction(input: {
   repo: string;
   kinds: { issues: boolean; pulls: boolean };
 }) {
+  const parsed = ImportGithubIssuesSchema.safeParse(input);
+  if (!parsed.success) return { ok: false as const, error: 'invalid_input' };
+  input = parsed.data;
   const session = await auth();
   if (!session) return { ok: false as const, error: 'Unauthenticated' };
   if (!input.kinds.issues && !input.kinds.pulls)
@@ -525,6 +586,9 @@ export async function createGithubRepoAction(input: {
   autoInit?: boolean;
   owner?: string;
 }) {
+  const parsed = CreateGithubRepoSchema.safeParse(input);
+  if (!parsed.success) return { ok: false as const, error: 'invalid_input' };
+  input = parsed.data;
   const session = await auth();
   if (!session) return { ok: false as const, error: 'Unauthenticated' };
   const trimmed = input.name.trim();
@@ -593,6 +657,9 @@ export interface GithubOwnerOption {
 
 /** GET /user/orgs — list orgs the connected user belongs to (plus the user itself). */
 export async function listGithubOwnersAction(input: { integrationId: string }) {
+  const parsed = ListGithubOwnersSchema.safeParse(input);
+  if (!parsed.success) return { ok: false as const, error: 'invalid_input' };
+  input = parsed.data;
   const session = await auth();
   if (!session) return { ok: false as const, error: 'Unauthenticated' };
   const tok = await getGithubToken(session.user.workspaceId, input.integrationId);
@@ -641,6 +708,9 @@ export async function listGithubOwnersAction(input: { integrationId: string }) {
 /** Resolve a GitHub URL like https://github.com/owner/repo to repo metadata.
  *  Picks an integration matching the owner login; falls back to first active one. */
 export async function getGithubRepoByUrlAction(input: { url: string }) {
+  const parsed = GetGithubRepoByUrlSchema.safeParse(input);
+  if (!parsed.success) return { ok: false as const, error: 'invalid_input' };
+  input = parsed.data;
   const session = await auth();
   if (!session) return { ok: false as const, error: 'Unauthenticated' };
   let owner: string;

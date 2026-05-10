@@ -8,6 +8,8 @@ import {
   rejectToolCallAction,
   undoToolCallAction,
 } from '@/app/actions/conductor';
+import { MicButton } from '@/components/mic-button';
+import { matchSlashCommands, expandSlashCommand } from '@/lib/slash-commands';
 
 export interface ChatMessage {
   id: string;
@@ -16,6 +18,12 @@ export interface ChatMessage {
   createdAt: string;
   model?: string | null;
   provider?: string | null;
+  /**
+   * Why this assistant message was generated. Populated by the proactive
+   * cron, idle-nudge cron, or other server-side triggers; null when the
+   * tick was kicked by a user-typed message.
+   */
+  triggerReason?: string | null;
 }
 
 export interface ChatToolCall {
@@ -158,6 +166,9 @@ export function ConductorChat({
                   {m.role}
                   {m.model ? ` · ${m.model}` : ''}
                 </span>
+                {m.role === 'assistant' && m.triggerReason ? (
+                  <WhyNowDisclosure reason={m.triggerReason} />
+                ) : null}
                 <div
                   className={
                     m.role === 'user'
@@ -207,6 +218,49 @@ export function ConductorChat({
       <Composer value={input} onChange={setInput} onSend={send} disabled={pending} />
     </div>
   );
+}
+
+function WhyNowDisclosure({ reason }: { reason: string }) {
+  const [open, setOpen] = useState(false);
+  // Categorize for the eyebrow icon and short label. Keeps the bare
+  // string from leaking into the UI when it's verbose.
+  const [label, summary] = classifyReason(reason);
+  return (
+    <div className="text-[11px]">
+      <button
+        type="button"
+        onClick={() => setOpen((v) => !v)}
+        aria-expanded={open}
+        className="inline-flex items-center gap-1 rounded-full border border-[var(--color-border)] px-2 py-[2px] text-[var(--color-fg-muted)] hover:bg-[var(--color-bg-elevated)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--color-brand)]"
+      >
+        <span aria-hidden>·</span>
+        <span>Why now? — {label}</span>
+        <span aria-hidden>{open ? '▴' : '▾'}</span>
+      </button>
+      {open ? (
+        <div className="mt-1 max-w-[85%] rounded-md border border-dashed border-[var(--color-border)] bg-[var(--color-bg-card)] px-2 py-1 text-[11px] text-[var(--color-fg-muted)]">
+          {summary}
+        </div>
+      ) : null}
+    </div>
+  );
+}
+
+function classifyReason(reason: string): [label: string, summary: string] {
+  const r = reason.toLowerCase();
+  if (r.startsWith('proactive:')) {
+    if (r.includes('stale-project'))
+      return ['stale project', reason.replace(/^proactive:\s*/i, '')];
+    if (r.includes('goal-deadline'))
+      return ['goal deadline', reason.replace(/^proactive:\s*/i, '')];
+    if (r.includes('goal-stall')) return ['goal stalled', reason.replace(/^proactive:\s*/i, '')];
+    return ['proactive trigger', reason.replace(/^proactive:\s*/i, '')];
+  }
+  if (r.includes('idle')) return ['idle nudge', reason];
+  if (r.includes('companion-agent')) return ['voice escalation', reason];
+  if (r.startsWith('cron') || r.includes('scheduled')) return ['scheduled tick', reason];
+  if (r.includes('observe') || r.includes('capture')) return ['new capture', reason];
+  return ['scheduled tick', reason];
 }
 
 function ToolCallRow({ tc }: { tc: ChatToolCall }) {
@@ -289,27 +343,72 @@ function Composer({
   onSend: () => void;
   disabled: boolean;
 }) {
+  const trimmed = value.trimStart();
+  const isSlash = trimmed.startsWith('/');
+  const matchingCommands = isSlash ? matchSlashCommands(trimmed) : [];
+
+  const expandAndSend = () => {
+    const expanded = expandSlashCommand(value);
+    if (expanded !== value) onChange(expanded);
+    // Defer send by a microtask so the parent sees the updated value.
+    queueMicrotask(onSend);
+  };
+
   return (
     <form
       onSubmit={(e) => {
         e.preventDefault();
-        onSend();
+        expandAndSend();
       }}
-      className="flex items-end gap-2 rounded-[var(--radius-lg)] border border-[var(--color-border)] bg-[var(--color-bg-elevated)] p-2"
+      className="relative flex items-end gap-2 rounded-[var(--radius-lg)] border border-[var(--color-border)] bg-[var(--color-bg-elevated)] p-2"
     >
+      {matchingCommands.length > 0 ? (
+        <div
+          role="listbox"
+          aria-label="Slash commands"
+          className="absolute bottom-full left-0 right-0 mb-2 overflow-hidden rounded-[var(--radius)] border border-[var(--color-border)] bg-[var(--color-bg-card)] text-xs shadow-lg"
+        >
+          {matchingCommands.map((c) => (
+            <button
+              key={c.name}
+              type="button"
+              role="option"
+              aria-selected={false}
+              onClick={() => {
+                onChange(`/${c.name} `);
+              }}
+              className="flex w-full items-center gap-3 px-3 py-2 text-left hover:bg-[var(--color-bg-elevated)]"
+            >
+              <span className="font-mono text-[var(--color-brand)]">/{c.name}</span>
+              <span className="text-[var(--color-fg-subtle)]">{c.description}</span>
+            </button>
+          ))}
+        </div>
+      ) : null}
+
       <textarea
         value={value}
         onChange={(e) => onChange(e.target.value)}
         onKeyDown={(e) => {
           if (e.key === 'Enter' && !e.shiftKey) {
             e.preventDefault();
-            onSend();
+            expandAndSend();
           }
         }}
         rows={2}
-        placeholder="Talk to the Conductor — recall, decide, ship."
+        placeholder="Talk to the Conductor — recall, decide, ship.  (try /recall, /notify, /goal)"
         className="flex-1 resize-none bg-transparent px-2 py-1.5 text-sm focus:outline-none"
         disabled={disabled}
+      />
+      <MicButton
+        spaceHotkey
+        disabled={disabled}
+        onTranscript={(text) => {
+          // Append to whatever is already typed so the user can dictate
+          // mid-thought without losing context.
+          const next = value.trim().length > 0 ? `${value.trim()} ${text}` : text;
+          onChange(next);
+        }}
       />
       <Button type="submit" disabled={disabled || !value.trim()} size="sm">
         {disabled ? 'Streaming…' : 'Send'}
@@ -317,3 +416,15 @@ function Composer({
     </form>
   );
 }
+
+interface SlashCommand {
+  name: string;
+  description: string;
+  /** Transform the raw input (including the leading slash) into the
+   *  natural-language prompt the conductor should see. */
+  expand: (rest: string) => string;
+}
+
+// Vocabulary lives in '@/lib/slash-commands' so it's testable.
+type SlashCommandRow = SlashCommand;
+export type { SlashCommandRow };

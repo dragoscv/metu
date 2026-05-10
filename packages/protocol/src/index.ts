@@ -96,6 +96,57 @@ export const ServerEventSchema = z.discriminatedUnion('type', [
     command: z.string(),
     payload: z.record(z.string(), z.unknown()).default({}),
   }),
+  // ── Presence (slice 1 contract) ─────────────────────────────────────────
+  z.object({
+    type: z.literal('persona.activate'),
+    activationId: Uuid,
+    personaId: Uuid,
+    /** 'panel' | 'in_window' | 'hud' | 'pet' */
+    form: z.enum(['panel', 'in_window', 'hud', 'pet']),
+    position: z.record(z.string(), z.unknown()).default({}),
+    /** Snapshot of persona fields the device needs to render + speak. */
+    persona: z.object({
+      slug: z.string(),
+      name: z.string(),
+      systemPrompt: z.string(),
+      voiceProvider: z.string(),
+      voiceId: z.string(),
+      voiceTuning: z.record(z.string(), z.unknown()).default({}),
+      sttProvider: z.string(),
+      avatarKind: z.string(),
+      avatarUrl: z.string().nullable(),
+      wakeWord: z.string().nullable(),
+      hotkey: z.string().nullable(),
+      proactivity: z.enum(['silent', 'gentle', 'active']),
+    }),
+  }),
+  z.object({
+    type: z.literal('persona.deactivate'),
+    activationId: Uuid,
+  }),
+  z.object({
+    type: z.literal('voice.token'),
+    /** Lane: 'realtime' | 'stt' | 'tts'. */
+    lane: z.enum(['realtime', 'stt', 'tts']),
+    provider: z.string(),
+    sessionToken: z.string(),
+    expiresAt: Iso,
+    /** Optional ICE servers when transport=webrtc. */
+    iceServers: z
+      .array(
+        z.object({
+          urls: z.union([z.string(), z.array(z.string())]),
+          username: z.string().optional(),
+          credential: z.string().optional(),
+        }),
+      )
+      .optional(),
+  }),
+  z.object({
+    type: z.literal('tool.partial'),
+    id: Uuid,
+    chunk: z.unknown(),
+  }),
   z.object({ type: z.literal('ping'), at: Iso }),
 ]);
 
@@ -125,6 +176,33 @@ export const ClientEventSchema = z.discriminatedUnion('type', [
     type: z.literal('presence'),
     state: z.enum(['online', 'idle', 'offline']),
     activity: z.record(z.string(), z.unknown()).optional(),
+  }),
+  // ── Presence (slice 1 contract) ─────────────────────────────────────────
+  z.object({
+    type: z.literal('voice.transcript'),
+    personaId: Uuid.optional(),
+    partial: z.string().optional(),
+    final: z.string().optional(),
+  }),
+  z.object({
+    type: z.literal('voice.utterance'),
+    personaId: Uuid,
+    text: z.string(),
+    durationMs: z.number().int().nonnegative(),
+  }),
+  z.object({
+    type: z.literal('sensory.summary'),
+    kind: z.enum([
+      'screenshot',
+      'screen_text',
+      'audio_transcript',
+      'window_focus',
+      'clipboard',
+      'webcam',
+    ]),
+    summary: z.string(),
+    storageKey: z.string().nullable().default(null),
+    retention: z.enum(['ephemeral', 'ring_24h', 'persisted']),
   }),
   z.object({ type: z.literal('pong'), at: Iso }),
 ]);

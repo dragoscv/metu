@@ -38,8 +38,50 @@ export function TimelineToolbar({ kindFacets, projects }: Props) {
   const hasFilters =
     selectedKinds.length > 0 || !!filters.projectId || !!filters.since || !!filters.q;
 
+  const PRESETS: { label: string; kinds: string[] }[] = [
+    {
+      label: 'Conductor escalations',
+      kinds: ['conductor.escalation.completed', 'conductor.observation', 'intent.received'],
+    },
+    {
+      label: 'Billing',
+      kinds: ['subscription.activated', 'subscription.updated', 'subscription.canceled'],
+    },
+    {
+      label: 'Decisions',
+      kinds: ['decision.logged'],
+    },
+  ];
+
+  const applyPreset = (kinds: string[]) => {
+    setFilters({ kinds: kinds.join(',') });
+  };
+
+  const presetActive = (kinds: string[]) =>
+    kinds.length === selectedKinds.length && kinds.every((k) => selectedKinds.includes(k));
+
   return (
     <div className="space-y-2">
+      <div className="flex flex-wrap items-center gap-1.5">
+        {PRESETS.map((p) => {
+          const active = presetActive(p.kinds);
+          return (
+            <button
+              key={p.label}
+              type="button"
+              onClick={() => applyPreset(p.kinds)}
+              className={
+                active
+                  ? 'bg-[var(--color-brand)]/15 rounded-full border border-[var(--color-brand)] px-2.5 py-0.5 text-xs text-[var(--color-brand)]'
+                  : 'rounded-full border border-[var(--color-border)] bg-[var(--color-bg-card)] px-2.5 py-0.5 text-xs hover:bg-[var(--color-bg-elevated)]'
+              }
+            >
+              {p.label}
+            </button>
+          );
+        })}
+      </div>
+
       <div className="flex flex-wrap items-center gap-2">
         <Input
           placeholder="Search title or body…"

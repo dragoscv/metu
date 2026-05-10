@@ -15,6 +15,7 @@
     "@metu/ai": "workspace:*",
     "@metu/db": "workspace:*",
     "@metu/integrations": "workspace:*",
+    "@metu/logger": "workspace:*",
     "@metu/types": "workspace:*",
     "@metu/core": "workspace:*",
     "@google-cloud/speech": "catalog:",

@@ -5,7 +5,7 @@
  *   - Bearer prefix `metu_at_` for access tokens, `metu_rt_` for refresh, `metu_dc_` for device.
  *   - Lookup is by hash; raw tokens never round-trip back to the DB.
  */
-import { and, eq, gt, isNull } from 'drizzle-orm';
+import { and, eq, gt, isNull, or, lt, sql } from 'drizzle-orm';
 import { randomUUID } from 'node:crypto';
 import { getDb } from '@metu/db';
 import { oauthClient, oauthToken, type oauthTokenKind } from '@metu/db/schema';
@@ -95,6 +95,23 @@ export async function findActiveTokenByHash(token: string, kind: TokenKind) {
       ),
     )
     .limit(1);
+  if (row) {
+    // Throttled liveness ping (max once / 60s) so /apps can show
+    // "last seen 5m ago" for SDK-only clients without hammering the
+    // DB on every recall/notify call. Fire-and-forget — we never
+    // block auth resolution on the write.
+    const sixtySecondsAgo = new Date(Date.now() - 60_000);
+    void db
+      .update(oauthToken)
+      .set({ lastUsedAt: sql`now()` })
+      .where(
+        and(
+          eq(oauthToken.id, row.id),
+          or(isNull(oauthToken.lastUsedAt), lt(oauthToken.lastUsedAt, sixtySecondsAgo)),
+        ),
+      )
+      .catch(() => {});
+  }
   return row ?? null;
 }
 

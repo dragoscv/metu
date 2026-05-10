@@ -1,0 +1,178 @@
+name: release-vscode-ext
+
+# Publishes the metu VS Code extension to the Marketplace + attaches the .vsix
+# to a GitHub Release. Mirrors release-browser-ext: gate on version bump in
+# apps/vscode-ext/package.json, skip if the tag already exists.
+#
+# Required repository secret:
+#   VSCE_PAT  — Azure DevOps PAT with "Marketplace > Publish" scope.
+# Optional:
+#   OVSX_PAT  — Open VSX PAT (publishes the same .vsix to open-vsx.org).
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'apps/vscode-ext/**'
+      - '.github/workflows/release-vscode-ext.yml'
+  workflow_dispatch:
+    inputs:
+      version:
+        description: 'Version to release (e.g. 0.1.0). Reads from package.json if empty.'
+        required: false
+      force:
+        description: 'Rebuild even if the tag already exists (does not republish to Marketplace)'
+        type: boolean
+        default: false
+      publish:
+        description: 'Publish to Visual Studio Marketplace'
+        type: boolean
+        default: true
+      publish_ovsx:
+        description: 'Also publish to Open VSX (requires OVSX_PAT)'
+        type: boolean
+        default: false
+
+concurrency:
+  group: release-vscode-ext-${{ github.ref }}
+  cancel-in-progress: false
+
+permissions:
+  contents: write
+
+jobs:
+  resolve:
+    runs-on: ubuntu-latest
+    outputs:
+      version: ${{ steps.ver.outputs.version }}
+      tag: ${{ steps.ver.outputs.tag }}
+      should_release: ${{ steps.ver.outputs.should_release }}
+    steps:
+      - uses: actions/checkout@v4
+        with: { fetch-depth: 0 }
+      - id: ver
+        shell: bash
+        env:
+          INPUT_VERSION: ${{ github.event.inputs.version }}
+          FORCE: ${{ github.event.inputs.force }}
+        run: |
+          VERSION="$INPUT_VERSION"
+          if [[ -z "$VERSION" ]]; then
+            VERSION=$(node -p "require('./apps/vscode-ext/package.json').version")
+          fi
+          TAG="vscode-ext-v$VERSION"
+          echo "version=$VERSION" >> "$GITHUB_OUTPUT"
+          echo "tag=$TAG" >> "$GITHUB_OUTPUT"
+          if [[ "$FORCE" == "true" ]]; then
+            echo "should_release=true" >> "$GITHUB_OUTPUT"
+            echo "Forced rebuild requested."
+          elif git rev-parse "refs/tags/$TAG" >/dev/null 2>&1; then
+            echo "should_release=false" >> "$GITHUB_OUTPUT"
+            echo "Tag $TAG already exists — bump apps/vscode-ext/package.json to publish a new version."
+          else
+            echo "should_release=true" >> "$GITHUB_OUTPUT"
+            echo "Tag $TAG is new — proceeding with release."
+          fi
+
+  release:
+    needs: resolve
+    if: needs.resolve.outputs.should_release == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: pnpm/action-setup@v4
+        with: { version: 9.15.0 }
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: 'pnpm'
+
+      - name: Install workspace deps
+        run: pnpm install --frozen-lockfile
+
+      - name: Build extension
+        run: pnpm --filter metu-vscode build
+
+      - name: Package .vsix
+        id: pkg
+        shell: bash
+        run: |
+          cd apps/vscode-ext
+          VERSION="${{ needs.resolve.outputs.version }}"
+          # vsce derives the filename from package.json — predictable, stable.
+          pnpm dlx @vscode/vsce@^3.2.1 package --no-dependencies -o "metu-vscode-$VERSION.vsix"
+          VSIX="apps/vscode-ext/metu-vscode-$VERSION.vsix"
+          test -f "metu-vscode-$VERSION.vsix"
+          SIZE=$(wc -c < "metu-vscode-$VERSION.vsix" | tr -d ' ')
+          DIGEST=$(sha256sum "metu-vscode-$VERSION.vsix" | awk '{print $1}')
+          echo "$DIGEST  metu-vscode-$VERSION.vsix" > "metu-vscode-$VERSION.vsix.sha256"
+          cd ../..
+          echo "vsix=$VSIX" >> "$GITHUB_OUTPUT"
+          echo "sha=$VSIX.sha256" >> "$GITHUB_OUTPUT"
+          echo "size=$SIZE" >> "$GITHUB_OUTPUT"
+          echo "digest=$DIGEST" >> "$GITHUB_OUTPUT"
+          echo "Built $VSIX ($SIZE bytes, sha256=$DIGEST)"
+
+      - name: Publish to Visual Studio Marketplace
+        if: ${{ github.event.inputs.publish != 'false' }}
+        env:
+          VSCE_PAT: ${{ secrets.VSCE_PAT }}
+        shell: bash
+        run: |
+          if [[ -z "$VSCE_PAT" ]]; then
+            echo "::warning::VSCE_PAT secret is not set — skipping Marketplace publish."
+            exit 0
+          fi
+          cd apps/vscode-ext
+          pnpm dlx @vscode/vsce@^3.2.1 publish \
+            --no-dependencies \
+            --packagePath "metu-vscode-${{ needs.resolve.outputs.version }}.vsix" \
+            --pat "$VSCE_PAT"
+
+      - name: Publish to Open VSX
+        if: ${{ github.event.inputs.publish_ovsx == 'true' }}
+        env:
+          OVSX_PAT: ${{ secrets.OVSX_PAT }}
+        shell: bash
+        run: |
+          if [[ -z "$OVSX_PAT" ]]; then
+            echo "::warning::OVSX_PAT secret is not set — skipping Open VSX publish."
+            exit 0
+          fi
+          cd apps/vscode-ext
+          pnpm dlx ovsx@^0.10.1 publish \
+            "metu-vscode-${{ needs.resolve.outputs.version }}.vsix" \
+            --pat "$OVSX_PAT"
+
+      - name: Create GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ needs.resolve.outputs.tag }}
+          name: 'METU VS Code Extension v${{ needs.resolve.outputs.version }}'
+          draft: false
+          prerelease: false
+          files: |
+            ${{ steps.pkg.outputs.vsix }}
+            ${{ steps.pkg.outputs.sha }}
+          body: |
+            See [CHANGELOG](https://github.com/${{ github.repository }}/blob/main/apps/vscode-ext/CHANGELOG.md) for details.
+
+            ### Install (Marketplace)
+            ```
+            code --install-extension metu.metu-vscode
+            ```
+
+            ### Install (manual .vsix)
+            1. Download `metu-vscode-${{ needs.resolve.outputs.version }}.vsix`.
+            2. `code --install-extension metu-vscode-${{ needs.resolve.outputs.version }}.vsix`
+
+            ### Verify
+            ```
+            sha256:  ${{ steps.pkg.outputs.digest }}
+            size:    ${{ steps.pkg.outputs.size }} bytes
+            ```
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

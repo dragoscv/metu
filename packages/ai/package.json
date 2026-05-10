@@ -3,6 +3,10 @@
   "version": "0.0.1",
   "private": true,
   "type": "module",
+  "scripts": {
+    "test": "vitest run",
+    "test:watch": "vitest"
+  },
   "exports": {
     ".": "./src/index.ts",
     "./crypto": "./src/crypto.ts",
@@ -25,6 +29,7 @@
   "devDependencies": {
     "@metu/config": "workspace:*",
     "typescript": "catalog:",
-    "@types/node": "catalog:"
+    "@types/node": "catalog:",
+    "vitest": "catalog:"
   }
 }

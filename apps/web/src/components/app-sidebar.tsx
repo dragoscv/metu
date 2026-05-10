@@ -9,6 +9,7 @@ import { archiveConversationAction, createSideChatAction } from '@/app/actions/c
 import { NotificationsBell } from './notifications-bell';
 import { useSidebar } from './sidebar/sidebar-provider';
 import { UserMenu } from './sidebar/user-menu';
+import { WorkspaceSwitcher, type WorkspaceOption } from './sidebar/workspace-switcher';
 import {
   findActiveGroup,
   isGroupActive,
@@ -29,9 +30,25 @@ export interface MetuConversation {
 interface Props {
   user: { name?: string | null; email?: string | null; image?: string | null };
   metuConversations: MetuConversation[];
+  /**
+   * Optional small numeric badges keyed by leaf href (e.g. `/timeline`).
+   * Group rows show the sum of their child badges. Falsy or zero values
+   * render no badge.
+   */
+  badges?: Record<string, number>;
+  /** All workspaces the signed-in user is a member of. */
+  workspaces?: WorkspaceOption[];
+  /** Currently-resolved active workspace id (from session). */
+  activeWorkspaceId?: string;
 }
 
-export function AppSidebar({ user, metuConversations }: Props) {
+export function AppSidebar({
+  user,
+  metuConversations,
+  badges = {},
+  workspaces = [],
+  activeWorkspaceId,
+}: Props) {
   const { collapsed, toggleCollapsed, mobileOpen, setMobileOpen } = useSidebar();
   const pathname = usePathname();
   const router = useRouter();
@@ -125,6 +142,7 @@ export function AppSidebar({ user, metuConversations }: Props) {
                 pathname={pathname}
                 collapsed={collapsed}
                 onEnterGroup={enterGroup}
+                badges={badges}
               />
             ) : openGroup.id === 'chat' ? (
               <MetuChildPanel
@@ -140,12 +158,22 @@ export function AppSidebar({ user, metuConversations }: Props) {
                 group={openGroup}
                 pathname={pathname}
                 onBack={exitGroup}
+                badges={badges}
               />
             )}
           </AnimatePresence>
         </div>
 
         <div className="mt-auto border-t border-[var(--color-border)] p-2">
+          {workspaces.length > 1 && activeWorkspaceId ? (
+            <div className="mb-2">
+              <WorkspaceSwitcher
+                workspaces={workspaces}
+                activeWorkspaceId={activeWorkspaceId}
+                collapsed={collapsed}
+              />
+            </div>
+          ) : null}
           <NotificationsBell />
           <UserMenu user={user} collapsed={collapsed} />
         </div>
@@ -187,11 +215,13 @@ function NavPanel({
   pathname,
   collapsed,
   onEnterGroup,
+  badges,
 }: {
   direction: 'root';
   pathname: string | null;
   collapsed: boolean;
   onEnterGroup: (g: NavGroup) => void;
+  badges: Record<string, number>;
 }) {
   return (
     <motion.nav
@@ -203,7 +233,13 @@ function NavPanel({
     >
       {NAV.map((node) =>
         node.kind === 'leaf' ? (
-          <LeafItem key={node.href} leaf={node} pathname={pathname} collapsed={collapsed} />
+          <LeafItem
+            key={node.href}
+            leaf={node}
+            pathname={pathname}
+            collapsed={collapsed}
+            badge={badges[node.href]}
+          />
         ) : (
           <GroupRow
             key={node.id}
@@ -211,6 +247,7 @@ function NavPanel({
             pathname={pathname}
             collapsed={collapsed}
             onClick={() => onEnterGroup(node)}
+            badge={node.children.reduce((sum, c) => sum + (badges[c.href] ?? 0), 0)}
           />
         ),
       )}
@@ -222,10 +259,12 @@ function ChildPanel({
   group,
   pathname,
   onBack,
+  badges,
 }: {
   group: NavGroup;
   pathname: string | null;
   onBack: () => void;
+  badges: Record<string, number>;
 }) {
   const Icon = group.icon;
   return (
@@ -251,7 +290,13 @@ function ChildPanel({
         </span>
       </div>
       {group.children.map((child) => (
-        <LeafItem key={child.href} leaf={child} pathname={pathname} collapsed={false} />
+        <LeafItem
+          key={child.href}
+          leaf={child}
+          pathname={pathname}
+          collapsed={false}
+          badge={badges[child.href]}
+        />
       ))}
     </motion.div>
   );
@@ -261,17 +306,20 @@ function LeafItem({
   leaf,
   pathname,
   collapsed,
+  badge,
 }: {
   leaf: NavLeaf;
   pathname: string | null;
   collapsed: boolean;
+  badge?: number;
 }) {
   const active = isLeafActive(pathname, leaf);
   const Icon = leaf.icon;
+  const showBadge = typeof badge === 'number' && badge > 0;
   return (
     <Link
       href={leaf.href}
-      title={collapsed ? leaf.label : undefined}
+      title={collapsed ? `${leaf.label}${showBadge ? ` (${badge})` : ''}` : undefined}
       className={cn(
         'relative flex items-center gap-2.5 rounded-md px-2.5 py-2 text-sm transition-colors',
         active
@@ -288,7 +336,23 @@ function LeafItem({
       )}
       <Icon className="h-4 w-4 shrink-0" />
       {!collapsed && <span className="truncate">{leaf.label}</span>}
+      {showBadge && !collapsed && <NavBadge count={badge} />}
+      {showBadge && collapsed && (
+        <span
+          aria-hidden
+          className="absolute right-1 top-1 h-1.5 w-1.5 rounded-full bg-[var(--color-brand)]"
+        />
+      )}
     </Link>
+  );
+}
+
+function NavBadge({ count }: { count: number }) {
+  const display = count > 99 ? '99+' : String(count);
+  return (
+    <span className="ml-auto rounded-full bg-[var(--color-bg-card)] px-1.5 py-0.5 text-[10px] font-medium tabular-nums text-[var(--color-fg-muted)]">
+      {display}
+    </span>
   );
 }
 
@@ -297,19 +361,22 @@ function GroupRow({
   pathname,
   collapsed,
   onClick,
+  badge,
 }: {
   group: NavGroup;
   pathname: string | null;
   collapsed: boolean;
   onClick: () => void;
+  badge: number;
 }) {
   const groupActive = isGroupActive(pathname, group);
   const Icon = group.icon;
+  const showBadge = badge > 0;
   return (
     <button
       type="button"
       onClick={onClick}
-      title={collapsed ? group.label : undefined}
+      title={collapsed ? `${group.label}${showBadge ? ` (${badge})` : ''}` : undefined}
       className={cn(
         'relative flex w-full cursor-pointer items-center gap-2.5 rounded-md px-2.5 py-2 text-sm transition-colors',
         groupActive
@@ -328,8 +395,15 @@ function GroupRow({
       {!collapsed && (
         <>
           <span className="flex-1 truncate text-left">{group.label}</span>
+          {showBadge && <NavBadge count={badge} />}
           <ChevronRight className="h-3.5 w-3.5 shrink-0 text-[var(--color-fg-subtle)]" />
         </>
+      )}
+      {showBadge && collapsed && (
+        <span
+          aria-hidden
+          className="absolute right-1 top-1 h-1.5 w-1.5 rounded-full bg-[var(--color-brand)]"
+        />
       )}
     </button>
   );

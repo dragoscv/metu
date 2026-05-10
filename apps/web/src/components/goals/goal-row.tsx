@@ -21,6 +21,7 @@ export interface GoalListItem {
   lastProgressAt: string | null;
   parentGoalId: string | null;
   history: SparklinePoint[];
+  pinned?: { tasks: number; projects: number; decisions: number };
 }
 
 const DRIFT_TONE: Record<Drift, 'success' | 'warning' | 'danger'> = {
@@ -110,6 +111,19 @@ export function GoalRow({
                     </span>
                   </>
                 )}
+                {goal.pinned &&
+                  goal.pinned.tasks + goal.pinned.projects + goal.pinned.decisions > 0 && (
+                    <>
+                      {' · '}
+                      {goal.pinned.tasks > 0 && (
+                        <span className="mr-1.5">{goal.pinned.tasks}t</span>
+                      )}
+                      {goal.pinned.projects > 0 && (
+                        <span className="mr-1.5">{goal.pinned.projects}p</span>
+                      )}
+                      {goal.pinned.decisions > 0 && <span>{goal.pinned.decisions}d</span>}
+                    </>
+                  )}
               </p>
             </div>
             <div className="flex shrink-0 items-center gap-1.5">

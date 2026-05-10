@@ -3,18 +3,24 @@
   "version": "0.0.1",
   "private": true,
   "type": "module",
+  "scripts": {
+    "test": "vitest run",
+    "test:watch": "vitest"
+  },
   "exports": {
     ".": "./src/index.ts",
     "./memory": "./src/memory/index.ts",
     "./focus": "./src/focus/index.ts",
     "./project": "./src/project/index.ts",
     "./continuity": "./src/continuity/index.ts",
-    "./agent": "./src/agent/index.ts"
+    "./agent": "./src/agent/index.ts",
+    "./companion-agent": "./src/companion-agent/index.ts"
   },
   "dependencies": {
     "@metu/ai": "workspace:*",
     "@metu/db": "workspace:*",
     "@metu/integrations": "workspace:*",
+    "@metu/presence": "workspace:*",
     "@metu/types": "workspace:*",
     "ai": "catalog:",
     "drizzle-orm": "catalog:",
@@ -23,6 +29,7 @@
   "devDependencies": {
     "@metu/config": "workspace:*",
     "typescript": "catalog:",
-    "@types/node": "catalog:"
+    "@types/node": "catalog:",
+    "vitest": "catalog:"
   }
 }

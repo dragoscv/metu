@@ -2,6 +2,8 @@ import { auth } from '@metu/auth';
 import { notFound, redirect } from 'next/navigation';
 import {
   getProject,
+  listCaptures,
+  listGithubRepoStatsForProject,
   listProjectDecisions,
   listProjectLinks,
   listProjectTasks,
@@ -16,13 +18,17 @@ import {
   PageHeader,
   PageSection,
 } from '@metu/ui';
-import { Pencil, ListTodo, Lightbulb, Link2 } from 'lucide-react';
+import { Pencil, ListTodo, Lightbulb, Link2, Github, Inbox } from 'lucide-react';
 import Link from 'next/link';
 import { TaskRow } from '@/components/projects/task-row';
 import { AddTaskInline } from '@/components/projects/add-task-inline';
 import { DecisionCard } from '@/components/projects/decision-card';
 import { CreateDecisionForm } from '@/components/create-decision-form';
 import { LinkedResourcesPanel } from '@/components/projects/linked-resources-panel';
+import { GitHubActivityPanel } from '@/components/projects/github-activity-panel';
+import { ContinuityCard } from '@/components/projects/continuity-card';
+import { ProjectArchiveButton } from '@/components/projects/project-archive-button';
+import { getLatestBriefing } from '@/app/actions/continuity';
 
 interface PageProps {
   params: Promise<{ id: string }>;
@@ -42,10 +48,13 @@ export default async function ProjectPage({ params }: PageProps) {
   const proj = await getProject(session.user.workspaceId, id);
   if (!proj) notFound();
 
-  const [tasks, decisions, links] = await Promise.all([
+  const [tasks, decisions, links, githubStats, briefing, captures] = await Promise.all([
     listProjectTasks(session.user.workspaceId, id),
     listProjectDecisions(session.user.workspaceId, id),
     listProjectLinks(session.user.workspaceId, id),
+    listGithubRepoStatsForProject(session.user.workspaceId, id),
+    getLatestBriefing(id),
+    listCaptures({ workspaceId: session.user.workspaceId, projectId: id, limit: 8 }),
   ]);
   const openTasks = tasks.filter((t) => t.status !== 'done' && t.status !== 'dropped');
   const doneTasks = tasks.filter((t) => t.status === 'done');
@@ -70,13 +79,16 @@ export default async function ProjectPage({ params }: PageProps) {
         }
         description={proj.summary ?? undefined}
         actions={
-          <Link
-            href={`/projects/${id}/edit`}
-            className="inline-flex h-9 items-center gap-1.5 rounded-md border border-[var(--color-border)] px-3 text-sm hover:bg-[var(--color-bg-elevated)]"
-          >
-            <Pencil className="h-4 w-4" />
-            Edit
-          </Link>
+          <div className="flex items-center gap-2">
+            <ProjectArchiveButton projectId={id} status={proj.status} />
+            <Link
+              href={`/projects/${id}/edit`}
+              className="inline-flex h-9 items-center gap-1.5 rounded-md border border-[var(--color-border)] px-3 text-sm hover:bg-[var(--color-bg-elevated)]"
+            >
+              <Pencil className="h-4 w-4" />
+              Edit
+            </Link>
+          </div>
         }
       />
 
@@ -109,6 +121,8 @@ export default async function ProjectPage({ params }: PageProps) {
         </Card>
       </div>
 
+      <ContinuityCard projectId={id} initial={briefing} />
+
       <PageSection
         id="links"
         icon={<Link2 className="h-4 w-4" />}
@@ -133,6 +147,23 @@ export default async function ProjectPage({ params }: PageProps) {
           }))}
         />
       </PageSection>
+
+      {links.some((l) => l.provider === 'github' && l.kind === 'repo') && (
+        <PageSection
+          id="github"
+          icon={<Github className="h-4 w-4" />}
+          title={
+            <span className="flex items-center gap-2">
+              GitHub activity
+              <Badge variant="neutral" size="xs">
+                {githubStats.length}
+              </Badge>
+            </span>
+          }
+        >
+          <GitHubActivityPanel stats={githubStats} projectId={id} />
+        </PageSection>
+      )}
 
       <PageSection
         id="tasks"
@@ -206,6 +237,72 @@ export default async function ProjectPage({ params }: PageProps) {
                 </ul>
               </details>
             )}
+          </ul>
+        )}
+      </PageSection>
+
+      <PageSection
+        id="captures"
+        icon={<Inbox className="h-4 w-4" />}
+        title={
+          <span className="flex items-center gap-2">
+            Recent captures
+            <Badge variant="neutral" size="xs">
+              {captures.rows.length}
+            </Badge>
+          </span>
+        }
+      >
+        {captures.rows.length === 0 ? (
+          <EmptyState
+            icon={<Inbox className="h-5 w-5" />}
+            title="Nothing captured for this project yet"
+            description="When you capture a thought, link, or note tied to this project, it shows up here."
+            size="sm"
+          />
+        ) : (
+          <ul className="space-y-2">
+            {captures.rows.map((c) => {
+              const preview = (c.content ?? '').trim().slice(0, 240);
+              return (
+                <li
+                  key={c.id}
+                  className="rounded-lg border border-[var(--color-border)] bg-[var(--color-bg-card)] p-3"
+                >
+                  <div className="mb-1 flex items-center gap-2 text-[11px] text-[var(--color-fg-subtle)]">
+                    <Badge variant="neutral" size="xs">
+                      {c.kind}
+                    </Badge>
+                    <span>
+                      {new Date(c.capturedAt).toLocaleString(undefined, {
+                        month: 'short',
+                        day: 'numeric',
+                        hour: 'numeric',
+                        minute: '2-digit',
+                      })}
+                    </span>
+                    {c.source ? <span className="truncate">· {c.source}</span> : null}
+                  </div>
+                  {preview ? (
+                    <p className="line-clamp-3 whitespace-pre-wrap text-pretty text-sm text-[var(--color-fg)]">
+                      {preview}
+                      {(c.content ?? '').length > preview.length ? '…' : ''}
+                    </p>
+                  ) : c.sourceUrl ? (
+                    <a
+                      href={c.sourceUrl}
+                      target="_blank"
+                      rel="noreferrer noopener"
+                      className="text-sm text-[var(--color-brand)] underline-offset-2 hover:underline"
+                    >
+                      {c.sourceUrl}
+                    </a>
+                  ) : (
+                    <p className="text-sm italic text-[var(--color-fg-subtle)]">No content</p>
+                  )}
+                </li>
+              );
+            })}
           </ul>
         )}
       </PageSection>

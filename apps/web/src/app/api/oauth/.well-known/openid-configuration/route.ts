@@ -29,6 +29,8 @@ export function GET(req: Request) {
         'tools:invoke',
         'intent:write',
         'creds:borrow',
+        'presence:talk',
+        'audit:read',
       ],
       response_types_supported: ['code'],
       grant_types_supported: [

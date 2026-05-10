@@ -1,5 +1,5 @@
 import { auth } from '@metu/auth';
-import { getDecisionById, getProject } from '@metu/db/queries';
+import { getDecisionById, getProject, listGoalsFiltered } from '@metu/db/queries';
 import { Page, PageHeader } from '@metu/ui';
 import { notFound, redirect } from 'next/navigation';
 import { DecisionEditForm } from '@/components/projects/decision-edit-form';
@@ -12,9 +12,10 @@ export default async function DecisionDetailPage({ params }: PageProps) {
   const session = await auth();
   if (!session) redirect('/sign-in');
   const { id, decisionId } = await params;
-  const [proj, dec] = await Promise.all([
+  const [proj, dec, goals] = await Promise.all([
     getProject(session.user.workspaceId, id),
     getDecisionById(session.user.workspaceId, decisionId),
+    listGoalsFiltered({ workspaceId: session.user.workspaceId, status: 'active' }),
   ]);
   if (!proj || !dec) notFound();
 
@@ -36,8 +37,10 @@ export default async function DecisionDetailPage({ params }: PageProps) {
           title: dec.title,
           rationale: dec.rationale,
           alternatives: (dec.alternatives ?? []) as { name: string; reason?: string }[],
+          goalId: dec.goalId ?? null,
         }}
         backHref={`/projects/${id}#decisions`}
+        goals={goals.map((g) => ({ id: g.id, title: g.title }))}
       />
     </Page>
   );

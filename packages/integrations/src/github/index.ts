@@ -2,6 +2,8 @@
 import { Octokit } from 'octokit';
 import { createHmac, timingSafeEqual } from 'node:crypto';
 
+export * from './stats';
+
 export function verifyGithubWebhook(payload: string, signature: string | null): boolean {
   if (!signature) return false;
   const secret = process.env.GITHUB_WEBHOOK_SECRET;

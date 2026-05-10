@@ -12,10 +12,14 @@
  */
 import http from 'node:http';
 import { timingSafeEqual } from 'node:crypto';
+import { z } from 'zod';
+import { log } from '@metu/logger';
 import { transcribeFromUrl } from './handlers/transcribe';
 
 const PORT = Number(process.env.PORT ?? 24892);
 const TOKEN = process.env.WORKER_AUTH_TOKEN ?? '';
+/** Cap incoming bodies at 1 MB — transcribe payloads are tiny (URL + lang). */
+const MAX_BODY_BYTES = Number(process.env.WORKER_MAX_BODY_BYTES ?? 1 * 1024 * 1024);
 
 if (process.env.NODE_ENV === 'production' && TOKEN.length < 32) {
   throw new Error('WORKER_AUTH_TOKEN must be set to at least 32 characters in production');
@@ -33,10 +37,23 @@ function authorized(req: http.IncomingMessage): boolean {
 
 async function readBody(req: http.IncomingMessage): Promise<unknown> {
   const chunks: Buffer[] = [];
-  for await (const c of req) chunks.push(c as Buffer);
+  let total = 0;
+  for await (const c of req) {
+    const buf = c as Buffer;
+    total += buf.byteLength;
+    if (total > MAX_BODY_BYTES) {
+      throw new Error('payload too large');
+    }
+    chunks.push(buf);
+  }
   if (chunks.length === 0) return null;
   return JSON.parse(Buffer.concat(chunks).toString('utf8'));
 }
+
+const TranscribeBodySchema = z.object({
+  url: z.string().url(),
+  language: z.string().min(2).max(10).optional(),
+});
 
 const server = http.createServer(async (req, res) => {
   res.setHeader('content-type', 'application/json');
@@ -51,20 +68,26 @@ const server = http.createServer(async (req, res) => {
       return;
     }
     if (req.method === 'POST' && req.url === '/transcribe') {
-      const body = (await readBody(req)) as { url: string; language?: string };
-      const result = await transcribeFromUrl(body);
+      const raw = await readBody(req);
+      const parsed = TranscribeBodySchema.safeParse(raw);
+      if (!parsed.success) {
+        res.statusCode = 400;
+        res.end(JSON.stringify({ ok: false, error: 'invalid_body' }));
+        return;
+      }
+      const result = await transcribeFromUrl(parsed.data);
       res.end(JSON.stringify(result));
       return;
     }
     res.statusCode = 404;
     res.end(JSON.stringify({ ok: false, error: 'not found' }));
   } catch (err) {
-    console.error('[worker]', err);
+    log.error('worker.request.error', { url: req.url, method: req.method }, err);
     res.statusCode = 500;
     res.end(JSON.stringify({ ok: false, error: err instanceof Error ? err.message : 'error' }));
   }
 });
 
 server.listen(PORT, () => {
-  console.info(`[worker] listening on :${PORT}`);
+  log.info('worker.http.listening', { port: PORT });
 });

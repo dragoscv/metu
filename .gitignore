@@ -70,3 +70,10 @@ apps/companion/src-tauri/icons/android/
 apps/companion/src-tauri/icons/ios/
 !apps/companion/src-tauri/icons/.gitkeep
 !apps/companion/src-tauri/icons/icon.svg
+
+# Local scratch files
+_excerpt.txt
+_matches.txt
+_s.txt
+tail.txt
+build.log

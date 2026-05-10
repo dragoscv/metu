@@ -3,7 +3,7 @@ import { authConfig } from './config';
 
 export const { handlers, auth, signIn, signOut } = NextAuth(authConfig);
 
-export { authConfig };
+export { authConfig, ACTIVE_WORKSPACE_COOKIE } from './config';
 
 declare module 'next-auth' {
   interface Session {

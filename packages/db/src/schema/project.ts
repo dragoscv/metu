@@ -47,6 +47,9 @@ export const project = pgTable(
     /** Auto-generated daily 3-sentence pulse */
     stateSummary: text('state_summary'),
     status: projectStatus('status').notNull().default('active'),
+    /** Soft FK to goal.id; constraint added in migration to avoid a circular
+     *  schema import (goal already imports project for projectId). */
+    goalId: uuid('goal_id'),
     /** Decayed momentum score [0,1] */
     momentumScore: doublePrecision('momentum_score').notNull().default(0),
     lastMeaningfulActivityAt: timestamp('last_meaningful_activity_at', {
@@ -69,6 +72,7 @@ export const project = pgTable(
     index('project_workspace_idx').on(t.workspaceId),
     index('project_status_idx').on(t.status),
     index('project_momentum_idx').on(t.momentumScore),
+    index('project_goal_idx').on(t.goalId),
   ],
 );
 
@@ -84,6 +88,9 @@ export const task = pgTable(
     projectId: uuid('project_id').references(() => project.id, {
       onDelete: 'set null',
     }),
+    /** Soft FK to goal.id; constraint added in migration to avoid a circular
+     *  schema import (goal already imports project for projectId). */
+    goalId: uuid('goal_id'),
     title: text('title').notNull(),
     body: text('body'),
     status: taskStatus('status').notNull().default('inbox'),
@@ -113,6 +120,7 @@ export const task = pgTable(
   (t) => [
     index('task_workspace_idx').on(t.workspaceId),
     index('task_project_idx').on(t.projectId),
+    index('task_goal_idx').on(t.goalId),
     index('task_status_idx').on(t.status),
     index('task_leverage_idx').on(t.leverageScore),
     index('task_source_app_idx').on(t.sourceApp),
@@ -131,6 +139,9 @@ export const decision = pgTable(
     projectId: uuid('project_id').references(() => project.id, {
       onDelete: 'set null',
     }),
+    /** Soft FK to goal.id; constraint added in migration to avoid a circular
+     *  schema import (goal already imports project for projectId). */
+    goalId: uuid('goal_id'),
     title: text('title').notNull(),
     rationale: text('rationale').notNull(),
     /** Considered alternatives, structured */
@@ -152,6 +163,7 @@ export const decision = pgTable(
   (t) => [
     index('decision_workspace_idx').on(t.workspaceId),
     index('decision_project_idx').on(t.projectId),
+    index('decision_goal_idx').on(t.goalId),
   ],
 );
 

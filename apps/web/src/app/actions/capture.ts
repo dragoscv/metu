@@ -5,6 +5,7 @@ import { getDb } from '@metu/db';
 import { capture, timelineEvent } from '@metu/db/schema';
 import { createCaptureSchema, type CreateCaptureInput } from '@metu/types';
 import { Inngest } from 'inngest';
+import { log } from '@/lib/logger';
 
 const inngest = new Inngest({ id: 'metu' });
 
@@ -60,7 +61,7 @@ export async function createCapture(input: CreateCaptureInput) {
       },
     });
   } catch (err) {
-    console.warn('inngest dispatch failed', err);
+    log.warn('capture.inngest.dispatch_failed', { captureId: row.id }, err);
   }
 
   revalidatePath('/dashboard');

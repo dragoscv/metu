@@ -20,6 +20,7 @@ export interface TelegramCapturePayload {
   text?: string;
   voiceFileId?: string;
   photoFileId?: string;
+  caption?: string;
   fromUserName?: string;
 }
 
@@ -33,7 +34,8 @@ export function extractCapture(ctx: Context): TelegramCapturePayload | null {
     return { externalChatId, voiceFileId: msg.voice.file_id, fromUserName };
   if ('photo' in msg && msg.photo?.length) {
     const largest = msg.photo[msg.photo.length - 1]!;
-    return { externalChatId, photoFileId: largest.file_id, fromUserName };
+    const caption = 'caption' in msg && typeof msg.caption === 'string' ? msg.caption : undefined;
+    return { externalChatId, photoFileId: largest.file_id, caption, fromUserName };
   }
   return null;
 }

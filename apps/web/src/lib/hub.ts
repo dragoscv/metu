@@ -7,6 +7,7 @@
  */
 import type { z } from 'zod';
 import { type ServerEventSchema } from '@metu/protocol';
+import { log } from './logger';
 
 export type ServerEvent = z.infer<typeof ServerEventSchema>;
 
@@ -32,7 +33,7 @@ export async function hubBroadcast(input: BroadcastInput): Promise<{ delivered: 
   const secret = process.env.HUB_INTERNAL_SECRET;
   if (!url || !secret) {
     if (process.env.NODE_ENV !== 'production') {
-      console.warn('[hub] HUB_URL/HUB_INTERNAL_SECRET unset — broadcast skipped');
+      log.warn('hub.broadcast.unconfigured');
     }
     return null;
   }
@@ -49,16 +50,19 @@ export async function hubBroadcast(input: BroadcastInput): Promise<{ delivered: 
       signal: ac.signal,
     });
     if (!res.ok) {
-      console.error('[hub] broadcast failed', res.status, await res.text().catch(() => ''));
+      log.error('hub.broadcast.failed', {
+        status: res.status,
+        body: await res.text().catch(() => ''),
+      });
       return null;
     }
     const body = (await res.json()) as { ok: boolean; delivered: number };
     return { delivered: body.delivered };
   } catch (err) {
     if ((err as { name?: string }).name === 'AbortError') {
-      console.error('[hub] broadcast timed out after 5s');
+      log.error('hub.broadcast.timeout', { ms: 5000 });
     } else {
-      console.error('[hub] broadcast error', err);
+      log.error('hub.broadcast.error', undefined, err);
     }
     return null;
   } finally {

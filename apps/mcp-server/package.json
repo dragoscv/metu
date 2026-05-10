@@ -11,10 +11,12 @@
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
+    "@metu/auth": "workspace:*",
     "@metu/core": "workspace:*",
     "@metu/db": "workspace:*",
     "@metu/types": "workspace:*",
     "@modelcontextprotocol/sdk": "catalog:",
+    "drizzle-orm": "catalog:",
     "zod": "catalog:"
   },
   "devDependencies": {

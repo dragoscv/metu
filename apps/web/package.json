@@ -8,7 +8,9 @@
     "build": "next build",
     "start": "next start --port 24890",
     "lint": "eslint .",
-    "typecheck": "tsc --noEmit"
+    "typecheck": "tsc --noEmit",
+    "test": "vitest run",
+    "test:watch": "vitest"
   },
   "dependencies": {
     "@ai-sdk/anthropic": "catalog:",
@@ -18,9 +20,12 @@
     "@metu/core": "workspace:*",
     "@metu/db": "workspace:*",
     "@metu/integrations": "workspace:*",
+    "@metu/logger": "workspace:*",
+    "@metu/presence": "workspace:*",
     "@metu/protocol": "workspace:*",
     "@metu/types": "workspace:*",
     "@metu/ui": "workspace:*",
+    "@metu/voice": "workspace:*",
     "@tanstack/react-query": "catalog:",
     "@upstash/ratelimit": "catalog:",
     "@upstash/redis": "catalog:",
@@ -55,6 +60,7 @@
     "eslint": "catalog:",
     "eslint-config-next": "catalog:",
     "tailwindcss": "catalog:",
-    "typescript": "catalog:"
+    "typescript": "catalog:",
+    "vitest": "catalog:"
   }
 }

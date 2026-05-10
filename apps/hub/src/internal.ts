@@ -7,9 +7,15 @@
  */
 import type { Hono } from 'hono';
 import { z } from 'zod';
+import { randomUUID } from 'node:crypto';
 import { ServerEventSchema } from '@metu/protocol';
 import { registry } from './registry';
+import { publish, subscribe } from './redis-fanout';
 import { safeEqual } from './safe-equal';
+
+// Per-process id so multi-instance fanout subscribers can ignore their
+// own publishes (the originating instance already delivered locally).
+const HUB_INSTANCE_ID = randomUUID();
 
 const broadcastSchema = z.object({
   workspaceId: z.string().uuid(),
@@ -54,10 +60,34 @@ export function registerInternalRoutes(app: Hono) {
       .filter((c) => (kinds ? kinds.includes(c.kind as (typeof kinds)[number]) : true))
       .filter((c) => (deviceIds ? deviceIds.includes(c.deviceId) : true));
     for (const conn of conns) conn.send(envelope);
+
+    // Best-effort fanout to peer hub instances. No-op when Redis isn't
+    // configured. Errors are swallowed inside `publish` so a Redis
+    // outage never breaks the local-delivery happy path.
+    void publish({
+      id: randomUUID(),
+      origin: HUB_INSTANCE_ID,
+      workspaceId,
+      kinds,
+      deviceIds,
+      envelope,
+    });
+
     return c.json({ ok: true, delivered: conns.length });
   });
 
   app.get('/internal/connections', (c) => {
     return c.json({ ok: true, total: registry.size() });
+  });
+
+  // Deliver envelopes published by peer hub instances to our local
+  // connections. No-op when Redis isn't configured.
+  subscribe((msg) => {
+    if (msg.workspaceId == null) return;
+    const conns = registry
+      .forWorkspace(msg.workspaceId)
+      .filter((c) => (msg.kinds ? msg.kinds.includes(c.kind) : true))
+      .filter((c) => (msg.deviceIds ? msg.deviceIds.includes(c.deviceId) : true));
+    for (const conn of conns) conn.send(msg.envelope);
   });
 }

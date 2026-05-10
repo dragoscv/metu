@@ -81,6 +81,20 @@ export type Events = {
       repoUrl: string;
     };
   };
+  // ─── GitHub stats sync (cron-driven + manual) ──────────────────────────
+  'github/stats.sync.repo': {
+    data: {
+      workspaceId: string;
+      integrationId: string;
+      resourceId: string;
+      repoFullName: string;
+      reason?: string;
+    };
+  };
+  // ─── Continuity (auto-prewarm stale briefings) ─────────────────────────
+  'continuity/prewarm': {
+    data: { workspaceId: string; projectId: string; reason?: string };
+  };
 };
 
 export const inngest = new Inngest({

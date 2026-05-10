@@ -3,14 +3,66 @@
  * Falls back to OpenAI Whisper if Google STT fails or isn't configured.
  */
 import speech from '@google-cloud/speech';
+import { log } from '@metu/logger';
 
 const client = new speech.SpeechClient();
 
+/**
+ * Reject URLs that point at loopback / link-local / private / metadata
+ * services. The worker is downloading user-supplied URLs (signed GCS
+ * URLs in the happy path) — if a buggy or compromised caller passes
+ * `http://169.254.169.254/...`, the worker would happily fetch GCE
+ * instance metadata and base64 it into the STT request.
+ *
+ * Mirrors `apps/web/src/lib/safe-equal.ts#assertSafeOutboundUrl` and
+ * `packages/integrations/src/mcp/index.ts#assertSafeMcpUrl`.
+ */
+function assertSafeAudioUrl(raw: string): URL {
+  const url = new URL(raw);
+  const protocol = url.protocol.toLowerCase();
+  if (protocol !== 'https:' && protocol !== 'http:') {
+    throw new Error(`unsupported protocol: ${protocol}`);
+  }
+  if (process.env.NODE_ENV === 'production' && protocol === 'http:') {
+    throw new Error('only https:// is allowed in production');
+  }
+  const host = url.hostname.toLowerCase();
+  const allowLocalhost = process.env.NODE_ENV !== 'production';
+  if (
+    host === 'localhost' ||
+    host.endsWith('.localhost') ||
+    host === '127.0.0.1' ||
+    host === '::1' ||
+    host === '0.0.0.0'
+  ) {
+    if (!allowLocalhost) throw new Error('loopback not allowed');
+    return url;
+  }
+  const v4 = host.match(/^(\d+)\.(\d+)\.(\d+)\.(\d+)$/);
+  if (v4) {
+    const a = Number(v4[1]);
+    const b = Number(v4[2]);
+    if (
+      a === 10 ||
+      a === 127 ||
+      (a === 169 && b === 254) ||
+      (a === 172 && b >= 16 && b <= 31) ||
+      (a === 192 && b === 168) ||
+      a === 0 ||
+      a >= 224
+    ) {
+      throw new Error('private or reserved IP not allowed');
+    }
+  }
+  return url;
+}
+
 export async function transcribeFromUrl(input: { url: string; language?: string }) {
   if (!input?.url) throw new Error('url required');
+  const safeUrl = assertSafeAudioUrl(input.url);
 
   // Download into memory (capped at ~25MB; for larger, switch to streaming)
-  const res = await fetch(input.url);
+  const res = await fetch(safeUrl);
   if (!res.ok) throw new Error(`fetch failed ${res.status}`);
   const buf = Buffer.from(await res.arrayBuffer());
 
@@ -30,7 +82,7 @@ export async function transcribeFromUrl(input: { url: string; language?: string 
       .trim();
     return { text, source: 'google' as const };
   } catch (err) {
-    console.warn('[worker] Google STT failed, falling back to Whisper', err);
+    log.warn('worker.stt.google_failed_fallback_whisper', undefined, err);
   }
 
   // Fallback: OpenAI Whisper via REST

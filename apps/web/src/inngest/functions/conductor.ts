@@ -21,7 +21,9 @@ import {
   workspaceMember,
 } from '@metu/db/schema';
 import { agent } from '@metu/core';
+import { estimateCostUsd } from '@metu/ai';
 import { inngest } from '../client';
+import { parseEvent } from '../schemas';
 
 async function ensureConductorThread(workspaceId: string) {
   const db = getDb();
@@ -74,7 +76,7 @@ export const onConductorObserve = inngest.createFunction(
   },
   { event: 'conductor/observe' },
   async ({ event, step }) => {
-    const { workspaceId, eventKind, payload } = event.data;
+    const { workspaceId, eventKind, payload } = parseEvent('conductor/observe', event.data);
     await step.run('record', async () => {
       const db = getDb();
       await db.insert(timelineEvent).values({
@@ -102,7 +104,7 @@ export const onConductorTick = inngest.createFunction(
   },
   { event: 'conductor/tick' },
   async ({ event, step }) => {
-    const { workspaceId } = event.data;
+    const { workspaceId, reason: tickReason } = parseEvent('conductor/tick', event.data);
     const policy = await step.run('policy', () => ensurePolicy(workspaceId));
 
     // Master kill-switch: stay alive (so flipping back on resumes) but skip
@@ -127,13 +129,18 @@ export const onConductorTick = inngest.createFunction(
     } | null = null;
     let provider = '';
     let modelId = '';
+    let usage: { inputTokens: number | null; outputTokens: number | null } = {
+      inputTokens: null,
+      outputTokens: null,
+    };
     try {
       const r = await step.run('plan', () =>
-        agent.planConductor({ workspaceId, reason: event.data.reason }),
+        agent.planConductor({ workspaceId, reason: tickReason }),
       );
       plan = r.plan;
       provider = r.provider;
       modelId = r.modelId;
+      usage = r.usage;
     } catch (err) {
       const msg = err instanceof Error ? err.message : String(err);
       await step.run('plan-failed', async () => {
@@ -151,6 +158,7 @@ export const onConductorTick = inngest.createFunction(
     if (plan) {
       await step.run('post-pulse', async () => {
         const db = getDb();
+        const costUsd = estimateCostUsd(provider, modelId, usage);
         await db.insert(message).values({
           workspaceId,
           conversationId: thread.id,
@@ -158,10 +166,18 @@ export const onConductorTick = inngest.createFunction(
           content: plan!.pulse,
           provider,
           model: modelId,
+          inputTokens: usage.inputTokens,
+          outputTokens: usage.outputTokens,
+          costUsd,
           metadata: {
             actions: plan!.actions,
             notes: plan!.notes,
             synthetic: true,
+            // Origin of this tick — surfaced as a "Why now?" disclosure on
+            // the message in the chat UI. `tickReason` may be undefined
+            // when a user-typed message kicked the tick, in which case the
+            // disclosure is hidden.
+            triggerReason: tickReason ?? null,
           },
         });
         await db
@@ -170,9 +186,12 @@ export const onConductorTick = inngest.createFunction(
           .where(eq(conversation.id, thread.id));
       });
 
+      // Track outcomes so we can close the loop on companion-agent
+      // escalations with a single user-facing notification.
+      const outcomes: { tool: string; status: string }[] = [];
       for (let i = 0; i < plan.actions.length; i++) {
         const action = plan.actions[i]!;
-        await step.run(`run-${i}-${action.tool}`, async () => {
+        const status = await step.run(`run-${i}-${action.tool}`, async () => {
           const result = await agent.runTool({
             workspaceId,
             userId: ownerUserId,
@@ -217,6 +236,50 @@ export const onConductorTick = inngest.createFunction(
               },
             });
           }
+          return result.status;
+        });
+        outcomes.push({ tool: action.tool, status });
+      }
+
+      // Close the loop on companion-agent escalations: the user said
+      // something out loud, we triaged & escalated, Conductor planned and
+      // ran tools. Send a single notification so they know their request
+      // was followed through.
+      const isEscalation = typeof tickReason === 'string' && tickReason.includes('companion-agent');
+      if (isEscalation && outcomes.length > 0) {
+        await step.run('escalation-followthrough', async () => {
+          const ok = outcomes.filter((o) => o.status === 'completed').length;
+          const pending = outcomes.filter((o) => o.status === 'awaiting_approval').length;
+          const failed = outcomes.filter((o) => o.status === 'failed').length;
+          const summary =
+            [
+              ok && `${ok} done`,
+              pending && `${pending} awaiting your approval`,
+              failed && `${failed} failed`,
+            ]
+              .filter(Boolean)
+              .join(', ') || 'no actions';
+          await inngest.send({
+            name: 'conductor/notify',
+            data: {
+              workspaceId,
+              userId: ownerUserId,
+              title: 'Escalation followed through',
+              body: `From your last spoken request: ${summary}.`,
+              urgency: pending > 0 ? 'high' : 'normal',
+              source: 'conductor',
+              actionUrl: '/chat',
+              metadata: { outcomes, reason: tickReason },
+            },
+          });
+          const db = getDb();
+          await db.insert(timelineEvent).values({
+            workspaceId,
+            kind: 'conductor.escalation.completed',
+            title: 'Companion escalation completed',
+            importance: 0.5,
+            payload: { outcomes, reason: tickReason },
+          });
         });
       }
     }
@@ -236,7 +299,7 @@ export const onConductorApproved = inngest.createFunction(
   { id: 'conductor-approved', name: 'Conductor: tool approved' },
   { event: 'conductor/approved' },
   async ({ event, step }) => {
-    const { workspaceId, toolCallId } = event.data;
+    const { workspaceId, toolCallId } = parseEvent('conductor/approved', event.data);
     await step.run('audit', async () => {
       const db = getDb();
       await db.insert(timelineEvent).values({
@@ -246,6 +309,12 @@ export const onConductorApproved = inngest.createFunction(
         importance: 0.4,
         payload: { toolCallId },
       });
+    });
+    // Wake the supervisor so the next plan incorporates the just-approved
+    // tool's result. Tick handler debounces 15s; safe to fire eagerly.
+    await step.sendEvent('tick-after-approval', {
+      name: 'conductor/tick',
+      data: { workspaceId, reason: 'tool.approved' },
     });
     return { ok: true };
   },

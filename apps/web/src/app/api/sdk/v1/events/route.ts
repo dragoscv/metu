@@ -11,6 +11,7 @@ import { z } from 'zod';
 import { getDb } from '@metu/db';
 import { timelineEvent } from '@metu/db/schema';
 import { forbidden, hasScope, resolveSession, unauthorized } from '@/lib/bearer';
+import { rateLimit } from '@/lib/ratelimit';
 import { inngest } from '@/inngest/client';
 
 export const runtime = 'nodejs';
@@ -28,6 +29,9 @@ export async function POST(req: Request) {
   const session = await resolveSession(req);
   if (!session) return unauthorized();
   if (!hasScope(session, 'event:write')) return forbidden();
+
+  const limited = await rateLimit('sdk-write', session.userId);
+  if (limited) return limited;
 
   const json = await req.json().catch(() => null);
   const parsed = schema.safeParse(json);

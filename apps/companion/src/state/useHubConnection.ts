@@ -13,6 +13,7 @@ import {
 } from '@tauri-apps/plugin-notification';
 import { platform } from '@tauri-apps/plugin-os';
 import type { AuthState } from './auth';
+import { executeDeviceTool } from './device-tools';
 
 export type HubStatus = 'idle' | 'connecting' | 'open' | 'closed' | 'error';
 
@@ -33,8 +34,10 @@ export function useHubConnection(auth: AuthState | null): HubStatus {
   const retryRef = useRef(0);
   const cancelledRef = useRef(false);
 
+  const accessToken = auth?.accessToken;
+  const hubUrl = auth?.hubUrl;
   useEffect(() => {
-    if (!auth) return;
+    if (!accessToken || !hubUrl) return;
     cancelledRef.current = false;
     const fingerprint = getOrCreateFingerprint();
     let plat: string = 'unknown';
@@ -47,7 +50,7 @@ export function useHubConnection(auth: AuthState | null): HubStatus {
     const connect = () => {
       if (cancelledRef.current) return;
       setStatus('connecting');
-      const url = `${auth.hubUrl.replace(/^http/, 'ws')}/ws`;
+      const url = `${hubUrl.replace(/^http/, 'ws')}/ws`;
       const ws = new WebSocket(url);
       wsRef.current = ws;
 
@@ -57,7 +60,7 @@ export function useHubConnection(auth: AuthState | null): HubStatus {
           JSON.stringify({
             v: 1,
             type: 'hello',
-            accessToken: auth.accessToken,
+            accessToken: accessToken,
             kind: 'companion_desktop',
             platform: plat,
             name: `METU Companion (${plat})`,
@@ -93,6 +96,33 @@ export function useHubConnection(auth: AuthState | null): HubStatus {
           }
           return;
         }
+        if (m.type === 'tool.invoke') {
+          const inv = m as {
+            id: string;
+            tool: string;
+            args?: Record<string, unknown>;
+          };
+          let ok = false;
+          let result: unknown = null;
+          let error: string | undefined;
+          try {
+            result = await executeDeviceTool(inv.tool, inv.args ?? {});
+            ok = true;
+          } catch (e) {
+            error = e instanceof Error ? e.message : String(e);
+          }
+          ws.send(
+            JSON.stringify({
+              v: 1,
+              type: 'tool.result',
+              id: inv.id,
+              ok,
+              result,
+              error,
+            }),
+          );
+          return;
+        }
       });
 
       ws.addEventListener('close', () => {
@@ -111,7 +141,7 @@ export function useHubConnection(auth: AuthState | null): HubStatus {
       cancelledRef.current = true;
       wsRef.current?.close();
     };
-  }, [auth?.accessToken, auth?.hubUrl]);
+  }, [accessToken, hubUrl]);
 
   return status;
 }

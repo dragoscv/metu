@@ -30,13 +30,14 @@
     "titleBar.activeForeground": "#ffffff",
     "titleBar.inactiveBackground": "#131c42",
     "titleBar.inactiveForeground": "#fecaca",
-    // "activityBar.background": "#b91c1c",
+    "activityBar.background": "#131c42",
     // "activityBar.foreground": "#ffffff",
     "statusBar.background": "#131c42",
     "statusBar.foreground": "#ffffff",
     "statusBar.debuggingBackground": "#131c42",
     "statusBar.noFolderBackground": "#131c42",
     "window.activeBorder": "#131c42",
-    "window.inactiveBorder": "#131c42"
+    "window.inactiveBorder": "#131c42",
+    "sideBar.border": "#131c42"
   }
 }

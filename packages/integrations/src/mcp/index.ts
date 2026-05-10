@@ -36,12 +36,74 @@ function buildHeaders(token: string | null): Record<string, string> {
 }
 
 /**
+ * Reject URLs that point at loopback / link-local / private / metadata
+ * services before opening an outbound MCP connection. The Conductor
+ * dials this URL with the workspace's sealed bearer attached — a
+ * malicious admin pointing it at `169.254.169.254` would otherwise leak
+ * cloud-provider metadata.
+ *
+ * Mirrors `apps/web/src/lib/safe-equal.ts#assertSafeOutboundUrl` (kept in
+ * sync deliberately — packages can't depend on apps).
+ */
+export function assertSafeMcpUrl(raw: string): URL {
+  let url: URL;
+  try {
+    url = new URL(raw);
+  } catch {
+    throw new Error('invalid url');
+  }
+  const protocol = url.protocol.toLowerCase();
+  if (protocol !== 'https:' && protocol !== 'http:') {
+    throw new Error(`unsupported protocol: ${protocol}`);
+  }
+  if (process.env.NODE_ENV === 'production' && protocol === 'http:') {
+    throw new Error('only https:// is allowed in production');
+  }
+  const host = url.hostname.toLowerCase();
+  const allowLocalhost = process.env.NODE_ENV !== 'production';
+  if (
+    host === 'localhost' ||
+    host.endsWith('.localhost') ||
+    host === '127.0.0.1' ||
+    host === '::1' ||
+    host === '0.0.0.0'
+  ) {
+    if (!allowLocalhost) throw new Error('loopback hosts are not allowed');
+    return url;
+  }
+  const v4 = host.match(/^(\d+)\.(\d+)\.(\d+)\.(\d+)$/);
+  if (v4) {
+    const a = Number(v4[1]);
+    const b = Number(v4[2]);
+    if (
+      a === 10 ||
+      a === 127 ||
+      (a === 169 && b === 254) ||
+      (a === 172 && b >= 16 && b <= 31) ||
+      (a === 192 && b === 168) ||
+      a === 0 ||
+      a >= 224
+    ) {
+      throw new Error('private or reserved IP not allowed');
+    }
+  }
+  if (host.startsWith('[')) {
+    const v6 = host.slice(1, -1).toLowerCase();
+    if (v6 === '::1' || v6.startsWith('fe80:') || v6.startsWith('fc') || v6.startsWith('fd')) {
+      throw new Error('private or reserved IPv6 not allowed');
+    }
+  }
+  return url;
+}
+
+/**
  * Open an MCP client connection. Caller must `await client.close()` when
  * done — the connection holds an SSE stream open.
  */
 export async function connectExternalMcp(config: ExternalMcpConfig): Promise<Client> {
+  const safeUrl = assertSafeMcpUrl(config.url);
   const token = config.tokenSealed ? openSealed(config.tokenSealed) : null;
-  const transport = new StreamableHTTPClientTransport(new URL(config.url), {
+  const transport = new StreamableHTTPClientTransport(safeUrl, {
     requestInit: { headers: buildHeaders(token) },
   });
   const client = new Client({ name: 'metu-conductor', version: '0.1.0' }, { capabilities: {} });

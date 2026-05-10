@@ -43,3 +43,19 @@ export async function downloadToBuffer(storageKey: string): Promise<Buffer> {
   const [buf] = await bucket().file(storageKey).download();
   return buf;
 }
+
+/**
+ * Delete an object. Idempotent: missing objects (404) resolve quietly so
+ * the daily cleanup cron doesn't fail on rows whose blob was already
+ * lifecycle-purged by GCS itself.
+ */
+export async function deleteObject(storageKey: string): Promise<{ deleted: boolean }> {
+  try {
+    await bucket().file(storageKey).delete({ ignoreNotFound: true });
+    return { deleted: true };
+  } catch (err) {
+    const code = (err as { code?: number }).code;
+    if (code === 404) return { deleted: false };
+    throw err;
+  }
+}

@@ -12,6 +12,7 @@ import { revalidatePath } from 'next/cache';
 import { getDb } from '@metu/db';
 import { notification, notificationSubscription } from '@metu/db/schema';
 import { auth } from '@metu/auth';
+import { notify } from '@/lib/notify';
 
 const webPushSchema = z.object({
   endpoint: z.string().url(),
@@ -183,4 +184,45 @@ export async function ackAllNotificationsAction(): Promise<{ ok: boolean }> {
     .where(and(eq(notification.userId, session.user.id), isNull(notification.acknowledgedAt)));
   revalidatePath('/');
   return { ok: true };
+}
+
+/**
+ * Send a self-test notification through the full fabric (DB row + WS hub
+ * fan-out + web push + Expo push). Used by the settings "Send test
+ * notification" button to verify end-to-end delivery to phone/desktop.
+ *
+ * Counts how many push subscriptions the user has so the UI can warn when
+ * there are zero (i.e. the test will only land in the in-app inbox).
+ */
+export async function sendTestNotificationAction(): Promise<
+  | { ok: true; id: string; delivered: string[]; subscriptions: number }
+  | { ok: false; error: string }
+> {
+  const session = await auth();
+  if (!session?.user?.id) return { ok: false, error: 'unauthorized' };
+  const db = getDb();
+  const subs = await db
+    .select({ id: notificationSubscription.id })
+    .from(notificationSubscription)
+    .where(
+      and(
+        eq(notificationSubscription.userId, session.user.id),
+        eq(notificationSubscription.enabled, true),
+      ),
+    );
+  const result = await notify({
+    workspaceId: session.user.workspaceId,
+    userId: session.user.id,
+    title: 'metu test notification',
+    body: 'If you can see this, the fabric is wired end-to-end.',
+    urgency: 'normal',
+    source: 'settings:test',
+    actionUrl: '/notifications',
+  });
+  return {
+    ok: true,
+    id: result.id,
+    delivered: result.delivered,
+    subscriptions: subs.length,
+  };
 }
