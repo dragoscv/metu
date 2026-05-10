@@ -8,10 +8,10 @@
  * call. Concurrency-limited per-workspace so a noisy workspace can't
  * starve everyone else.
  */
-import { and, desc, eq, gt, isNull } from 'drizzle-orm';
+import { and, desc, eq, gt, gte, isNull, sql } from 'drizzle-orm';
 import { restoreProjectContext } from '@metu/core/continuity';
 import { getDb } from '@metu/db';
-import { continuityBriefing, project } from '@metu/db/schema';
+import { continuityBriefing, notification, project, workspaceMember } from '@metu/db/schema';
 import { inngest } from '../client';
 import { parseEvent } from '../schemas';
 
@@ -145,5 +145,155 @@ export const continuityMorningCron = inngest.createFunction(
     );
 
     return { ok: true, dispatched: candidates.length };
+  },
+);
+
+/**
+ * Morning brief delivery — runs 30 min after the prewarm cron.
+ *
+ * For every workspace that has a fresh briefing (generated in the last 24h)
+ * for at least one active project, picks the highest-momentum one and
+ * inserts a `notification` row per workspace member. Title + body come
+ * from the briefing's last paragraph (the smallest-next-step paragraph),
+ * actionUrl deep-links to /resume so a tap takes the user straight there.
+ *
+ * Notifications dedupe on `(userId, source, metadata.briefingId)` via a
+ * pre-check so re-runs of the same briefing don't spam.
+ */
+function nextStepParagraph(briefing: string): string {
+  const paras = briefing
+    .split(/\n\s*\n/)
+    .map((p) => p.trim())
+    .filter(Boolean);
+  const last = paras[paras.length - 1] ?? briefing.trim();
+  return last.length > 600 ? last.slice(0, 597).replace(/\s+\S*$/, '') + '…' : last;
+}
+
+export const continuityMorningDelivery = inngest.createFunction(
+  {
+    id: 'continuity-morning-delivery',
+    name: 'Continuity morning brief delivery',
+    concurrency: { limit: 4 },
+  },
+  { cron: '30 6 * * *' },
+  async ({ step, logger }) => {
+    const recipients = await step.run('pick-recipients', async () => {
+      const db = getDb();
+      const cutoff = new Date(Date.now() - 24 * 60 * 60 * 1000);
+
+      // One latest fresh briefing per workspace, joined with the highest-
+      // momentum project. SELECT DISTINCT ON (workspace_id) gives us the
+      // top row per workspace ordered by (momentum desc, generated_at desc).
+      const briefingRows = await db.execute<{
+        workspace_id: string;
+        project_id: string;
+        project_name: string;
+        briefing_id: string;
+        briefing: string;
+      }>(sql`
+        SELECT DISTINCT ON (cb.workspace_id)
+          cb.workspace_id,
+          cb.project_id,
+          p.name AS project_name,
+          cb.id AS briefing_id,
+          cb.briefing
+        FROM ${continuityBriefing} cb
+        JOIN ${project} p ON p.id = cb.project_id
+        WHERE cb.generated_at >= ${cutoff}
+          AND p.status = 'active'
+          AND p.deleted_at IS NULL
+        ORDER BY cb.workspace_id, p.momentum_score DESC NULLS LAST, cb.generated_at DESC
+      `);
+
+      const briefings = (
+        Array.isArray(briefingRows)
+          ? briefingRows
+          : ((briefingRows as { rows?: unknown[] }).rows ?? [])
+      ) as Array<{
+        workspace_id: string;
+        project_id: string;
+        project_name: string;
+        briefing_id: string;
+        briefing: string;
+      }>;
+      if (briefings.length === 0) return [];
+
+      // Members of those workspaces.
+      const wsIds = Array.from(new Set(briefings.map((b) => b.workspace_id)));
+      const members = await db
+        .select({ workspaceId: workspaceMember.workspaceId, userId: workspaceMember.userId })
+        .from(workspaceMember)
+        .where(sql`${workspaceMember.workspaceId} = any(${wsIds})`);
+
+      const byWs = new Map(briefings.map((b) => [b.workspace_id, b]));
+      return members
+        .map((m) => {
+          const b = byWs.get(m.workspaceId);
+          if (!b) return null;
+          return {
+            userId: m.userId,
+            workspaceId: m.workspaceId,
+            projectId: b.project_id,
+            projectName: b.project_name,
+            briefingId: b.briefing_id,
+            nextStep: nextStepParagraph(b.briefing),
+          };
+        })
+        .filter((r): r is NonNullable<typeof r> => r !== null);
+    });
+
+    if (recipients.length === 0) {
+      logger.info('continuity-morning-delivery no recipients');
+      return { ok: true, delivered: 0 };
+    }
+
+    const inserted = await step.run('insert-notifications', async () => {
+      const db = getDb();
+      const since = new Date(Date.now() - 18 * 60 * 60 * 1000);
+
+      // Filter out users who already received the morning brief in the last 18h.
+      const existing = await db
+        .select({
+          userId: notification.userId,
+          briefingId: sql<string>`${notification.metadata}->>'briefingId'`,
+        })
+        .from(notification)
+        .where(
+          and(
+            eq(notification.source, 'conductor:morning-brief'),
+            gte(notification.createdAt, since),
+            sql`${notification.userId} = any(${recipients.map((r) => r.userId)})`,
+          ),
+        );
+      const seen = new Set(existing.map((e) => `${e.userId}:${e.briefingId}`));
+
+      const fresh = recipients.filter((r) => !seen.has(`${r.userId}:${r.briefingId}`));
+      if (fresh.length === 0) return 0;
+
+      await db.insert(notification).values(
+        fresh.map((r) => ({
+          workspaceId: r.workspaceId,
+          userId: r.userId,
+          title: `Where to start: ${r.projectName}`,
+          body: r.nextStep,
+          urgency: 'normal' as const,
+          source: 'conductor:morning-brief',
+          actionUrl: '/resume?since=3d',
+          actions: [
+            { id: 'resume', label: 'Resume', kind: 'open' as const, href: '/resume?since=3d' },
+            {
+              id: 'project',
+              label: 'Open project',
+              kind: 'open' as const,
+              href: `/projects/${r.projectId}`,
+            },
+          ],
+          metadata: { briefingId: r.briefingId, projectId: r.projectId },
+        })),
+      );
+      return fresh.length;
+    });
+
+    return { ok: true, delivered: inserted, candidates: recipients.length };
   },
 );

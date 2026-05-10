@@ -16,7 +16,11 @@ import { onConductorNotify } from '@/inngest/functions/notify';
 import { goalsMorningCheckin, goalsWeeklyReview, onGoalsReview } from '@/inngest/functions/goals';
 import { onGithubRepoLinked } from '@/inngest/functions/github-repo-indexing';
 import { githubStatsCron, onGithubRepoStatsSync } from '@/inngest/functions/github-stats-sync';
-import { onContinuityPrewarm, continuityMorningCron } from '@/inngest/functions/continuity';
+import {
+  onContinuityPrewarm,
+  continuityMorningCron,
+  continuityMorningDelivery,
+} from '@/inngest/functions/continuity';
 import { conductorProactiveCron } from '@/inngest/functions/conductor-proactive';
 import { conductorIdleNudgeCron } from '@/inngest/functions/conductor-idle-nudge';
 import { companionAgentAnticipatory } from '@/inngest/functions/companion-anticipatory';
@@ -49,6 +53,7 @@ export const { GET, POST, PUT } = serve({
     onGithubRepoStatsSync,
     onContinuityPrewarm,
     continuityMorningCron,
+    continuityMorningDelivery,
     conductorProactiveCron,
     conductorIdleNudgeCron,
     companionAgentAnticipatory,
