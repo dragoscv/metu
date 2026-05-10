@@ -14,6 +14,7 @@ export default function RootLayout() {
         }}
       >
         <Tabs.Screen name="index" options={{ title: 'Capture' }} />
+        <Tabs.Screen name="resume" options={{ title: 'Resume' }} />
         <Tabs.Screen name="now" options={{ title: 'Now' }} />
         <Tabs.Screen name="presence" options={{ title: 'Presence' }} />
         <Tabs.Screen name="projects" options={{ title: 'Projects' }} />
