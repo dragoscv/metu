@@ -415,6 +415,41 @@ export const deviceSettingsUpdateTool = bridge(
   }),
 );
 
+// ─── Local LLM tunnel (Ollama) ────────────────────────────────────────────
+
+/**
+ * Tunnel a single chat completion through the companion to the user's
+ * local Ollama instance (`http://localhost:11434`). Lets the conductor
+ * use private/local models without exposing them to the public internet.
+ *
+ * Non-streaming for now — the tool.invoke/tool.result envelope is one
+ * shot. Streaming would need protocol-level work (`tool.partial` with
+ * incremental decoding).
+ */
+export const deviceOllamaChatTool = bridge(
+  'device.ollama_chat',
+  "Chat with the user's local Ollama (http://localhost:11434). Returns the assistant message text. Non-streaming. Use for private/offline LLM calls.",
+  'high_risk',
+  z.object({
+    model: z
+      .string()
+      .min(1)
+      .max(120)
+      .describe('Ollama model tag, e.g. "llama3.2" or "qwen2.5:7b".'),
+    messages: z
+      .array(
+        z.object({
+          role: z.enum(['system', 'user', 'assistant']),
+          content: z.string().min(1),
+        }),
+      )
+      .min(1)
+      .max(40),
+    temperature: z.number().min(0).max(2).optional(),
+    maxTokens: z.number().int().positive().max(8192).optional(),
+  }),
+);
+
 export const DEVICE_TOOLS = {
   'device.screenshot': deviceScreenshotTool,
   'device.list_windows': deviceListWindowsTool,
@@ -442,6 +477,7 @@ export const DEVICE_TOOLS = {
   'device.notify': deviceNotifyTool,
   'device.persona_set': devicePersonaSetTool,
   'device.settings_update': deviceSettingsUpdateTool,
+  'device.ollama_chat': deviceOllamaChatTool,
 } as const satisfies Record<string, ToolDefinition<z.ZodTypeAny>>;
 
 export type DeviceToolName = keyof typeof DEVICE_TOOLS;

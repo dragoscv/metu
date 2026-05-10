@@ -240,7 +240,59 @@ export async function executeDeviceTool(tool: string, args: DeviceToolArgs): Pro
           throw new Error(`invalid_settings_kind: ${kind}`);
       }
     }
+    case 'device.ollama_chat': {
+      return await ollamaChat(args);
+    }
     default:
       throw new Error(`device_tool_not_implemented: ${tool}`);
   }
+}
+
+/**
+ * Tunnel a non-streaming chat completion to the user's local Ollama at
+ * http://localhost:11434/api/chat. Surfaces a clear error when the daemon
+ * isn't running so the planner can retry against a hosted model.
+ */
+async function ollamaChat(args: Record<string, unknown>): Promise<unknown> {
+  const model = asString(args, 'model');
+  const messages = args.messages;
+  if (!Array.isArray(messages) || messages.length === 0) {
+    throw new Error('ollama_messages_required');
+  }
+  const options: Record<string, number> = {};
+  if (typeof args.temperature === 'number') options.temperature = args.temperature;
+  if (typeof args.maxTokens === 'number') options.num_predict = args.maxTokens;
+  let res: Response;
+  try {
+    res = await fetch('http://127.0.0.1:11434/api/chat', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({
+        model,
+        messages,
+        stream: false,
+        ...(Object.keys(options).length > 0 ? { options } : {}),
+      }),
+    });
+  } catch (e) {
+    throw new Error(
+      `ollama_unreachable: ${e instanceof Error ? e.message : 'fetch_failed'} (is "ollama serve" running on this machine?)`,
+    );
+  }
+  if (!res.ok) {
+    const body = await res.text().catch(() => '');
+    throw new Error(`ollama_${res.status}: ${body.slice(0, 200)}`);
+  }
+  const data = (await res.json().catch(() => null)) as {
+    message?: { content?: string };
+    eval_count?: number;
+    prompt_eval_count?: number;
+  } | null;
+  if (!data?.message?.content) throw new Error('ollama_empty_response');
+  return {
+    content: data.message.content,
+    inputTokens: data.prompt_eval_count ?? null,
+    outputTokens: data.eval_count ?? null,
+    model,
+  };
 }
