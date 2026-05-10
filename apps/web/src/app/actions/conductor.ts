@@ -4,7 +4,7 @@ import { and, eq } from 'drizzle-orm';
 import { z } from 'zod';
 import { auth } from '@metu/auth';
 import { getDb } from '@metu/db';
-import { conversation } from '@metu/db/schema';
+import { conversation, project } from '@metu/db/schema';
 import { agent } from '@metu/core';
 import { Inngest } from 'inngest';
 
@@ -16,6 +16,14 @@ const ToolCallIdSchema = z.string().uuid();
 const RejectToolCallSchema = z.object({
   toolCallId: z.string().uuid(),
   reason: z.string().optional(),
+});
+const PromoteSchema = z.object({
+  conversationId: z.string().uuid(),
+  projectId: z.string().uuid(),
+});
+const RenameSchema = z.object({
+  conversationId: z.string().uuid(),
+  title: z.string().min(1).max(200),
 });
 
 export async function createSideChatAction(input: { title?: string }) {
@@ -49,6 +57,72 @@ export async function archiveConversationAction(id: string) {
     .update(conversation)
     .set({ status: 'archived', archivedAt: new Date() })
     .where(and(eq(conversation.id, id), eq(conversation.workspaceId, session.user.workspaceId)));
+  revalidatePath('/chat');
+  return { ok: true as const };
+}
+
+/**
+ * Promote a side chat into a project chat by attaching it to a project and
+ * flipping `kind` to `project`. The Conductor singleton thread is refused;
+ * already-project chats are re-pointed (rename project).
+ */
+export async function promoteSideChatAction(input: { conversationId: string; projectId: string }) {
+  const parsed = PromoteSchema.safeParse(input);
+  if (!parsed.success) return { ok: false as const, error: 'invalid_input' };
+  const session = await auth();
+  if (!session) return { ok: false as const, error: 'Unauthenticated' };
+  const db = getDb();
+  const [convo] = await db
+    .select({ id: conversation.id, kind: conversation.kind })
+    .from(conversation)
+    .where(
+      and(
+        eq(conversation.id, parsed.data.conversationId),
+        eq(conversation.workspaceId, session.user.workspaceId),
+      ),
+    )
+    .limit(1);
+  if (!convo) return { ok: false as const, error: 'not_found' };
+  if (convo.kind === 'conductor') {
+    return { ok: false as const, error: 'cannot_promote_conductor_thread' };
+  }
+  // Verify project belongs to workspace before pointing at it.
+  const [proj] = await db
+    .select({ id: project.id })
+    .from(project)
+    .where(
+      and(eq(project.id, parsed.data.projectId), eq(project.workspaceId, session.user.workspaceId)),
+    )
+    .limit(1);
+  if (!proj) return { ok: false as const, error: 'project_not_found' };
+  await db
+    .update(conversation)
+    .set({ kind: 'project', projectId: parsed.data.projectId })
+    .where(
+      and(
+        eq(conversation.id, parsed.data.conversationId),
+        eq(conversation.workspaceId, session.user.workspaceId),
+      ),
+    );
+  revalidatePath('/chat');
+  return { ok: true as const };
+}
+
+export async function renameConversationAction(input: { conversationId: string; title: string }) {
+  const parsed = RenameSchema.safeParse(input);
+  if (!parsed.success) return { ok: false as const, error: 'invalid_input' };
+  const session = await auth();
+  if (!session) return { ok: false as const, error: 'Unauthenticated' };
+  const db = getDb();
+  await db
+    .update(conversation)
+    .set({ title: parsed.data.title.trim() })
+    .where(
+      and(
+        eq(conversation.id, parsed.data.conversationId),
+        eq(conversation.workspaceId, session.user.workspaceId),
+      ),
+    );
   revalidatePath('/chat');
   return { ok: true as const };
 }
