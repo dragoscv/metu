@@ -215,6 +215,31 @@ class MetuClient {
       clearTimeout(timer);
     }
   }
+
+  async regenerateBrief(projectId: string): Promise<{ projectName: string; nextStep: string }> {
+    const token = this.auth.token;
+    if (!token) throw new Error('not signed in');
+    const apiUrl = readCfg().apiUrl;
+    const ctrl = new AbortController();
+    const timer = setTimeout(() => ctrl.abort(), 60_000);
+    try {
+      const res = await fetch(`${apiUrl}/api/sdk/v1/brief`, {
+        method: 'POST',
+        headers: {
+          authorization: `Bearer ${token}`,
+          'content-type': 'application/json',
+          accept: 'application/json',
+        },
+        body: JSON.stringify({ projectId }),
+        signal: ctrl.signal,
+      });
+      if (!res.ok) throw new Error(`metu /brief → HTTP ${res.status}`);
+      const json = (await res.json()) as { projectName: string; nextStep: string };
+      return { projectName: json.projectName, nextStep: json.nextStep };
+    } finally {
+      clearTimeout(timer);
+    }
+  }
 }
 
 interface ResumeBriefing {
@@ -332,6 +357,7 @@ export async function activate(ctx: vscode.ExtensionContext): Promise<void> {
     vscode.commands.registerCommand('metu.capture', () => captureCmd(client)),
     vscode.commands.registerCommand('metu.recall', () => recallCmd(client)),
     vscode.commands.registerCommand('metu.resume', () => resumeCmd(client)),
+    vscode.commands.registerCommand('metu.regenerateBrief', () => regenerateBriefCmd(client)),
     vscode.commands.registerCommand('metu.notify', () => notifyCmd(client)),
     vscode.commands.registerCommand('metu.companionTurn', () => companionTurnCmd(client)),
     vscode.commands.registerCommand('metu.signIn', () => signInCmd(auth)),
@@ -482,6 +508,40 @@ async function resumeCmd(client: MetuClient): Promise<void> {
     await vscode.window.showTextDocument(doc, { preview: true });
   } catch (e) {
     vscode.window.showErrorMessage(`metu resume failed: ${(e as Error).message}`);
+  }
+}
+
+async function regenerateBriefCmd(client: MetuClient): Promise<void> {
+  try {
+    const r = await client.resume();
+    if (r.briefings.length === 0) {
+      vscode.window.showInformationMessage('No projects to refresh.');
+      return;
+    }
+    const pick = await vscode.window.showQuickPick(
+      r.briefings.map((b) => ({
+        label: b.projectName,
+        description: b.momentumScore != null ? `${Math.round(b.momentumScore * 100)}%` : undefined,
+        detail: 'Regenerate briefing now',
+        projectId: b.projectId,
+      })),
+      { placeHolder: 'Pick a project to regenerate the brief for' },
+    );
+    if (!pick) return;
+    await vscode.window.withProgress(
+      {
+        location: vscode.ProgressLocation.Notification,
+        title: `metu: regenerating ${pick.label}…`,
+      },
+      async () => {
+        const out = await client.regenerateBrief(pick.projectId);
+        vscode.window.showInformationMessage(
+          `Refreshed: ${out.projectName} — ${out.nextStep.slice(0, 140)}`,
+        );
+      },
+    );
+  } catch (e) {
+    vscode.window.showErrorMessage(`metu regenerate failed: ${(e as Error).message}`);
   }
 }
 

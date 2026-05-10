@@ -43,6 +43,11 @@
         "category": "metu"
       },
       {
+        "command": "metu.regenerateBrief",
+        "title": "metu: Regenerate project brief",
+        "category": "metu"
+      },
+      {
         "command": "metu.notify",
         "title": "metu: Send notification",
         "category": "metu"
