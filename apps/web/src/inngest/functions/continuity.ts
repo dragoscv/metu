@@ -21,6 +21,7 @@ import {
 } from '@metu/db/schema';
 import { sendTextMessage as sendTelegramText } from '@metu/integrations/telegram';
 import { hubBroadcast } from '../../lib/hub';
+import { sendPushOnly } from '../../lib/notify';
 import { inngest } from '../client';
 import { parseEvent } from '../schemas';
 
@@ -376,11 +377,35 @@ export const continuityMorningDelivery = inngest.createFunction(
       return total;
     });
 
+    // Push fallback for workspaces with no live device — Expo + web push
+    // so the user still gets a tap-to-resume notification on their
+    // phone / locked browser tab.
+    const pushFallback = await step.run('push-fallback', async () => {
+      const wsIds = Array.from(new Set(recipients.map((r) => r.workspaceId)));
+      const live = await workspacesWithLiveDevices(wsIds);
+      const offline = recipients.filter((r) => !live.has(r.workspaceId));
+      if (offline.length === 0) return 0;
+      let count = 0;
+      for (const r of offline) {
+        const res = await sendPushOnly({
+          workspaceId: r.workspaceId,
+          userId: r.userId,
+          title: `Where to start: ${r.projectName}`,
+          body: r.nextStep,
+          urgency: 'normal',
+          actionUrl: '/resume?since=3d',
+        });
+        if (res.delivered.length > 0) count += 1;
+      }
+      return count;
+    });
+
     return {
       ok: true,
       delivered: inserted,
       telegramSent,
       hubDelivered,
+      pushFallback,
       candidates: recipients.length,
     };
   },

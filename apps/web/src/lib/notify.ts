@@ -267,3 +267,138 @@ export async function notify(input: NotifyInput): Promise<{ id: string; delivere
 
   return { id: notificationId, delivered };
 }
+
+/**
+ * Push-only delivery for callers that already inserted a `notification`
+ * row themselves (e.g. morning brief). Sends web push + Expo push to the
+ * user's registered subscriptions; honours quiet hours + per-channel
+ * mutes the same way as `notify()`. Does NOT insert a row, does NOT
+ * broadcast on the hub.
+ */
+export async function sendPushOnly(input: {
+  workspaceId: string;
+  userId: string;
+  title: string;
+  body?: string;
+  urgency?: 'low' | 'normal' | 'high' | 'critical';
+  actionUrl?: string;
+  notificationId?: string;
+}): Promise<{ delivered: string[] }> {
+  const db = getDb();
+  const prefs = await resolvePrefs(input.workspaceId);
+  const urgency = input.urgency ?? 'normal';
+  const quietBlocksPush = prefs.quietActive && urgency !== 'critical' && urgency !== 'high';
+  const delivered: string[] = [];
+
+  const subs = await db
+    .select()
+    .from(notificationSubscription)
+    .where(
+      and(
+        eq(notificationSubscription.userId, input.userId),
+        eq(notificationSubscription.enabled, true),
+      ),
+    );
+  const webSubs = subs.filter((s) => s.channel === 'web_push');
+  const expoSubs = subs.filter((s) => s.channel === 'expo');
+
+  const webMuted = prefs.mutedChannels.includes('web_push') || quietBlocksPush;
+  const expoMuted = prefs.mutedChannels.includes('expo') || quietBlocksPush;
+
+  if (!webMuted && webSubs.length > 0 && ensureWebPushConfigured()) {
+    const payload = JSON.stringify({
+      id: input.notificationId ?? '',
+      title: input.title,
+      body: input.body ?? '',
+      url: input.actionUrl ?? '/',
+      urgency,
+    });
+    const results = await Promise.allSettled(
+      webSubs.map((s) => {
+        const sub = s.payload as {
+          endpoint: string;
+          keys: { p256dh: string; auth: string };
+        };
+        return webpush.sendNotification(sub, payload).catch(async (err) => {
+          if (err && (err.statusCode === 410 || err.statusCode === 404)) {
+            await db
+              .update(notificationSubscription)
+              .set({ enabled: false })
+              .where(eq(notificationSubscription.id, s.id));
+          }
+          throw err;
+        });
+      }),
+    );
+    const ok = results.filter((r) => r.status === 'fulfilled').length;
+    if (ok > 0) delivered.push(`web_push:${ok}`);
+  }
+
+  if (!expoMuted && expoSubs.length > 0) {
+    const items: Array<{
+      subId: string;
+      msg: {
+        to: string;
+        sound: 'default';
+        title: string;
+        body: string;
+        data: { id: string; url: string };
+        priority: 'high' | 'default';
+      };
+    }> = [];
+    for (const s of expoSubs) {
+      const tok = (s.payload as { token: string }).token;
+      if (!Expo.isExpoPushToken(tok)) {
+        await db
+          .update(notificationSubscription)
+          .set({ enabled: false })
+          .where(eq(notificationSubscription.id, s.id));
+        continue;
+      }
+      items.push({
+        subId: s.id,
+        msg: {
+          to: tok,
+          sound: 'default',
+          title: input.title,
+          body: input.body ?? '',
+          data: { id: input.notificationId ?? '', url: input.actionUrl ?? '/' },
+          priority: urgency === 'critical' ? 'high' : 'default',
+        },
+      });
+    }
+    if (items.length > 0) {
+      const messages = items.map((i) => i.msg);
+      const chunks = expo.chunkPushNotifications(messages);
+      let okCount = 0;
+      let cursor = 0;
+      for (const chunk of chunks) {
+        try {
+          const tickets = await expo.sendPushNotificationsAsync(chunk);
+          for (let i = 0; i < tickets.length; i++) {
+            const ticket = tickets[i];
+            const item = items[cursor + i];
+            if (!ticket || !item) continue;
+            if (ticket.status === 'ok') {
+              okCount++;
+              continue;
+            }
+            const reason = (ticket.details as { error?: string } | undefined)?.error ?? 'unknown';
+            if (reason === 'DeviceNotRegistered') {
+              await db
+                .update(notificationSubscription)
+                .set({ enabled: false })
+                .where(eq(notificationSubscription.id, item.subId));
+            }
+          }
+        } catch (err) {
+          log.error('notify.push_only.expo_failed', { chunkSize: chunk.length }, err);
+        }
+        cursor += chunk.length;
+      }
+      if (okCount > 0) delivered.push(`expo:${okCount}`);
+    }
+  }
+
+  return { delivered };
+}
