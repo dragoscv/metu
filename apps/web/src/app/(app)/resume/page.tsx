@@ -19,6 +19,7 @@ import { getDb } from '@metu/db';
 import { project, task, timelineEvent } from '@metu/db/schema';
 import { listRecentBriefings } from '@metu/db/queries';
 import { RegenerateBriefingButton } from './regenerate-button';
+import { PresencePill } from '@/components/presence-pill';
 
 export const dynamic = 'force-dynamic';
 
@@ -151,25 +152,28 @@ export default async function ResumePage({ searchParams }: PageProps) {
         title="Resume"
         description="Where you left off, why, and the smallest next step. Pick the gap you're returning from."
         actions={
-          <nav className="flex items-center gap-1 rounded-lg border border-[var(--color-border)] bg-[var(--color-card)] p-1 text-xs">
-            {WINDOWS.map((w) => {
-              const active = w.key === win;
-              return (
-                <Link
-                  key={w.key}
-                  href={`/resume?since=${w.key}`}
-                  aria-current={active ? 'page' : undefined}
-                  className={
-                    active
-                      ? 'rounded-md bg-[var(--color-brand)] px-3 py-1 font-medium text-white'
-                      : 'rounded-md px-3 py-1 text-[var(--color-fg-subtle)] hover:text-[var(--color-fg)]'
-                  }
-                >
-                  {w.label}
-                </Link>
-              );
-            })}
-          </nav>
+          <div className="flex items-center gap-2">
+            <PresencePill workspaceId={session.user.workspaceId} />
+            <nav className="flex items-center gap-1 rounded-lg border border-[var(--color-border)] bg-[var(--color-card)] p-1 text-xs">
+              {WINDOWS.map((w) => {
+                const active = w.key === win;
+                return (
+                  <Link
+                    key={w.key}
+                    href={`/resume?since=${w.key}`}
+                    aria-current={active ? 'page' : undefined}
+                    className={
+                      active
+                        ? 'rounded-md bg-[var(--color-brand)] px-3 py-1 font-medium text-white'
+                        : 'rounded-md px-3 py-1 text-[var(--color-fg-subtle)] hover:text-[var(--color-fg)]'
+                    }
+                  >
+                    {w.label}
+                  </Link>
+                );
+              })}
+            </nav>
+          </div>
         }
       />
 
