@@ -40,6 +40,8 @@ interface Props {
   workspaces?: WorkspaceOption[];
   /** Currently-resolved active workspace id (from session). */
   activeWorkspaceId?: string;
+  /** When true, the conductor is paused — show a small chip. */
+  autonomyPaused?: boolean;
 }
 
 export function AppSidebar({
@@ -48,6 +50,7 @@ export function AppSidebar({
   badges = {},
   workspaces = [],
   activeWorkspaceId,
+  autonomyPaused = false,
 }: Props) {
   const { collapsed, toggleCollapsed, mobileOpen, setMobileOpen } = useSidebar();
   const pathname = usePathname();
@@ -165,6 +168,16 @@ export function AppSidebar({
         </div>
 
         <div className="mt-auto border-t border-[var(--color-border)] p-2">
+          {autonomyPaused ? (
+            <Link
+              href="/dashboard"
+              className="bg-[var(--color-warning)]/10 hover:bg-[var(--color-warning)]/15 mb-2 flex items-center gap-2 rounded-md px-2 py-1.5 text-[11px] font-medium text-[var(--color-warning)]"
+              title="Autonomy is paused — open dashboard to resume"
+            >
+              <span className="h-1.5 w-1.5 shrink-0 animate-pulse rounded-full bg-[var(--color-warning)]" />
+              {!collapsed && <span>Autonomy paused</span>}
+            </Link>
+          ) : null}
           {workspaces.length > 1 && activeWorkspaceId ? (
             <div className="mb-2">
               <WorkspaceSwitcher

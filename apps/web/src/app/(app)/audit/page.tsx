@@ -26,6 +26,7 @@ import { AuditList } from '@/components/audit/audit-list';
 import { AuditAclPanel } from '@/components/audit/audit-acl-panel';
 import { AuditCostPanel } from '@/components/audit/audit-cost-panel';
 import { AuditFailureClusters } from '@/components/audit/audit-failure-clusters';
+import { AuditMtdCost } from '@/components/audit/audit-mtd-cost';
 import { AgentRunPanel } from '@/components/audit/agent-run-panel';
 import { CompanionAgentPanel } from '@/components/audit/companion-agent-panel';
 
@@ -148,6 +149,8 @@ export default async function AuditPage({ searchParams }: PageProps) {
           value={summary.cost > 0 ? `$${summary.cost.toFixed(3)}` : '—'}
         />
       </div>
+
+      <AuditMtdCost workspaceId={wsId} />
 
       <AuditCostPanel daily={dailyCost} top={topByCost} totalCost={summary.cost} />
 

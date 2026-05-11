@@ -2,7 +2,7 @@ import { auth } from '@metu/auth';
 import { redirect } from 'next/navigation';
 import { and, desc, eq, ne } from 'drizzle-orm';
 import { getDb } from '@metu/db';
-import { conversation } from '@metu/db/schema';
+import { agentPolicy, conversation } from '@metu/db/schema';
 import {
   attentionToolCallCount,
   recentTimelineEventCount,
@@ -68,12 +68,19 @@ export default async function AppLayout({ children }: { children: React.ReactNod
   // long enough that the user notices the day's signals when they open
   // the app in the morning.
   const since24h = new Date(Date.now() - 24 * 60 * 60 * 1000);
-  const [timelineCount, auditAttention, unreadNotifications, workspaces] = await Promise.all([
-    recentTimelineEventCount(workspaceId, since24h),
-    attentionToolCallCount(workspaceId, since24h),
-    notificationUnreadCount(workspaceId, session.user.id),
-    getUserWorkspaces(session.user.id),
-  ]);
+  const [timelineCount, auditAttention, unreadNotifications, workspaces, policyRow] =
+    await Promise.all([
+      recentTimelineEventCount(workspaceId, since24h),
+      attentionToolCallCount(workspaceId, since24h),
+      notificationUnreadCount(workspaceId, session.user.id),
+      getUserWorkspaces(session.user.id),
+      db
+        .select({ enabled: agentPolicy.enabled })
+        .from(agentPolicy)
+        .where(eq(agentPolicy.workspaceId, workspaceId))
+        .limit(1),
+    ]);
+  const autonomyPaused = policyRow[0] ? !policyRow[0].enabled : false;
   const sidebarBadges: Record<string, number> = {
     '/timeline': timelineCount,
     '/audit': auditAttention,
@@ -94,6 +101,7 @@ export default async function AppLayout({ children }: { children: React.ReactNod
           badges={sidebarBadges}
           workspaces={workspaceOptions}
           activeWorkspaceId={workspaceId}
+          autonomyPaused={autonomyPaused}
         />
         <div className="flex min-w-0 flex-1 flex-col">
           <MobileTopbar />
