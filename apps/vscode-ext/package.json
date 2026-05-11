@@ -38,6 +38,11 @@
         "category": "metu"
       },
       {
+        "command": "metu.recallPanel",
+        "title": "metu: Open recall panel",
+        "category": "metu"
+      },
+      {
         "command": "metu.resume",
         "title": "metu: Where did I leave off?",
         "category": "metu"

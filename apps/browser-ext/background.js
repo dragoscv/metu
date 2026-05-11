@@ -237,9 +237,34 @@ async function captureFromTab(info, tab, projectId) {
       metadata: { url: tab?.url, title: tab?.title, linkUrl: info.linkUrl },
     });
     flashBadge('✓', '#10b981');
+    notifyUser('Captured to metu', summarize(content));
   } catch (e) {
     console.error('[metu] capture failed', e);
     flashBadge('!', '#ef4444');
+    notifyUser('Capture failed', e?.message ?? String(e), true);
+  }
+}
+
+function summarize(s) {
+  const t = String(s).trim().replace(/\s+/g, ' ');
+  return t.length > 120 ? t.slice(0, 117) + '…' : t;
+}
+
+function notifyUser(title, message, isError) {
+  // chrome.notifications can be missing in some browsers (Firefox MV3
+  // shim, certain enterprise policies). Soft-fail.
+  try {
+    if (!chrome.notifications?.create) return;
+    chrome.notifications.create({
+      type: 'basic',
+      iconUrl: chrome.runtime.getURL('icons/icon-128.png'),
+      title,
+      message,
+      priority: isError ? 1 : 0,
+      silent: !isError,
+    });
+  } catch {
+    /* no-op */
   }
 }
 

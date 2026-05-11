@@ -376,6 +376,7 @@ export async function activate(ctx: vscode.ExtensionContext): Promise<void> {
   ctx.subscriptions.push(
     vscode.commands.registerCommand('metu.capture', () => captureCmd(client)),
     vscode.commands.registerCommand('metu.recall', () => recallCmd(client)),
+    vscode.commands.registerCommand('metu.recallPanel', () => recallPanelCmd(ctx, client)),
     vscode.commands.registerCommand('metu.resume', () => resumeCmd(client)),
     vscode.commands.registerCommand('metu.regenerateBrief', () => regenerateBriefCmd(client)),
     vscode.commands.registerCommand('metu.notify', () => notifyCmd(client)),
@@ -539,6 +540,128 @@ async function recallCmd(client: MetuClient): Promise<void> {
   } catch (e) {
     vscode.window.showErrorMessage(`metu recall failed: ${(e as Error).message}`);
   }
+}
+
+let recallPanel: vscode.WebviewPanel | undefined;
+
+function recallPanelCmd(ctx: vscode.ExtensionContext, client: MetuClient): void {
+  if (recallPanel) {
+    recallPanel.reveal(vscode.ViewColumn.Beside);
+    return;
+  }
+  recallPanel = vscode.window.createWebviewPanel(
+    'metuRecall',
+    'metu — Recall',
+    vscode.ViewColumn.Beside,
+    { enableScripts: true, retainContextWhenHidden: true },
+  );
+  recallPanel.onDidDispose(() => {
+    recallPanel = undefined;
+  });
+  recallPanel.webview.html = recallPanelHtml();
+  recallPanel.webview.onDidReceiveMessage(
+    async (msg: { type: string; query?: string; content?: string }) => {
+      if (!recallPanel) return;
+      if (msg.type === 'search' && msg.query) {
+        try {
+          const hits = await client.recall({ query: msg.query, k: 12 });
+          recallPanel.webview.postMessage({ type: 'results', hits });
+        } catch (e) {
+          recallPanel.webview.postMessage({ type: 'error', error: (e as Error).message });
+        }
+      } else if (msg.type === 'insert' && msg.content) {
+        const editor = vscode.window.activeTextEditor;
+        if (!editor) {
+          await vscode.env.clipboard.writeText(msg.content);
+          vscode.window.showInformationMessage('Copied to clipboard (no active editor).');
+          return;
+        }
+        const prefix = commentPrefix(editor.document.languageId);
+        const block = msg.content
+          .split('\n')
+          .map((line) => `${prefix} ${line}`)
+          .join('\n');
+        await editor.edit((b) => b.insert(editor.selection.active, `${block}\n`));
+      } else if (msg.type === 'open' && msg.content) {
+        // Open in browser via the recall query URL on the web app.
+        const apiUrl = vscode.workspace.getConfiguration('metu').get<string>('apiUrl') ?? '';
+        if (apiUrl) {
+          const url = `${apiUrl.replace(/\/$/, '')}/memory?q=${encodeURIComponent(msg.content.slice(0, 80))}`;
+          await vscode.env.openExternal(vscode.Uri.parse(url));
+        }
+      }
+    },
+    undefined,
+    ctx.subscriptions,
+  );
+}
+
+function recallPanelHtml(): string {
+  // Inline CSS + script. Webview CSP allows inline since enableScripts
+  // implies a default permissive script-src.
+  return `<!doctype html>
+<html><head><meta charset="utf-8" />
+<style>
+  body { font: 13px var(--vscode-font-family); color: var(--vscode-foreground); padding: 12px; }
+  input { width: 100%; padding: 6px 8px; font-size: 13px; background: var(--vscode-input-background); color: var(--vscode-input-foreground); border: 1px solid var(--vscode-input-border); border-radius: 3px; box-sizing: border-box; }
+  .hit { border: 1px solid var(--vscode-panel-border); border-radius: 4px; padding: 8px; margin-top: 8px; }
+  .hit .meta { font-size: 11px; opacity: 0.7; margin-bottom: 4px; display: flex; gap: 8px; align-items: center; }
+  .hit .body { white-space: pre-wrap; word-break: break-word; max-height: 200px; overflow: auto; }
+  .actions { margin-top: 6px; display: flex; gap: 6px; }
+  button { background: var(--vscode-button-secondaryBackground); color: var(--vscode-button-secondaryForeground); border: none; padding: 3px 8px; font-size: 11px; border-radius: 3px; cursor: pointer; }
+  button.primary { background: var(--vscode-button-background); color: var(--vscode-button-foreground); }
+  .empty { opacity: 0.6; padding: 16px; text-align: center; }
+  .err { color: var(--vscode-errorForeground); margin-top: 8px; }
+</style>
+</head><body>
+<input id="q" placeholder="Recall from metu memory…" autofocus />
+<div id="status" class="empty">Type a query and press Enter.</div>
+<div id="results"></div>
+<script>
+  const vscode = acquireVsCodeApi();
+  const q = document.getElementById('q');
+  const status = document.getElementById('status');
+  const results = document.getElementById('results');
+  let pending = false;
+  q.addEventListener('keydown', (e) => {
+    if (e.key === 'Enter' && q.value.trim().length >= 2 && !pending) {
+      pending = true;
+      status.textContent = 'Searching…';
+      results.innerHTML = '';
+      vscode.postMessage({ type: 'search', query: q.value });
+    }
+  });
+  window.addEventListener('message', (ev) => {
+    pending = false;
+    const m = ev.data;
+    if (m.type === 'error') {
+      status.innerHTML = '';
+      results.innerHTML = '<div class="err">' + m.error + '</div>';
+      return;
+    }
+    if (m.type === 'results') {
+      status.textContent = m.hits.length === 0 ? 'No matches.' : '';
+      results.innerHTML = '';
+      for (const h of m.hits) {
+        const div = document.createElement('div');
+        div.className = 'hit';
+        const pct = Math.round((h.score || 0) * 100);
+        div.innerHTML = '<div class="meta"><span>' + pct + '%</span><span>' + (h.kind || '') + '</span></div>'
+          + '<div class="body"></div>'
+          + '<div class="actions"><button class="primary" data-act="insert">Insert as comment</button><button data-act="open">Open in browser</button></div>';
+        div.querySelector('.body').textContent = h.content;
+        div.querySelector('[data-act=insert]').addEventListener('click', () => {
+          vscode.postMessage({ type: 'insert', content: h.content });
+        });
+        div.querySelector('[data-act=open]').addEventListener('click', () => {
+          vscode.postMessage({ type: 'open', content: h.content });
+        });
+        results.appendChild(div);
+      }
+    }
+  });
+</script>
+</body></html>`;
 }
 
 async function resumeCmd(client: MetuClient): Promise<void> {
