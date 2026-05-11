@@ -100,26 +100,76 @@ export async function captureFacets(workspaceId: string) {
   };
 }
 
+export type RecallMode = 'hybrid' | 'semantic' | 'keyword';
+
 export interface RecallParams {
   workspaceId: string;
   embedding: number[];
   projectId?: string;
+  kinds?: string[];
+  since?: Date | null;
+  until?: Date | null;
+  minScore?: number;
+  mode?: RecallMode;
+  query?: string | null;
   limit?: number;
 }
 
 /**
- * Hybrid recall — pgvector cosine similarity + recency boost.
- * Returns the top-k chunks, each annotated with similarity ∈ [0,1].
+ * Hybrid recall — pgvector cosine similarity + recency boost. Optional
+ * filters: projectId, kinds, time range, minScore. `mode='keyword'`
+ * skips the vector op and ranks by ILIKE matches; `mode='semantic'`
+ * skips keyword fallback when no vector hits land.
  */
 export async function recallByEmbedding({
   workspaceId,
   embedding,
   projectId,
+  kinds,
+  since,
+  until,
+  minScore = 0,
+  mode = 'hybrid',
+  query,
   limit = 10,
 }: RecallParams) {
   const db = getDb();
   const vec = sql.raw(`'[${embedding.join(',')}]'::vector`);
   const projectFilter = projectId ? sql`and ${memoryChunk.projectId} = ${projectId}` : sql``;
+  const kindsFilter =
+    kinds && kinds.length > 0
+      ? sql`and ${memoryChunk.sourceKind} = any(${sql.raw(`array[${kinds.map((k) => `'${k.replace(/'/g, "''")}'`).join(',')}]::text[]`)})`
+      : sql``;
+  const sinceFilter = since ? sql`and ${memoryChunk.createdAt} >= ${since}` : sql``;
+  const untilFilter = until ? sql`and ${memoryChunk.createdAt} <= ${until}` : sql``;
+  const minScoreFilter =
+    minScore > 0 ? sql`and (1 - (embedding <=> ${vec})) >= ${minScore}` : sql``;
+
+  if (mode === 'keyword') {
+    if (!query || !query.trim()) return { rows: [] } as never;
+    const like = `%${query.trim()}%`;
+    return db.execute<{
+      id: string;
+      content: string;
+      similarity: number;
+      source_kind: string;
+      source_id: string | null;
+      project_id: string | null;
+      created_at: string;
+    }>(sql`
+      select id, content, source_kind, source_id, project_id, created_at,
+        0::float as similarity
+      from ${memoryChunk}
+      where ${memoryChunk.workspaceId} = ${workspaceId}
+        and content ilike ${like}
+        ${projectFilter}
+        ${kindsFilter}
+        ${sinceFilter}
+        ${untilFilter}
+      order by ${memoryChunk.createdAt} desc
+      limit ${limit}
+    `);
+  }
 
   return db.execute<{
     id: string;
@@ -142,6 +192,10 @@ export async function recallByEmbedding({
     where ${memoryChunk.workspaceId} = ${workspaceId}
       and embedding is not null
       ${projectFilter}
+      ${kindsFilter}
+      ${sinceFilter}
+      ${untilFilter}
+      ${minScoreFilter}
     order by embedding <=> ${vec}
     limit ${limit}
   `);

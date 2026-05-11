@@ -225,6 +225,8 @@ export const RecallQuerySchema = z.object({
   kinds: z.array(z.string()).optional(),
   k: z.number().int().min(1).max(50).default(10),
   timeRange: z.object({ from: Iso.optional(), to: Iso.optional() }).optional(),
+  mode: z.enum(['hybrid', 'semantic', 'keyword']).default('hybrid'),
+  minScore: z.number().min(0).max(1).optional(),
 });
 
 export const NotifyCreateSchema = z.object({

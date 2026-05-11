@@ -95,8 +95,31 @@ export async function recall(params: {
   workspaceId: string;
   query: string;
   projectId?: string;
+  kinds?: string[];
+  since?: Date | null;
+  until?: Date | null;
+  minScore?: number;
+  mode?: 'hybrid' | 'semantic' | 'keyword';
   limit?: number;
 }) {
+  const mode = params.mode ?? 'hybrid';
+
+  // Keyword-only avoids the embed call entirely — saves tokens, useful
+  // for exact-phrase searches over recent captures.
+  if (mode === 'keyword') {
+    return recallByEmbedding({
+      workspaceId: params.workspaceId,
+      embedding: [],
+      projectId: params.projectId,
+      kinds: params.kinds,
+      since: params.since,
+      until: params.until,
+      mode,
+      query: params.query,
+      limit: params.limit ?? 10,
+    });
+  }
+
   const { model } = await getModel({
     workspaceId: params.workspaceId,
     intent: 'embed',
@@ -110,6 +133,12 @@ export async function recall(params: {
     workspaceId: params.workspaceId,
     embedding,
     projectId: params.projectId,
+    kinds: params.kinds,
+    since: params.since,
+    until: params.until,
+    minScore: params.minScore,
+    mode,
+    query: params.query,
     limit: params.limit ?? 10,
   });
 }

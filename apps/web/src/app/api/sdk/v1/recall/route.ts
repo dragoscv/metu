@@ -31,6 +31,11 @@ export async function POST(req: Request) {
     workspaceId: session.workspaceId,
     query: parsed.data.query,
     projectId: parsed.data.projectId,
+    kinds: parsed.data.kinds,
+    since: parsed.data.timeRange?.from ? new Date(parsed.data.timeRange.from) : null,
+    until: parsed.data.timeRange?.to ? new Date(parsed.data.timeRange.to) : null,
+    mode: parsed.data.mode,
+    minScore: parsed.data.minScore,
     limit: parsed.data.k,
   });
   const rows =
