@@ -5,6 +5,7 @@
 import { NextResponse } from 'next/server';
 import { RecallQuerySchema } from '@metu/protocol';
 import { memory } from '@metu/core';
+import { appendTimelineEvent } from '@metu/db/queries';
 import { forbidden, hasScope, resolveSession, unauthorized } from '@/lib/bearer';
 import { rateLimit } from '@/lib/ratelimit';
 
@@ -50,11 +51,31 @@ export async function POST(req: Request) {
       similarity: number;
     }>);
 
-  return NextResponse.json(
-    (rows ?? []).map((h) => ({
-      id: h.id,
-      content: h.content,
-      score: h.similarity,
-    })),
-  );
+  const hits = (rows ?? []).map((h) => ({
+    id: h.id,
+    content: h.content,
+    score: h.similarity,
+  }));
+
+  // Log the recall as a low-importance timeline event so users can
+  // browse "what did I look up recently" in /timeline. Best-effort —
+  // failures don't block the response.
+  void appendTimelineEvent({
+    workspaceId: session.workspaceId,
+    userId: session.userId,
+    projectId: parsed.data.projectId ?? null,
+    kind: 'memory.recall',
+    title: parsed.data.query.slice(0, 200),
+    body: `${hits.length} hit${hits.length === 1 ? '' : 's'} (${parsed.data.mode})`,
+    payload: {
+      mode: parsed.data.mode,
+      k: parsed.data.k,
+      kinds: parsed.data.kinds ?? null,
+      hitCount: hits.length,
+      clientId: session.clientId,
+    },
+    importance: 0.1,
+  }).catch(() => undefined);
+
+  return NextResponse.json(hits);
 }
