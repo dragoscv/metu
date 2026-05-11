@@ -1,8 +1,8 @@
 import { auth } from '@metu/auth';
 import { redirect } from 'next/navigation';
-import { listGoalsFiltered, weeklyReviewSummary } from '@metu/db/queries';
+import { listGoalsFiltered, listTimelineFiltered, weeklyReviewSummary } from '@metu/db/queries';
 import { Badge, Card, EmptyState, Page, PageHeader } from '@metu/ui';
-import { CalendarDays, Sparkles, Target } from 'lucide-react';
+import { CalendarDays, Gavel, Sparkles, Target } from 'lucide-react';
 import Link from 'next/link';
 
 export const dynamic = 'force-dynamic';
@@ -28,6 +28,13 @@ export default async function ReviewPage({ searchParams }: PageProps) {
       sort: 'weight',
     }),
   ]);
+
+  const decisions = await listTimelineFiltered({
+    workspaceId: session.user.workspaceId,
+    kinds: ['decision', 'policy.change', 'goal.achieved'],
+    since: summary.startedAt,
+    limit: 12,
+  });
 
   const totalSignals =
     summary.captures + summary.toolCalls + summary.tasksCompleted + summary.topProjects.length;
@@ -202,6 +209,45 @@ export default async function ReviewPage({ searchParams }: PageProps) {
                 </li>
               );
             })}
+          </ul>
+        </Card>
+      )}
+
+      {decisions.items.length > 0 && (
+        <Card>
+          <div className="mb-3 flex items-baseline justify-between">
+            <div>
+              <h2 className="text-sm font-medium">Recent decisions</h2>
+              <p className="mt-0.5 text-xs text-[var(--color-fg-subtle)]">
+                Decisions, policy changes, and goal milestones from this period.
+              </p>
+            </div>
+            <Gavel className="h-3.5 w-3.5 text-[var(--color-fg-subtle)]" />
+          </div>
+          <ul className="space-y-1.5">
+            {decisions.items.map((e) => (
+              <li key={e.id}>
+                <Link
+                  href={`/timeline?q=${encodeURIComponent(e.title.slice(0, 80))}`}
+                  className="flex items-baseline justify-between gap-3 rounded-md px-2 py-1.5 text-sm transition hover:bg-[var(--color-bg-elevated)]"
+                >
+                  <div className="min-w-0 flex-1">
+                    <div className="truncate font-medium">{e.title}</div>
+                    {e.body && (
+                      <div className="truncate text-[11px] text-[var(--color-fg-subtle)]">
+                        {e.body}
+                      </div>
+                    )}
+                  </div>
+                  <div className="flex shrink-0 items-center gap-2 text-[11px] text-[var(--color-fg-subtle)]">
+                    <Badge variant="neutral" size="sm">
+                      {e.kind}
+                    </Badge>
+                    <span>{e.occurredAt.toLocaleDateString()}</span>
+                  </div>
+                </Link>
+              </li>
+            ))}
           </ul>
         </Card>
       )}
