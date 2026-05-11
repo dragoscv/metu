@@ -10,6 +10,7 @@ import { capture, device, goal, project } from '@metu/db/schema';
 import { Card } from '@metu/ui';
 import { Check, Circle, Plug, Smartphone, Sparkles, Target, FolderKanban } from 'lucide-react';
 import Link from 'next/link';
+import { SeedDemoButton } from './seed-demo-button';
 
 interface Step {
   id: string;
@@ -125,6 +126,11 @@ export async function OnboardingChecklist({ workspaceId }: { workspaceId: string
           );
         })}
       </ul>
+      {steps[0] && !steps[0].done && (
+        <div className="mt-3 border-t border-[var(--color-border)] pt-3">
+          <SeedDemoButton />
+        </div>
+      )}
     </Card>
   );
 }
