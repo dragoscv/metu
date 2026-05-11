@@ -12,6 +12,7 @@ import { parseAsString, useQueryStates } from 'nuqs';
 interface Props {
   toolFacets: { tool: string; count: number }[];
   statusFacets: { status: string; count: number }[];
+  runKindFacets: { kind: string; count: number }[];
 }
 
 const STATUS_LABELS: Record<string, string> = {
@@ -50,11 +51,12 @@ function arraysEq(a: string[], b: string[]): boolean {
   return sa.every((v, i) => v === sb[i]);
 }
 
-export function AuditToolbar({ toolFacets, statusFacets }: Props) {
+export function AuditToolbar({ toolFacets, statusFacets, runKindFacets }: Props) {
   const [filters, setFilters] = useQueryStates(
     {
       tools: parseAsString.withDefault(''),
       statuses: parseAsString.withDefault(''),
+      kinds: parseAsString.withDefault(''),
       since: parseAsString.withDefault(''),
       q: parseAsString.withDefault(''),
     },
@@ -63,8 +65,10 @@ export function AuditToolbar({ toolFacets, statusFacets }: Props) {
 
   const selectedTools = filters.tools ? filters.tools.split(',').filter(Boolean) : [];
   const selectedStatuses = filters.statuses ? filters.statuses.split(',').filter(Boolean) : [];
+  const selectedKinds = filters.kinds ? filters.kinds.split(',').filter(Boolean) : [];
   const [toolOpen, setToolOpen] = useState(false);
   const [statusOpen, setStatusOpen] = useState(false);
+  const [kindOpen, setKindOpen] = useState(false);
 
   const toggleTool = (t: string) => {
     const next = selectedTools.includes(t)
@@ -80,7 +84,14 @@ export function AuditToolbar({ toolFacets, statusFacets }: Props) {
     setFilters({ statuses: next.join(',') });
   };
 
-  const clearAll = () => setFilters({ tools: '', statuses: '', since: '', q: '' });
+  const toggleKind = (k: string) => {
+    const next = selectedKinds.includes(k)
+      ? selectedKinds.filter((x) => x !== k)
+      : [...selectedKinds, k];
+    setFilters({ kinds: next.join(',') });
+  };
+
+  const clearAll = () => setFilters({ tools: '', statuses: '', kinds: '', since: '', q: '' });
 
   const applyPreset = (p: { tools?: string[]; statuses?: string[]; q?: string }) => {
     setFilters({
@@ -91,7 +102,11 @@ export function AuditToolbar({ toolFacets, statusFacets }: Props) {
   };
 
   const hasFilters =
-    selectedTools.length > 0 || selectedStatuses.length > 0 || !!filters.since || !!filters.q;
+    selectedTools.length > 0 ||
+    selectedStatuses.length > 0 ||
+    selectedKinds.length > 0 ||
+    !!filters.since ||
+    !!filters.q;
 
   return (
     <div className="space-y-2">
@@ -154,6 +169,17 @@ export function AuditToolbar({ toolFacets, statusFacets }: Props) {
           emptyText="No statuses observed."
         />
 
+        <FacetMenu
+          label="Source"
+          icon={Filter}
+          open={kindOpen}
+          setOpen={setKindOpen}
+          selected={selectedKinds}
+          options={runKindFacets.map((f) => ({ value: f.kind, label: f.kind, count: f.count }))}
+          onToggle={toggleKind}
+          emptyText="No agent runs observed."
+        />
+
         <Select
           value={filters.since}
           onChange={(e) => setFilters({ since: e.target.value })}
@@ -178,6 +204,7 @@ export function AuditToolbar({ toolFacets, statusFacets }: Props) {
             const qs = new URLSearchParams();
             if (selectedTools.length > 0) qs.set('tools', selectedTools.join(','));
             if (selectedStatuses.length > 0) qs.set('statuses', selectedStatuses.join(','));
+            if (selectedKinds.length > 0) qs.set('kinds', selectedKinds.join(','));
             if (filters.since) qs.set('since', filters.since);
             if (filters.q) qs.set('q', filters.q);
             const s = qs.toString();

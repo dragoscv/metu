@@ -11,6 +11,7 @@ import {
   listToolCalls,
   toolCallByAclMode,
   toolCallDailyCost,
+  toolCallRunKindFacets,
   toolCallStatusFacets,
   toolCallSummary,
   toolCallTopByCost,
@@ -30,6 +31,7 @@ interface PageProps {
   searchParams: Promise<{
     tools?: string;
     statuses?: string;
+    kinds?: string;
     since?: string;
     q?: string;
   }>;
@@ -66,24 +68,35 @@ export default async function AuditPage({ searchParams }: PageProps) {
   const statuses = (sp.statuses ? sp.statuses.split(',').filter(Boolean) : []).filter(
     (s): s is ToolCallStatusFilter => (VALID_STATUSES as string[]).includes(s),
   );
+  const runKinds = sp.kinds ? sp.kinds.split(',').filter(Boolean) : [];
 
-  const [{ items, nextCursor }, toolFacets, statusFacets, summary, dailyCost, topByCost, aclRows] =
-    await Promise.all([
-      listToolCalls({
-        workspaceId: wsId,
-        tools: tools.length > 0 ? tools : undefined,
-        statuses: statuses.length > 0 ? statuses : undefined,
-        since,
-        search: sp.q || null,
-        limit: 60,
-      }),
-      toolCallToolFacets(wsId, since),
-      toolCallStatusFacets(wsId, since),
-      toolCallSummary(wsId, since),
-      toolCallDailyCost(wsId, since),
-      toolCallTopByCost(wsId, since, 5),
-      toolCallByAclMode(wsId, since),
-    ]);
+  const [
+    { items, nextCursor },
+    toolFacets,
+    statusFacets,
+    runKindFacets,
+    summary,
+    dailyCost,
+    topByCost,
+    aclRows,
+  ] = await Promise.all([
+    listToolCalls({
+      workspaceId: wsId,
+      tools: tools.length > 0 ? tools : undefined,
+      statuses: statuses.length > 0 ? statuses : undefined,
+      runKinds: runKinds.length > 0 ? runKinds : undefined,
+      since,
+      search: sp.q || null,
+      limit: 60,
+    }),
+    toolCallToolFacets(wsId, since),
+    toolCallStatusFacets(wsId, since),
+    toolCallRunKindFacets(wsId, since),
+    toolCallSummary(wsId, since),
+    toolCallDailyCost(wsId, since),
+    toolCallTopByCost(wsId, since, 5),
+    toolCallByAclMode(wsId, since),
+  ]);
 
   const initialItems = items.map((r) => ({
     id: r.id,
@@ -136,7 +149,11 @@ export default async function AuditPage({ searchParams }: PageProps) {
 
       <AuditAclPanel rows={aclRows} />
 
-      <AuditToolbar toolFacets={toolFacets} statusFacets={statusFacets} />
+      <AuditToolbar
+        toolFacets={toolFacets}
+        statusFacets={statusFacets}
+        runKindFacets={runKindFacets}
+      />
 
       <AuditList items={initialItems} hasMore={nextCursor !== null} />
     </Page>

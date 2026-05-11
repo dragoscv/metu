@@ -22,6 +22,8 @@ export interface ListToolCallsParams {
   workspaceId: string;
   tools?: string[];
   statuses?: ToolCallStatusFilter[];
+  /** Filter by `agentRun.kind` (e.g. conductor.tick, capture.classify). */
+  runKinds?: string[];
   since?: Date | null;
   search?: string | null;
   cursor?: { requestedAt: Date; id: string } | null;
@@ -32,6 +34,7 @@ export async function listToolCalls({
   workspaceId,
   tools,
   statuses,
+  runKinds,
   since,
   search,
   cursor,
@@ -42,6 +45,8 @@ export async function listToolCalls({
   if (tools && tools.length > 0) conditions.push(inArray(toolCall.tool, tools));
   if (statuses && statuses.length > 0)
     conditions.push(sql`${toolCall.status} = ANY(${statuses}::text[])`);
+  if (runKinds && runKinds.length > 0)
+    conditions.push(sql`${agentRun.kind} = ANY(${runKinds}::text[])`);
   if (since) conditions.push(sql`${toolCall.requestedAt} >= ${since}`);
   if (search && search.trim()) {
     const q = `%${search.trim()}%`;
@@ -188,6 +193,32 @@ export async function toolCallStatusFacets(workspaceId: string, since?: Date | n
     .from(toolCall)
     .where(and(...conds))
     .groupBy(toolCall.status)
+    .orderBy(desc(sql`count(*)`));
+  return rows;
+}
+
+/**
+ * Source facet — groups tool calls by the parent agentRun.kind
+ * (conductor.tick, capture.classify, agent.task, sdk.tool.*, ...).
+ * Surfaces "who triggered this" so the audit page can isolate
+ * conductor activity from background classifiers or external SDK calls.
+ */
+export async function toolCallRunKindFacets(workspaceId: string, since?: Date | null) {
+  const db = getDb();
+  const conds: SQL[] = [eq(toolCall.workspaceId, workspaceId)];
+  if (since) conds.push(sql`${toolCall.requestedAt} >= ${since}`);
+  const rows = await db
+    .select({
+      kind: sql<string>`coalesce(${agentRun.kind}, 'manual')`,
+      count: sql<number>`count(*)::int`,
+    })
+    .from(toolCall)
+    .leftJoin(
+      agentRun,
+      and(eq(toolCall.agentRunId, agentRun.id), eq(agentRun.workspaceId, toolCall.workspaceId)),
+    )
+    .where(and(...conds))
+    .groupBy(sql`coalesce(${agentRun.kind}, 'manual')`)
     .orderBy(desc(sql`count(*)`));
   return rows;
 }
