@@ -3,7 +3,7 @@
  * Memory workspace UI — overview, quick capture, recall, recent feed.
  * One file because they share types, refresh callbacks, and animation state.
  */
-import { useCallback, useMemo, useState, useTransition } from 'react';
+import { useCallback, useEffect, useMemo, useState, useTransition } from 'react';
 import { AnimatePresence, motion } from 'framer-motion';
 import {
   ArrowDown,
@@ -32,10 +32,12 @@ import {
   type MemoryChunkRow,
   type MemoryOverview,
   type MemoryRecallHit,
+  type RecentRecallSearch,
   captureMemoryAction,
   deleteMemoryChunkAction,
   getMemoryOverviewAction,
   listRecentMemoriesAction,
+  listRecentRecallSearchesAction,
   recallMemoryAction,
 } from '@/app/actions/memory';
 import { SOURCE_KIND_META, type SourceKind, formatRelative } from './source-kind';
@@ -303,26 +305,44 @@ function QuickCapture({ onCaptured }: { onCaptured: () => Promise<void> | void }
 function RecallPanel() {
   const [query, setQuery] = useState('');
   const [filter, setFilter] = useState<SourceKind | 'all'>('all');
+  const [mode, setMode] = useState<'hybrid' | 'semantic' | 'keyword'>('hybrid');
   const [hits, setHits] = useState<MemoryRecallHit[] | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [pending, start] = useTransition();
+  const [recent, setRecent] = useState<RecentRecallSearch[]>([]);
 
-  const run = () => {
-    if (query.trim().length < 2) return;
+  useEffect(() => {
+    let cancelled = false;
+    void listRecentRecallSearchesAction({ limit: 8 }).then((r) => {
+      if (!cancelled && r.ok) setRecent(r.items);
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  const runWith = (q: string, m: typeof mode = mode) => {
+    if (q.trim().length < 2) return;
     start(async () => {
       setError(null);
       const r = await recallMemoryAction({
-        query,
+        query: q,
+        mode: m,
         sourceKind: filter === 'all' ? undefined : filter,
       });
       if (r.ok) {
         setHits(r.hits);
+        // Refresh chips so the just-run query bubbles to the front.
+        void listRecentRecallSearchesAction({ limit: 8 }).then((rr) => {
+          if (rr.ok) setRecent(rr.items);
+        });
       } else {
         setError(r.error);
         setHits([]);
       }
     });
   };
+  const run = () => runWith(query);
 
   const reset = () => {
     setQuery('');
@@ -367,6 +387,51 @@ function RecallPanel() {
         </div>
 
         <KindFilterChips active={filter} onChange={setFilter} />
+
+        <div className="flex flex-wrap items-center gap-2">
+          <span className="text-[10px] uppercase tracking-wider text-[var(--color-fg-subtle)]">
+            Mode
+          </span>
+          {(['hybrid', 'semantic', 'keyword'] as const).map((m) => (
+            <button
+              key={m}
+              type="button"
+              onClick={() => setMode(m)}
+              className={`inline-flex h-6 items-center rounded-full border px-2 text-[11px] capitalize transition ${
+                mode === m
+                  ? 'border-[var(--color-brand)] bg-[var(--color-brand)] text-white'
+                  : 'border-[var(--color-border)] bg-[var(--color-bg-card)] hover:bg-[var(--color-bg-elevated)]'
+              }`}
+            >
+              {m}
+            </button>
+          ))}
+        </div>
+
+        {recent.length > 0 && (
+          <div className="flex flex-wrap items-center gap-1.5">
+            <span className="text-[10px] uppercase tracking-wider text-[var(--color-fg-subtle)]">
+              Recent
+            </span>
+            {recent.map((r) => (
+              <button
+                key={r.query}
+                type="button"
+                onClick={() => {
+                  setQuery(r.query);
+                  setMode(r.mode);
+                  runWith(r.query, r.mode);
+                }}
+                disabled={pending}
+                className="inline-flex h-6 max-w-[14rem] items-center gap-1 truncate rounded-full border border-[var(--color-border)] bg-[var(--color-bg-card)] px-2 text-[11px] hover:bg-[var(--color-bg-elevated)] disabled:opacity-50"
+                title={`${r.mode} · ${r.hitCount} hit${r.hitCount === 1 ? '' : 's'}`}
+              >
+                <Search className="h-3 w-3 opacity-60" />
+                <span className="truncate">{r.query}</span>
+              </button>
+            ))}
+          </div>
+        )}
 
         <div className="min-h-[40px]">
           <AnimatePresence mode="popLayout" initial={false}>
