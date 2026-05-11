@@ -10,14 +10,15 @@ import { and, desc, eq } from 'drizzle-orm';
 import { getDb } from '@metu/db';
 import { timelineEvent } from '@metu/db/schema';
 import { forbidden, hasScope, resolveSession, unauthorized } from '@/lib/bearer';
+import { trace } from '@/lib/request-id';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
 
 export async function GET(req: Request) {
   const session = await resolveSession(req);
-  if (!session) return unauthorized();
-  if (!hasScope(session, 'recall:read')) return forbidden();
+  if (!session) return trace(req, unauthorized());
+  if (!hasScope(session, 'recall:read')) return trace(req, forbidden());
 
   const url = new URL(req.url);
   const limitParam = Number.parseInt(url.searchParams.get('limit') ?? '20', 10);
@@ -43,16 +44,19 @@ export async function GET(req: Request) {
     .orderBy(desc(timelineEvent.occurredAt))
     .limit(limit);
 
-  return NextResponse.json({
-    ok: true,
-    items: rows.map((r) => ({
-      id: r.id,
-      query: r.title,
-      summary: r.body,
-      projectId: r.projectId,
-      occurredAt: r.occurredAt.toISOString(),
-      mode: (r.payload as { mode?: string } | null)?.mode ?? 'hybrid',
-      hitCount: (r.payload as { hitCount?: number } | null)?.hitCount ?? 0,
-    })),
-  });
+  return trace(
+    req,
+    NextResponse.json({
+      ok: true,
+      items: rows.map((r) => ({
+        id: r.id,
+        query: r.title,
+        summary: r.body,
+        projectId: r.projectId,
+        occurredAt: r.occurredAt.toISOString(),
+        mode: (r.payload as { mode?: string } | null)?.mode ?? 'hybrid',
+        hitCount: (r.payload as { hitCount?: number } | null)?.hitCount ?? 0,
+      })),
+    }),
+  );
 }

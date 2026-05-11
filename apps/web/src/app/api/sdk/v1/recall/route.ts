@@ -8,23 +8,27 @@ import { memory } from '@metu/core';
 import { appendTimelineEvent } from '@metu/db/queries';
 import { forbidden, hasScope, resolveSession, unauthorized } from '@/lib/bearer';
 import { rateLimit } from '@/lib/ratelimit';
+import { trace } from '@/lib/request-id';
 
 export const runtime = 'nodejs';
 
 export async function POST(req: Request) {
   const session = await resolveSession(req);
-  if (!session) return unauthorized();
-  if (!hasScope(session, 'recall:read')) return forbidden();
+  if (!session) return trace(req, unauthorized());
+  if (!hasScope(session, 'recall:read')) return trace(req, forbidden());
 
   const limited = await rateLimit('sdk-write', session.userId);
-  if (limited) return limited;
+  if (limited) return trace(req, limited);
 
   const json = await req.json().catch(() => null);
   const parsed = RecallQuerySchema.safeParse(json);
   if (!parsed.success) {
-    return NextResponse.json(
-      { ok: false, error: parsed.error.issues[0]?.message ?? 'invalid' },
-      { status: 400 },
+    return trace(
+      req,
+      NextResponse.json(
+        { ok: false, error: parsed.error.issues[0]?.message ?? 'invalid' },
+        { status: 400 },
+      ),
     );
   }
 
@@ -77,5 +81,5 @@ export async function POST(req: Request) {
     importance: 0.1,
   }).catch(() => undefined);
 
-  return NextResponse.json(hits);
+  return trace(req, NextResponse.json(hits));
 }
