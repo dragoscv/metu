@@ -19,6 +19,7 @@ import { DashboardTabs } from '@/components/dashboard-tabs';
 import { ConductorBacklog } from '@/components/conductor-backlog';
 import { ContinuityStrip } from '@/components/continuity-strip';
 import { PlanTabClient } from '@/components/dashboard/plan-tab-client';
+import { OnboardingChecklist } from '@/components/dashboard/onboarding-checklist';
 
 export default async function Dashboard({
   searchParams,
@@ -69,6 +70,7 @@ export default async function Dashboard({
           blocked={blocked}
         />
       )}
+      {tab === 'now' && <OnboardingChecklist workspaceId={workspaceId} />}
       {tab === 'now' && <ContinuityStrip workspaceId={workspaceId} />}
       {tab === 'now' && <ConductorBacklog workspaceId={workspaceId} />}
       {tab === 'inbox' && <InboxTab workspaceId={workspaceId} />}
