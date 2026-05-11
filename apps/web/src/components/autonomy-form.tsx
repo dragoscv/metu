@@ -60,6 +60,8 @@ export interface PolicyState {
   dailyActionCap: number | null;
   tickIntervalSec: number;
   unlimitedAi: boolean;
+  /** Workspace gate for the companion-side Ollama bridge. See ADR 001. */
+  ollamaEnabled: boolean;
 }
 
 export function AutonomyForm({
@@ -195,6 +197,33 @@ export function AutonomyForm({
             disabled={pending}
           />
           Unlimited AI — disable cost caps. Only enable if you really mean it.
+        </label>
+      </Card>
+
+      <Card>
+        <CardTitle>On-device inference (Ollama bridge)</CardTitle>
+        <p className="mt-1 text-xs text-[var(--color-fg-subtle)]">
+          When on, the Conductor may route LLM calls through a paired companion
+          device&apos;s local Ollama (`localhost:11434`). The companion still has
+          its own per-device toggle and every call is logged. See{' '}
+          <a
+            href="/docs/adr/001-ollama-bridge-security"
+            className="underline"
+            target="_blank"
+            rel="noreferrer"
+          >
+            ADR 001
+          </a>
+          .
+        </p>
+        <label className="mt-3 flex items-center gap-2 text-sm">
+          <input
+            type="checkbox"
+            checked={state.ollamaEnabled}
+            onChange={(e) => save({ ollamaEnabled: e.target.checked })}
+            disabled={pending}
+          />
+          Allow companion-side Ollama for this workspace
         </label>
       </Card>
 

@@ -404,6 +404,41 @@ export async function activate(ctx: vscode.ExtensionContext): Promise<void> {
   ctx.subscriptions.push(auth.onChange(() => void refreshResume()));
   const resumeTimer = setInterval(() => void refreshResume(), 5 * 60_000);
   ctx.subscriptions.push({ dispose: () => clearInterval(resumeTimer) });
+
+  // Capture-on-save (opt-in via `metu.captureOnSave`). Throttled per-file
+  // so a noisy formatter that re-saves every 200ms doesn't spam captures.
+  const lastSaveAt = new Map<string, number>();
+  const SAVE_THROTTLE_MS = 30_000;
+  ctx.subscriptions.push(
+    vscode.workspace.onDidSaveTextDocument(async (doc) => {
+      const cfg = vscode.workspace.getConfiguration('metu');
+      if (!cfg.get<boolean>('captureOnSave', false)) return;
+      if (!auth.token) return;
+      // Skip Untitled, scratch, output channels, and files outside a workspace.
+      if (doc.isUntitled || doc.uri.scheme !== 'file') return;
+      if (!vscode.workspace.getWorkspaceFolder(doc.uri)) return;
+      const now = Date.now();
+      const last = lastSaveAt.get(doc.uri.fsPath) ?? 0;
+      if (now - last < SAVE_THROTTLE_MS) return;
+      lastSaveAt.set(doc.uri.fsPath, now);
+      try {
+        const snippet = doc.getText().slice(0, 200);
+        await client.capture({
+          kind: 'code',
+          content: snippet,
+          source: 'vscode-ext',
+          metadata: {
+            file: doc.fileName,
+            languageId: doc.languageId,
+            event: 'save',
+          },
+        });
+      } catch {
+        // Silent — we don't want save-time noise. The user can run
+        // `metu: Capture` manually if it matters.
+      }
+    }),
+  );
 }
 
 export function deactivate(): void {

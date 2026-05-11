@@ -16,6 +16,7 @@ const updatePolicySchema = z.object({
   dailyActionCap: z.number().int().min(0).max(10000).nullable().optional(),
   tickIntervalSec: z.number().int().min(60).max(86400).optional(),
   unlimitedAi: z.boolean().optional(),
+  ollamaEnabled: z.boolean().optional(),
 });
 
 export type UpdatePolicyInput = z.infer<typeof updatePolicySchema>;
@@ -47,6 +48,7 @@ export async function updateAutonomyPolicyAction(input: UpdatePolicyInput) {
     dailyCostCapUsd: parsed.data.dailyCostCapUsd,
     dailyActionCap: parsed.data.dailyActionCap,
     tickIntervalSec: parsed.data.tickIntervalSec,
+    ollamaEnabled: parsed.data.ollamaEnabled,
   };
 
   if (existing) {

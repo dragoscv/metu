@@ -9,8 +9,7 @@
  * client island for the form interactions.
  */
 import { auth, signIn, signOut } from '@/auth';
-import { metuClient } from '@/lib/metu';
-import { NotaiClient } from './_island';
+import { NotesApp } from './_notes';
 
 export default async function HomePage() {
   const session = await auth();
@@ -49,24 +48,8 @@ export default async function HomePage() {
     );
   }
 
-  // Pull a few captures so the page has content the first time you sign in.
-  // Recall requires a non-empty query — we pick a generic prompt as a stand-in
-  // until notai grows a real list endpoint.
-  const metu = metuClient(accessToken);
-  let recent: Array<{ id: string; content: string | null; capturedAt: string }> = [];
-  try {
-    const hits = await metu.recall({ query: 'note', k: 5, mode: 'hybrid' });
-    recent = hits.map((h) => ({
-      id: h.id,
-      content: h.content ?? null,
-      capturedAt: new Date().toISOString(),
-    }));
-  } catch {
-    // Soft-fail — token may be stale; the island will surface live errors.
-  }
-
   return (
-    <main style={{ padding: '3rem 2rem', maxWidth: 720, margin: '0 auto' }}>
+    <main style={{ padding: '2rem', maxWidth: 1080, margin: '0 auto' }}>
       <header style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline' }}>
         <h1 style={{ fontSize: '2rem', margin: 0 }}>notai</h1>
         <form
@@ -89,10 +72,11 @@ export default async function HomePage() {
           </button>
         </form>
       </header>
-      <p style={{ color: '#9b9ba1', marginTop: 4 }}>
-        Signed in as {session.user?.email ?? session.user?.name ?? 'unknown'}
+      <p style={{ color: '#9b9ba1', marginTop: 4, marginBottom: 24 }}>
+        Signed in as {session.user?.email ?? session.user?.name ?? 'unknown'} · Notes auto-mirror
+        into your metu second brain.
       </p>
-      <NotaiClient initial={recent} accessToken={accessToken} />
+      <NotesApp token={accessToken} />
     </main>
   );
 }

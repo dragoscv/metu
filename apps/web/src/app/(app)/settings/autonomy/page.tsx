@@ -150,6 +150,7 @@ export default async function AutonomyPage() {
           dailyActionCap: policyRow?.dailyActionCap ?? 50,
           tickIntervalSec: policyRow?.tickIntervalSec ?? 300,
           unlimitedAi: wsRow?.unlimitedAi ?? false,
+          ollamaEnabled: policyRow?.ollamaEnabled ?? false,
         }}
         tools={toolRows}
         scopedRows={scopedRows}
