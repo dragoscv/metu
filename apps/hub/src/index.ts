@@ -18,12 +18,14 @@ import { serve } from '@hono/node-server';
 import type { Server } from 'node:http';
 import { Hono } from 'hono';
 import { WebSocketServer } from 'ws';
-import { log } from '@metu/logger';
+import { initNodeSentry, log } from '@metu/logger';
 import { authenticateHello } from './auth';
 import { registerInternalRoutes } from './internal';
 import { handleSocket } from './socket';
 import { registry } from './registry';
 import { consumeHandshakeBudget, exceedsConnectionCap, ipFromReq } from './limits';
+
+await initNodeSentry({ service: 'hub' });
 
 const port = Number(process.env.HUB_PORT ?? 24891);
 

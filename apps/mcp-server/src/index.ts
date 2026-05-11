@@ -28,11 +28,14 @@ import { StdioServerTransport } from '@modelcontextprotocol/sdk/server/stdio.js'
 import { StreamableHTTPServerTransport } from '@modelcontextprotocol/sdk/server/streamableHttp.js';
 import { CallToolRequestSchema, ListToolsRequestSchema } from '@modelcontextprotocol/sdk/types.js';
 import { z } from 'zod';
+import { initNodeSentry } from '@metu/logger';
 import { runTool, TOOLS, type ToolName } from '@metu/core/agent';
 import { runCompanionTurn } from '@metu/core/companion-agent';
 import { hashToken, parseScopes } from '@metu/auth/oauth';
 import { getDb } from '@metu/db';
 import { oauthToken } from '@metu/db/schema';
+
+await initNodeSentry({ service: 'mcp-server' });
 
 // ─── Token resolution ──────────────────────────────────────────────────────
 

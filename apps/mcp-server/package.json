@@ -14,6 +14,7 @@
     "@metu/auth": "workspace:*",
     "@metu/core": "workspace:*",
     "@metu/db": "workspace:*",
+    "@metu/logger": "workspace:*",
     "@metu/types": "workspace:*",
     "@modelcontextprotocol/sdk": "catalog:",
     "drizzle-orm": "catalog:",

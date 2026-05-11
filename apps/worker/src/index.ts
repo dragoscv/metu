@@ -13,8 +13,10 @@
 import http from 'node:http';
 import { timingSafeEqual } from 'node:crypto';
 import { z } from 'zod';
-import { log } from '@metu/logger';
+import { initNodeSentry, log } from '@metu/logger';
 import { transcribeFromUrl } from './handlers/transcribe';
+
+await initNodeSentry({ service: 'worker' });
 
 const PORT = Number(process.env.PORT ?? 24892);
 const TOKEN = process.env.WORKER_AUTH_TOKEN ?? '';

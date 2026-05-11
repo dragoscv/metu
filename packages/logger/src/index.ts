@@ -192,3 +192,5 @@ export function installConsoleRedactor(): boolean {
 export const __testOnlyResetConsoleRedactor = () => {
   _installed = false;
 };
+
+export { initNodeSentry } from './sentry';
