@@ -7,6 +7,7 @@ import { useEffect, useState, useTransition } from 'react';
 import { Button, cn } from '@metu/ui';
 import { archiveConversationAction, createSideChatAction } from '@/app/actions/conductor';
 import { NotificationsBell } from './notifications-bell';
+import { SidebarAutonomyPausedChip } from './sidebar-autonomy-paused-chip';
 import { useSidebar } from './sidebar/sidebar-provider';
 import { UserMenu } from './sidebar/user-menu';
 import { WorkspaceSwitcher, type WorkspaceOption } from './sidebar/workspace-switcher';
@@ -168,16 +169,7 @@ export function AppSidebar({
         </div>
 
         <div className="mt-auto border-t border-[var(--color-border)] p-2">
-          {autonomyPaused ? (
-            <Link
-              href="/dashboard"
-              className="bg-[var(--color-warning)]/10 hover:bg-[var(--color-warning)]/15 mb-2 flex items-center gap-2 rounded-md px-2 py-1.5 text-[11px] font-medium text-[var(--color-warning)]"
-              title="Autonomy is paused — open dashboard to resume"
-            >
-              <span className="h-1.5 w-1.5 shrink-0 animate-pulse rounded-full bg-[var(--color-warning)]" />
-              {!collapsed && <span>Autonomy paused</span>}
-            </Link>
-          ) : null}
+          {autonomyPaused ? <SidebarAutonomyPausedChip collapsed={collapsed} /> : null}
           {workspaces.length > 1 && activeWorkspaceId ? (
             <div className="mb-2">
               <WorkspaceSwitcher

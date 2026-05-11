@@ -5,7 +5,7 @@
  * All workspace-scoped via `auth()`. Inputs validated with Zod.
  */
 import { revalidatePath } from 'next/cache';
-import { and, count, desc, eq, lt, max, sql } from 'drizzle-orm';
+import { and, count, desc, eq, inArray, lt, max, sql } from 'drizzle-orm';
 import { z } from 'zod';
 import { auth } from '@metu/auth';
 import { getDb } from '@metu/db';
@@ -320,6 +320,31 @@ export async function deleteMemoryChunkAction(
     );
   revalidatePath('/memory');
   return { ok: true };
+}
+
+const bulkDeleteSchema = z.object({
+  ids: z.array(z.string().uuid()).min(1).max(200),
+});
+
+export async function bulkDeleteMemoryChunksAction(
+  input: z.input<typeof bulkDeleteSchema>,
+): Promise<{ ok: true; deleted: number } | { ok: false; error: string }> {
+  const session = await auth();
+  if (!session) return { ok: false, error: 'Unauthenticated' };
+  const parsed = bulkDeleteSchema.safeParse(input);
+  if (!parsed.success) return { ok: false, error: 'Invalid ids' };
+  const db = getDb();
+  const rows = await db
+    .delete(memoryChunk)
+    .where(
+      and(
+        inArray(memoryChunk.id, parsed.data.ids),
+        eq(memoryChunk.workspaceId, session.user.workspaceId),
+      ),
+    )
+    .returning();
+  revalidatePath('/memory');
+  return { ok: true, deleted: rows.length };
 }
 
 // ---------------------------------------------------------------------------

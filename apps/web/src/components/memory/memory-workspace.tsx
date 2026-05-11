@@ -35,6 +35,7 @@ import {
   type MemoryOverview,
   type MemoryRecallHit,
   type RecentRecallSearch,
+  bulkDeleteMemoryChunksAction,
   captureMemoryAction,
   deleteMemoryChunkAction,
   getMemoryOverviewAction,
@@ -58,6 +59,18 @@ export function MemoryWorkspace({ initialOverview, initialRecent, initialRecentC
   const [recentCursor, setRecentCursor] = useState<string | null>(initialRecentCursor);
   const [recentFilter, setRecentFilter] = useState<SourceKind | 'all'>('all');
   const [recentLoading, setRecentLoading] = useState(false);
+  const [selected, setSelected] = useState<Set<string>>(() => new Set());
+  const [bulkDeleting, setBulkDeleting] = useState(false);
+
+  const toggleSelected = useCallback((id: string) => {
+    setSelected((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
+  }, []);
+  const clearSelection = useCallback(() => setSelected(new Set()), []);
 
   const refreshOverview = useCallback(async () => {
     const r = await getMemoryOverviewAction();
@@ -114,6 +127,25 @@ export function MemoryWorkspace({ initialOverview, initialRecent, initialRecentC
     [reloadRecent, refreshOverview, recentFilter],
   );
 
+  const selectAllVisible = useCallback(() => {
+    setSelected(new Set(recent.map((r) => r.id)));
+  }, [recent]);
+
+  const handleBulkDelete = useCallback(async () => {
+    const ids = Array.from(selected);
+    if (ids.length === 0) return;
+    setBulkDeleting(true);
+    setRecent((prev) => prev.filter((r) => !selected.has(r.id)));
+    setOverview((prev) => ({ ...prev, total: Math.max(0, prev.total - ids.length) }));
+    const res = await bulkDeleteMemoryChunksAction({ ids });
+    if (!res.ok) {
+      await reloadRecent(recentFilter);
+    }
+    await refreshOverview();
+    setSelected(new Set());
+    setBulkDeleting(false);
+  }, [selected, reloadRecent, refreshOverview, recentFilter]);
+
   const onFilterChange = (next: SourceKind | 'all') => {
     setRecentFilter(next);
     void reloadRecent(next);
@@ -138,6 +170,12 @@ export function MemoryWorkspace({ initialOverview, initialRecent, initialRecentC
         onLoadMore={loadMoreRecent}
         onDelete={handleDelete}
         onRefresh={() => void reloadRecent(recentFilter)}
+        selected={selected}
+        onToggleSelected={toggleSelected}
+        onSelectAllVisible={selectAllVisible}
+        onClearSelection={clearSelection}
+        onBulkDelete={handleBulkDelete}
+        bulkDeleting={bulkDeleting}
       />
     </div>
   );
@@ -590,6 +628,12 @@ function RecentPanel({
   onLoadMore,
   onDelete,
   onRefresh,
+  selected,
+  onToggleSelected,
+  onSelectAllVisible,
+  onClearSelection,
+  onBulkDelete,
+  bulkDeleting,
 }: {
   items: MemoryChunkRow[];
   cursor: string | null;
@@ -600,15 +644,60 @@ function RecentPanel({
   onLoadMore: () => Promise<void> | void;
   onDelete: (id: string) => Promise<void> | void;
   onRefresh: () => void;
+  selected: Set<string>;
+  onToggleSelected: (id: string) => void;
+  onSelectAllVisible: () => void;
+  onClearSelection: () => void;
+  onBulkDelete: () => Promise<void> | void;
+  bulkDeleting: boolean;
 }) {
+  const selCount = selected.size;
+  const allVisibleSelected = items.length > 0 && items.every((i) => selected.has(i.id));
   return (
     <PageSection
       title="Recent memories"
       description="Most recent embedded chunks. Filter by source."
       actions={
-        <Button variant="ghost" size="sm" onClick={onRefresh} aria-label="Refresh recent memories">
-          <RefreshCw className={loading ? 'h-4 w-4 animate-spin' : 'h-4 w-4'} />
-        </Button>
+        <div className="flex items-center gap-2">
+          {selCount > 0 ? (
+            <>
+              <span className="text-xs text-[var(--color-fg-subtle)]">{selCount} selected</span>
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={onClearSelection}
+                disabled={bulkDeleting}
+              >
+                Clear
+              </Button>
+              <Button
+                variant="danger"
+                size="sm"
+                onClick={() => void onBulkDelete()}
+                disabled={bulkDeleting}
+              >
+                {bulkDeleting ? (
+                  <Loader2 className="mr-1 h-3.5 w-3.5 animate-spin" />
+                ) : (
+                  <Trash2 className="mr-1 h-3.5 w-3.5" />
+                )}
+                Forget {selCount}
+              </Button>
+            </>
+          ) : items.length > 0 ? (
+            <Button variant="ghost" size="sm" onClick={onSelectAllVisible}>
+              Select all
+            </Button>
+          ) : null}
+          <Button
+            variant="ghost"
+            size="sm"
+            onClick={onRefresh}
+            aria-label="Refresh recent memories"
+          >
+            <RefreshCw className={loading ? 'h-4 w-4 animate-spin' : 'h-4 w-4'} />
+          </Button>
+        </div>
       }
     >
       <KindFilterChips active={filter} onChange={onFilterChange} counts={kindCounts} />
@@ -626,9 +715,27 @@ function RecentPanel({
           />
         ) : (
           <ul className="divide-y divide-[var(--color-border)]">
+            {items.length > 0 ? (
+              <li className="flex items-center gap-2 py-2 text-xs text-[var(--color-fg-subtle)]">
+                <input
+                  type="checkbox"
+                  checked={allVisibleSelected}
+                  onChange={() => (allVisibleSelected ? onClearSelection() : onSelectAllVisible())}
+                  aria-label="Select all visible"
+                  className="h-3.5 w-3.5 cursor-pointer accent-[var(--color-brand)]"
+                />
+                <span>{allVisibleSelected ? 'All visible selected' : 'Select all visible'}</span>
+              </li>
+            ) : null}
             <AnimatePresence initial={false}>
               {items.map((m) => (
-                <RecentItem key={m.id} item={m} onDelete={onDelete} />
+                <RecentItem
+                  key={m.id}
+                  item={m}
+                  onDelete={onDelete}
+                  selected={selected.has(m.id)}
+                  onToggleSelected={onToggleSelected}
+                />
               ))}
             </AnimatePresence>
           </ul>
@@ -659,9 +766,13 @@ function RecentPanel({
 function RecentItem({
   item,
   onDelete,
+  selected,
+  onToggleSelected,
 }: {
   item: MemoryChunkRow;
   onDelete: (id: string) => Promise<void> | void;
+  selected: boolean;
+  onToggleSelected: (id: string) => void;
 }) {
   const [expanded, setExpanded] = useState(false);
   const meta = SOURCE_KIND_META[item.sourceKind] ?? {
@@ -685,6 +796,13 @@ function RecentItem({
       className="overflow-hidden"
     >
       <div className="group flex items-start gap-3 py-3">
+        <input
+          type="checkbox"
+          checked={selected}
+          onChange={() => onToggleSelected(item.id)}
+          aria-label="Select memory"
+          className="mt-1 h-3.5 w-3.5 shrink-0 cursor-pointer accent-[var(--color-brand)]"
+        />
         <Badge variant={meta.tone} size="xs" className="mt-0.5 shrink-0">
           <Icon className="h-3 w-3" />
           {meta.label}
