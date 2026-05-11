@@ -17,6 +17,8 @@
 //!   |              | device_media_key                                    |
 //!   | shell        | device_shell_exec (also requires METU_SHELL_ALLOWLIST) |
 //!   | mdns         | device_mdns_*                                       |
+//!   | window_track | device_window_track_start                           |
+//!   | fs_watch     | device_fs_watch_start                               |
 //!
 //! The companion UI surfaces a settings panel that writes this env into
 //! the Tauri `store` plugin and re-launches; we read it at command

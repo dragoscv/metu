@@ -25,6 +25,7 @@ mod input;
 mod mdns;
 mod screenshot;
 mod see;
+mod sensors;
 mod shell;
 mod windowing;
 
@@ -204,6 +205,45 @@ async fn device_move_window(args: MoveWindowArgs) -> Result<serde_json::Value, S
     Ok(serde_json::json!({ "ok": true }))
 }
 
+// ── Slice 6 — ambient sensors (window tracker + file watcher) ───────────
+
+#[tauri::command]
+async fn device_window_track_start(
+    app: tauri::AppHandle,
+    args: sensors::WindowTrackStartArgs,
+) -> Result<serde_json::Value, String> {
+    caps::require("window_track")?;
+    sensors::window_track_start(app, args)?;
+    Ok(serde_json::json!({ "ok": true }))
+}
+
+#[tauri::command]
+async fn device_window_track_stop() -> Result<serde_json::Value, String> {
+    sensors::window_track_stop()?;
+    Ok(serde_json::json!({ "ok": true }))
+}
+
+#[tauri::command]
+async fn device_fs_watch_start(
+    app: tauri::AppHandle,
+    args: sensors::FsWatchStartArgs,
+) -> Result<serde_json::Value, String> {
+    caps::require("fs_watch")?;
+    sensors::fs_watch_start(app, args)?;
+    Ok(serde_json::json!({ "ok": true }))
+}
+
+#[tauri::command]
+async fn device_fs_watch_stop() -> Result<serde_json::Value, String> {
+    sensors::fs_watch_stop()?;
+    Ok(serde_json::json!({ "ok": true }))
+}
+
+#[tauri::command]
+async fn device_sensors_status() -> Result<sensors::SensorStatus, String> {
+    sensors::status()
+}
+
 fn toggle_main_window<R: tauri::Runtime>(app: &tauri::AppHandle<R>) {
     if let Some(win) = app.get_webview_window("main") {
         let visible = win.is_visible().unwrap_or(false);
@@ -263,6 +303,11 @@ pub fn run() {
             device_shell_exec,
             device_focus_window,
             device_move_window,
+            device_window_track_start,
+            device_window_track_stop,
+            device_fs_watch_start,
+            device_fs_watch_stop,
+            device_sensors_status,
             forms::presence_hud_show,
             forms::presence_hud_hide,
             forms::presence_hud_toggle,

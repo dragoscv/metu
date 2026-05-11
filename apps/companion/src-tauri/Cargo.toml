@@ -59,6 +59,11 @@ windows = { version = "0.56", features = [
 # ValuePattern / TogglePattern out of the box.
 uiautomation = "0.25"
 
+# Slice 6 — ambient sensors: file-watcher + window-tracker.
+notify = "7"
+regex = "1"
+tokio = { version = "1", features = ["time", "macros", "rt"] }
+
 [features]
 default = []
 custom-protocol = ["tauri/custom-protocol"]
