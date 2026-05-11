@@ -22,6 +22,7 @@ import { ContinuityStrip } from '@/components/continuity-strip';
 import { PlanTabClient } from '@/components/dashboard/plan-tab-client';
 import { OnboardingChecklist } from '@/components/dashboard/onboarding-checklist';
 import { ProposedActionsStrip } from '@/components/dashboard/proposed-actions-strip';
+import { CostBudgetBanner } from '@/components/dashboard/cost-budget-banner';
 
 export default async function Dashboard({
   searchParams,
@@ -83,6 +84,7 @@ export default async function Dashboard({
           blocked={blocked}
         />
       )}
+      {tab === 'now' && <CostBudgetBanner workspaceId={workspaceId} />}
       {tab === 'now' && <ProposedActionsStrip workspaceId={workspaceId} />}
       {tab === 'now' && <OnboardingChecklist workspaceId={workspaceId} />}
       {tab === 'now' && <ContinuityStrip workspaceId={workspaceId} />}

@@ -1,6 +1,6 @@
 import { auth } from '@metu/auth';
 import { redirect } from 'next/navigation';
-import { and, desc, eq } from 'drizzle-orm';
+import { and, desc, eq, like } from 'drizzle-orm';
 import { Page, PageHeader, Card, Badge, cn } from '@metu/ui';
 import { Bell } from 'lucide-react';
 import { getDb } from '@metu/db';
@@ -18,7 +18,7 @@ type Urgency = (typeof URGENCY_VALUES)[number];
 export default async function NotificationsPage({
   searchParams,
 }: {
-  searchParams: Promise<{ urgency?: string }>;
+  searchParams: Promise<{ urgency?: string; source?: string }>;
 }) {
   const session = await auth();
   if (!session?.user?.id) redirect('/sign-in');
@@ -29,6 +29,16 @@ export default async function NotificationsPage({
   )
     ? (sp.urgency as Urgency)
     : null;
+
+  const sourceParam = sp.source ?? null;
+  const sourceFilter: { kind: 'exact'; value: string } | { kind: 'prefix'; value: string } | null =
+    sourceParam === 'conductor'
+      ? { kind: 'exact', value: 'conductor' }
+      : sourceParam === 'integration'
+        ? { kind: 'prefix', value: 'integration:' }
+        : sourceParam === 'app'
+          ? { kind: 'prefix', value: 'app:' }
+          : null;
 
   const db = getDb();
   const rows = await db
@@ -49,6 +59,11 @@ export default async function NotificationsPage({
         eq(notification.userId, session.user.id),
         eq(notification.workspaceId, session.user.workspaceId),
         urgencyFilter ? eq(notification.urgency, urgencyFilter) : undefined,
+        sourceFilter
+          ? sourceFilter.kind === 'exact'
+            ? eq(notification.source, sourceFilter.value)
+            : like(notification.source, `${sourceFilter.value}%`)
+          : undefined,
       ),
     )
     .orderBy(desc(notification.createdAt))
@@ -70,6 +85,7 @@ export default async function NotificationsPage({
         actions={<NotificationsActions hasUnread={unread.length > 0} />}
       />
       <UrgencyFilterChips active={urgencyFilter} />
+      <SourceFilterChips active={sourceParam} urgency={urgencyFilter} />
       {rows.length === 0 ? (
         <Card className="text-sm text-[var(--color-fg-muted)]">
           No notifications yet. The Conductor will surface things here as they happen.
@@ -138,6 +154,48 @@ function UrgencyFilterChips({ active }: { active: Urgency | null }) {
               isActive
                 ? 'bg-[var(--color-brand)]/10 border-[var(--color-brand)] text-[var(--color-brand)]'
                 : 'border-[var(--color-border)] text-[var(--color-fg-muted)] hover:bg-[var(--color-bg-overlay)]',
+            )}
+          >
+            {c.label}
+          </Link>
+        );
+      })}
+    </div>
+  );
+}
+
+function SourceFilterChips({
+  active,
+  urgency,
+}: {
+  active: string | null;
+  urgency: Urgency | null;
+}) {
+  const u = urgency ? `&urgency=${urgency}` : '';
+  const ub = urgency ? `?urgency=${urgency}` : '';
+  const chips: { label: string; href: string; value: string | null }[] = [
+    { label: 'Any source', href: `/notifications${ub}`, value: null },
+    { label: 'Conductor', href: `/notifications?source=conductor${u}`, value: 'conductor' },
+    {
+      label: 'Integrations',
+      href: `/notifications?source=integration${u}`,
+      value: 'integration',
+    },
+    { label: 'Apps', href: `/notifications?source=app${u}`, value: 'app' },
+  ];
+  return (
+    <div className="mb-3 flex flex-wrap gap-1.5">
+      {chips.map((c) => {
+        const isActive = c.value === active;
+        return (
+          <Link
+            key={c.label}
+            href={c.href}
+            className={cn(
+              'rounded-full border px-2.5 py-1 text-[11px] transition-colors',
+              isActive
+                ? 'border-[var(--color-fg-muted)] bg-[var(--color-bg-overlay)] text-[var(--color-fg)]'
+                : 'border-dashed border-[var(--color-border)] text-[var(--color-fg-subtle)] hover:bg-[var(--color-bg-overlay)]',
             )}
           >
             {c.label}
