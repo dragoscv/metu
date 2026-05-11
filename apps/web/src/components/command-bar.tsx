@@ -26,6 +26,7 @@ import {
   Zap,
 } from 'lucide-react';
 import { THEMES, useTheme } from './theme-provider';
+import { parseSlash } from '@/lib/slash';
 
 /**
  * Slash commands. Typed at the start of the input, they collapse the
@@ -91,10 +92,7 @@ export function CommandBar() {
   }, [open]);
 
   const trimmed = value.trim();
-  const slashMatch = trimmed.match(/^\/(\w+)\s*(.*)$/);
-  const slash = slashMatch
-    ? { cmd: '/' + slashMatch[1]!.toLowerCase(), arg: slashMatch[2] ?? '' }
-    : null;
+  const slash = parseSlash(trimmed);
 
   // Lazy-load the tool catalog the first time the user opens /tool. Cheap
   // GET; cached in component state for the lifetime of the page.

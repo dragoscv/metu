@@ -50,7 +50,12 @@ export function PageHeader({
         ) : null}
         <div className={cn('flex min-w-0 items-center gap-3', (back || eyebrow) && 'mt-1')}>
           {accent}
-          <h1 className={cn('min-w-0 truncate', titleClass)}>{title}</h1>
+          <h1
+            className={cn('min-w-0 truncate', titleClass)}
+            style={{ viewTransitionName: 'page-title' }}
+          >
+            {title}
+          </h1>
         </div>
         {description ? (
           <p className="mt-2 max-w-2xl text-sm text-[var(--color-fg-muted)]">{description}</p>

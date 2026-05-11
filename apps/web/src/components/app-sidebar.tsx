@@ -319,6 +319,10 @@ function LeafItem({
   return (
     <Link
       href={leaf.href}
+      // Next.js 16 opt-in: lets the browser run a View Transition for
+      // this navigation so shared `viewTransitionName` slots (page,
+      // page-title) morph between sibling routes.
+      {...({ viewTransition: true } as Record<string, unknown>)}
       title={collapsed ? `${leaf.label}${showBadge ? ` (${badge})` : ''}` : undefined}
       className={cn(
         'relative flex items-center gap-2.5 rounded-md px-2.5 py-2 text-sm transition-colors',

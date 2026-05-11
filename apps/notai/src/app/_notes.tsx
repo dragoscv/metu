@@ -8,29 +8,39 @@
  */
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
+  type NotaiFolder,
   type NotaiNote,
+  createFolder,
   createNote,
   deleteNote,
+  listFolders,
   listNotes,
   updateNote,
 } from '@/lib/notes';
 
 export function NotesApp({ token }: { token: string }) {
   const [notes, setNotes] = useState<NotaiNote[]>([]);
+  const [folders, setFolders] = useState<NotaiFolder[]>([]);
   const [activeId, setActiveId] = useState<string | null>(null);
+  const [activeFolder, setActiveFolder] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
   const [err, setErr] = useState<string | null>(null);
   const [savedAt, setSavedAt] = useState<number | null>(null);
   const saveTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
+  const visibleNotes = useMemo(
+    () => (activeFolder ? notes.filter((n) => n.folderId === activeFolder) : notes),
+    [notes, activeFolder],
+  );
   const active = useMemo(() => notes.find((n) => n.id === activeId) ?? null, [notes, activeId]);
 
   const refresh = useCallback(async () => {
     setLoading(true);
     setErr(null);
     try {
-      const fresh = await listNotes(token);
+      const [fresh, fls] = await Promise.all([listNotes(token), listFolders(token)]);
       setNotes(fresh);
+      setFolders(fls);
       if (!activeId && fresh[0]) setActiveId(fresh[0].id);
     } catch (e) {
       setErr(e instanceof Error ? e.message : 'load failed');
@@ -46,11 +56,23 @@ export function NotesApp({ token }: { token: string }) {
   async function onCreate() {
     setErr(null);
     try {
-      const n = await createNote(token, { title: 'Untitled', body: '' });
+      const n = await createNote(token, { title: 'Untitled', body: '', folderId: activeFolder });
       setNotes((prev) => [n, ...prev]);
       setActiveId(n.id);
     } catch (e) {
       setErr(e instanceof Error ? e.message : 'create failed');
+    }
+  }
+
+  async function onCreateFolder() {
+    const name = window.prompt('Folder name?');
+    if (!name?.trim()) return;
+    try {
+      const f = await createFolder(token, { name: name.trim() });
+      setFolders((prev) => [...prev, f]);
+      setActiveFolder(f.id);
+    } catch (e) {
+      setErr(e instanceof Error ? e.message : 'folder create failed');
     }
   }
 
@@ -106,15 +128,58 @@ export function NotesApp({ token }: { token: string }) {
             + New
           </button>
         </header>
+        <div style={{ borderBottom: '1px solid #2a2a32', padding: '0.4rem 0.5rem', display: 'flex', flexWrap: 'wrap', gap: 4, alignItems: 'center' }}>
+          <button
+            type="button"
+            onClick={() => setActiveFolder(null)}
+            style={{
+              fontSize: 11,
+              padding: '0.2rem 0.5rem',
+              borderRadius: 4,
+              border: 'none',
+              cursor: 'pointer',
+              background: activeFolder === null ? '#7c3aed' : 'transparent',
+              color: activeFolder === null ? 'white' : '#9b9ba1',
+            }}
+          >
+            All
+          </button>
+          {folders.map((f) => (
+            <button
+              key={f.id}
+              type="button"
+              onClick={() => setActiveFolder(f.id)}
+              style={{
+                fontSize: 11,
+                padding: '0.2rem 0.5rem',
+                borderRadius: 4,
+                border: 'none',
+                cursor: 'pointer',
+                background: activeFolder === f.id ? '#7c3aed' : 'transparent',
+                color: activeFolder === f.id ? 'white' : '#9b9ba1',
+              }}
+            >
+              {f.name}
+            </button>
+          ))}
+          <button
+            type="button"
+            onClick={onCreateFolder}
+            title="New folder"
+            style={{ marginLeft: 'auto', fontSize: 11, padding: '0.2rem 0.4rem', borderRadius: 4, border: '1px dashed #2a2a32', cursor: 'pointer', background: 'transparent', color: '#9b9ba1' }}
+          >
+            +
+          </button>
+        </div>
         <div style={{ overflowY: 'auto', flex: 1 }}>
-          {loading && notes.length === 0 ? (
+          {loading && visibleNotes.length === 0 ? (
             <p style={{ padding: '0.75rem', color: '#9b9ba1', fontSize: 12 }}>Loading…</p>
-          ) : notes.length === 0 ? (
+          ) : visibleNotes.length === 0 ? (
             <p style={{ padding: '0.75rem', color: '#9b9ba1', fontSize: 12 }}>
               No notes yet. Create one to seed your brain dump.
             </p>
           ) : (
-            notes.map((n) => (
+            visibleNotes.map((n) => (
               <button
                 key={n.id}
                 type="button"

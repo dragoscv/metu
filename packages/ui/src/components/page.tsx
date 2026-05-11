@@ -13,7 +13,14 @@ export interface PageProps {
  */
 export function Page({ children, className }: PageProps) {
   return (
-    <div className={cn('space-y-6', className)} data-page="">
+    <div
+      className={cn('space-y-6', className)}
+      data-page=""
+      // Cross-page shared-element transitions: Next.js 16's `viewTransition`
+      // prop on <Link> uses these names to morph between pages. Stable
+      // names per slot keep the transition smooth.
+      style={{ viewTransitionName: 'page' }}
+    >
       {children}
     </div>
   );

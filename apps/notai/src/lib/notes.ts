@@ -22,7 +22,7 @@ async function api<T>(
   path: string,
   init: RequestInit & { token: string },
 ): Promise<T> {
-  const res = await fetch(`${BASE}/api/sdk/v1/notai/notes${path}`, {
+  const res = await fetch(`${BASE}/api/sdk/v1/notai${path}`, {
     ...init,
     headers: {
       'content-type': 'application/json',
@@ -38,15 +38,15 @@ async function api<T>(
 }
 
 export async function listNotes(token: string): Promise<NotaiNote[]> {
-  const j = await api<{ notes: NotaiNote[] }>('', { method: 'GET', token });
+  const j = await api<{ notes: NotaiNote[] }>('/notes', { method: 'GET', token });
   return j.notes;
 }
 
 export async function createNote(
   token: string,
-  body: { title?: string; body?: string },
+  body: { title?: string; body?: string; folderId?: string | null },
 ): Promise<NotaiNote> {
-  const j = await api<{ note: NotaiNote }>('', {
+  const j = await api<{ note: NotaiNote }>('/notes', {
     method: 'POST',
     token,
     body: JSON.stringify(body),
@@ -57,9 +57,9 @@ export async function createNote(
 export async function updateNote(
   token: string,
   id: string,
-  patch: { title?: string; body?: string; pinned?: boolean },
+  patch: { title?: string; body?: string; pinned?: boolean; folderId?: string | null },
 ): Promise<NotaiNote> {
-  const j = await api<{ note: NotaiNote }>(`?id=${encodeURIComponent(id)}`, {
+  const j = await api<{ note: NotaiNote }>(`/notes?id=${encodeURIComponent(id)}`, {
     method: 'PUT',
     token,
     body: JSON.stringify(patch),
@@ -68,5 +68,34 @@ export async function updateNote(
 }
 
 export async function deleteNote(token: string, id: string): Promise<void> {
-  await api(`?id=${encodeURIComponent(id)}`, { method: 'DELETE', token });
+  await api(`/notes?id=${encodeURIComponent(id)}`, { method: 'DELETE', token });
+}
+
+export interface NotaiFolder {
+  id: string;
+  name: string;
+  parentId: string | null;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export async function listFolders(token: string): Promise<NotaiFolder[]> {
+  const j = await api<{ folders: NotaiFolder[] }>('/folders', { method: 'GET', token });
+  return j.folders;
+}
+
+export async function createFolder(
+  token: string,
+  body: { name: string; parentId?: string | null },
+): Promise<NotaiFolder> {
+  const j = await api<{ folder: NotaiFolder }>('/folders', {
+    method: 'POST',
+    token,
+    body: JSON.stringify(body),
+  });
+  return j.folder;
+}
+
+export async function deleteFolder(token: string, id: string): Promise<void> {
+  await api(`/folders?id=${encodeURIComponent(id)}`, { method: 'DELETE', token });
 }

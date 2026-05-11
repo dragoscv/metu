@@ -22,9 +22,13 @@
   "permissions": ["storage", "contextMenus", "activeTab", "scripting", "clipboardWrite"],
   "host_permissions": ["https://app.metu.ro/*", "http://localhost/*"],
   "background": { "service_worker": "background.js", "type": "module" },
+  "content_security_policy": {
+    "extension_pages": "script-src 'self'; object-src 'self'"
+  },
   "content_scripts": [
     {
-      "matches": ["<all_urls>"],
+      "matches": ["https://*/*", "http://*/*"],
+      "exclude_matches": ["https://app.metu.ro/*"],
       "js": ["content.js"],
       "run_at": "document_idle"
     }
