@@ -1,0 +1,98 @@
+import { auth } from '@metu/auth';
+import { redirect } from 'next/navigation';
+import { and, desc, eq } from 'drizzle-orm';
+import { Page, PageHeader, Card, Badge } from '@metu/ui';
+import { Bell } from 'lucide-react';
+import { getDb } from '@metu/db';
+import { notification } from '@metu/db/schema';
+import { NotificationsActions } from '@/components/notifications-actions';
+import Link from 'next/link';
+import { formatDistanceToNow } from 'date-fns';
+
+export const dynamic = 'force-dynamic';
+
+export default async function NotificationsPage() {
+  const session = await auth();
+  if (!session?.user?.id) redirect('/sign-in');
+
+  const db = getDb();
+  const rows = await db
+    .select({
+      id: notification.id,
+      title: notification.title,
+      body: notification.body,
+      urgency: notification.urgency,
+      source: notification.source,
+      actionUrl: notification.actionUrl,
+      readAt: notification.readAt,
+      acknowledgedAt: notification.acknowledgedAt,
+      createdAt: notification.createdAt,
+    })
+    .from(notification)
+    .where(
+      and(
+        eq(notification.userId, session.user.id),
+        eq(notification.workspaceId, session.user.workspaceId),
+      ),
+    )
+    .orderBy(desc(notification.createdAt))
+    .limit(100);
+
+  const unread = rows.filter((r) => r.acknowledgedAt === null);
+
+  return (
+    <Page className="mx-auto max-w-3xl">
+      <PageHeader
+        eyebrow={
+          <span className="inline-flex items-center gap-1.5">
+            <Bell className="h-3.5 w-3.5" />
+            Inbox
+          </span>
+        }
+        title="Notifications"
+        description={`${unread.length} unread of ${rows.length} recent`}
+        actions={<NotificationsActions hasUnread={unread.length > 0} />}
+      />
+      {rows.length === 0 ? (
+        <Card className="text-sm text-[var(--color-fg-muted)]">
+          No notifications yet. The Conductor will surface things here as they happen.
+        </Card>
+      ) : (
+        <div className="space-y-2">
+          {rows.map((r) => {
+            const Body = (
+              <Card
+                className={`space-y-1 ${
+                  r.acknowledgedAt === null ? 'border-[var(--color-brand)]/40' : 'opacity-70'
+                }`}
+              >
+                <div className="flex items-center justify-between gap-2">
+                  <div className="flex items-center gap-2 text-sm font-medium">
+                    {r.urgency === 'critical' ? (
+                      <Badge variant="danger">!</Badge>
+                    ) : r.urgency === 'high' ? (
+                      <Badge variant="warning">↑</Badge>
+                    ) : null}
+                    <span>{r.title}</span>
+                  </div>
+                  <span className="text-[11px] text-[var(--color-fg-subtle)]">
+                    {formatDistanceToNow(new Date(r.createdAt), { addSuffix: true })}
+                  </span>
+                </div>
+                {r.body ? <p className="text-sm text-[var(--color-fg-muted)]">{r.body}</p> : null}
+                <div className="text-[11px] text-[var(--color-fg-subtle)]">{r.source}</div>
+              </Card>
+            );
+            return r.actionUrl ? (
+              <Link key={r.id} href={r.actionUrl} className="block">
+                {Body}
+              </Link>
+            ) : (
+              <div key={r.id}>{Body}</div>
+            );
+          })}
+        </div>
+      )}
+    </Page>
+  );
+}
