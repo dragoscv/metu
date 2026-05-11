@@ -17,12 +17,32 @@ import {
   MessageSquare,
   Palette,
   Plug,
+  Search,
+  Send,
   Settings,
   ShieldCheck,
   Sparkles,
   Target,
+  Zap,
 } from 'lucide-react';
 import { THEMES, useTheme } from './theme-provider';
+
+/**
+ * Slash commands. Typed at the start of the input, they collapse the
+ * palette into a single dynamic action against the rest of the query.
+ *   /recall <query>  → navigate to /memory?q=...
+ *   /capture <text>  → open QuickCapture pre-filled
+ *   /focus           → recompute focus
+ *   /chat <prompt>   → send prompt to Conductor thread
+ *   /go <route>      → navigate to a route
+ */
+const SLASH_HELP: { cmd: string; hint: string; icon: typeof Search }[] = [
+  { cmd: '/recall', hint: 'search memory', icon: Search },
+  { cmd: '/capture', hint: 'fast capture', icon: Inbox },
+  { cmd: '/focus', hint: 'recompute focus', icon: Sparkles },
+  { cmd: '/chat', hint: 'send to Conductor', icon: MessageSquare },
+  { cmd: '/go', hint: 'navigate', icon: Zap },
+];
 
 const NAV_ITEMS = [
   { label: 'Now (focus)', href: '/dashboard', icon: Compass },
@@ -48,6 +68,7 @@ const ACTIONS = [{ label: 'Recompute focus', href: '/dashboard?recompute=1', ico
 
 export function CommandBar() {
   const [open, setOpen] = useState(false);
+  const [value, setValue] = useState('');
   const router = useRouter();
   const { setTheme } = useTheme();
 
@@ -61,6 +82,54 @@ export function CommandBar() {
     window.addEventListener('keydown', onKey);
     return () => window.removeEventListener('keydown', onKey);
   }, []);
+
+  // Reset query whenever we close so the next open is a clean slate.
+  useEffect(() => {
+    if (!open) setValue('');
+  }, [open]);
+
+  const trimmed = value.trim();
+  const slashMatch = trimmed.match(/^\/(\w+)\s*(.*)$/);
+  const slash = slashMatch
+    ? { cmd: '/' + slashMatch[1]!.toLowerCase(), arg: slashMatch[2] ?? '' }
+    : null;
+
+  function close() {
+    setOpen(false);
+  }
+
+  function runSlash() {
+    if (!slash) return;
+    switch (slash.cmd) {
+      case '/recall':
+        router.push(`/memory?q=${encodeURIComponent(slash.arg)}`);
+        close();
+        return;
+      case '/capture':
+        // Hand off to QuickCapture via a custom event; if no text was given
+        // it just opens the modal empty.
+        window.dispatchEvent(
+          new CustomEvent('metu:quick-capture', { detail: { text: slash.arg } }),
+        );
+        close();
+        return;
+      case '/focus':
+        router.push('/dashboard?recompute=1');
+        close();
+        return;
+      case '/chat':
+        router.push(`/chat?q=${encodeURIComponent(slash.arg)}`);
+        close();
+        return;
+      case '/go':
+        router.push(slash.arg.startsWith('/') ? slash.arg : `/${slash.arg}`);
+        close();
+        return;
+      default:
+        // Unknown slash — fall through to normal palette behaviour.
+        return;
+    }
+  }
 
   return (
     <AnimatePresence>
@@ -80,9 +149,17 @@ export function CommandBar() {
             className="w-full max-w-xl overflow-hidden rounded-xl border border-[var(--color-border)] bg-[var(--color-bg-card)] shadow-2xl"
             onClick={(e) => e.stopPropagation()}
           >
-            <Command label="Command palette">
+            <Command label="Command palette" shouldFilter={!slash}>
               <Command.Input
-                placeholder="Type a command or search..."
+                placeholder="Type a command, search, or /recall, /capture, /focus, /chat, /go…"
+                value={value}
+                onValueChange={setValue}
+                onKeyDown={(e) => {
+                  if (e.key === 'Enter' && slash) {
+                    e.preventDefault();
+                    runSlash();
+                  }
+                }}
                 className="w-full border-b border-[var(--color-border)] bg-transparent px-4 py-3 text-sm outline-none placeholder:text-[var(--color-fg-subtle)]"
                 autoFocus
               />
@@ -90,57 +167,103 @@ export function CommandBar() {
                 <Command.Empty className="px-3 py-8 text-center text-sm text-[var(--color-fg-subtle)]">
                   No results.
                 </Command.Empty>
-                <Command.Group heading="Navigate">
-                  {NAV_ITEMS.map((item) => (
+
+                {slash ? (
+                  <Command.Group heading="Slash command">
                     <Command.Item
-                      key={item.href}
-                      value={`nav ${item.label}`}
-                      onSelect={() => {
-                        router.push(item.href);
-                        setOpen(false);
-                      }}
+                      value={`slash ${slash.cmd}`}
+                      onSelect={runSlash}
                       className="flex cursor-pointer items-center gap-2 rounded-md px-3 py-2 text-sm aria-selected:bg-[var(--color-bg-elevated)]"
                     >
-                      <item.icon className="h-4 w-4 text-[var(--color-fg-muted)]" />
-                      {item.label}
-                    </Command.Item>
-                  ))}
-                </Command.Group>
-                <Command.Group heading="Actions">
-                  {ACTIONS.map((a) => (
-                    <Command.Item
-                      key={a.href}
-                      value={`action ${a.label}`}
-                      onSelect={() => {
-                        router.push(a.href);
-                        setOpen(false);
-                      }}
-                      className="flex cursor-pointer items-center gap-2 rounded-md px-3 py-2 text-sm aria-selected:bg-[var(--color-bg-elevated)]"
-                    >
-                      <a.icon className="h-4 w-4 text-[var(--color-fg-muted)]" />
-                      {a.label}
-                    </Command.Item>
-                  ))}
-                </Command.Group>
-                <Command.Group heading="Theme">
-                  {THEMES.map((t) => (
-                    <Command.Item
-                      key={t.name}
-                      value={`theme ${t.label}`}
-                      onSelect={() => {
-                        setTheme(t.name);
-                        setOpen(false);
-                      }}
-                      className="flex cursor-pointer items-center gap-2 rounded-md px-3 py-2 text-sm aria-selected:bg-[var(--color-bg-elevated)]"
-                    >
-                      <Palette className="h-4 w-4 text-[var(--color-fg-muted)]" />
-                      Switch to {t.label}
+                      <Send className="h-4 w-4 text-[var(--color-brand)]" />
+                      <span className="font-mono text-[var(--color-brand)]">{slash.cmd}</span>
+                      {slash.arg && <span className="text-[var(--color-fg)]">{slash.arg}</span>}
                       <span className="ml-auto text-[10px] text-[var(--color-fg-subtle)]">
-                        {t.hint}
+                        ↵ run
                       </span>
                     </Command.Item>
-                  ))}
-                </Command.Group>
+                    {SLASH_HELP.map((s) => (
+                      <Command.Item
+                        key={s.cmd}
+                        value={`slash-help ${s.cmd}`}
+                        onSelect={() => setValue(s.cmd + ' ')}
+                        className="flex cursor-pointer items-center gap-2 rounded-md px-3 py-2 text-xs text-[var(--color-fg-muted)] aria-selected:bg-[var(--color-bg-elevated)]"
+                      >
+                        <s.icon className="h-3.5 w-3.5" />
+                        <span className="font-mono">{s.cmd}</span>
+                        <span>— {s.hint}</span>
+                      </Command.Item>
+                    ))}
+                  </Command.Group>
+                ) : (
+                  <>
+                    <Command.Group heading="Navigate">
+                      {NAV_ITEMS.map((item) => (
+                        <Command.Item
+                          key={item.href}
+                          value={`nav ${item.label}`}
+                          onSelect={() => {
+                            router.push(item.href);
+                            close();
+                          }}
+                          className="flex cursor-pointer items-center gap-2 rounded-md px-3 py-2 text-sm aria-selected:bg-[var(--color-bg-elevated)]"
+                        >
+                          <item.icon className="h-4 w-4 text-[var(--color-fg-muted)]" />
+                          {item.label}
+                        </Command.Item>
+                      ))}
+                    </Command.Group>
+                    <Command.Group heading="Actions">
+                      {ACTIONS.map((a) => (
+                        <Command.Item
+                          key={a.href}
+                          value={`action ${a.label}`}
+                          onSelect={() => {
+                            router.push(a.href);
+                            close();
+                          }}
+                          className="flex cursor-pointer items-center gap-2 rounded-md px-3 py-2 text-sm aria-selected:bg-[var(--color-bg-elevated)]"
+                        >
+                          <a.icon className="h-4 w-4 text-[var(--color-fg-muted)]" />
+                          {a.label}
+                        </Command.Item>
+                      ))}
+                    </Command.Group>
+                    <Command.Group heading="Slash commands">
+                      {SLASH_HELP.map((s) => (
+                        <Command.Item
+                          key={s.cmd}
+                          value={`slash-hint ${s.cmd} ${s.hint}`}
+                          onSelect={() => setValue(s.cmd + ' ')}
+                          className="flex cursor-pointer items-center gap-2 rounded-md px-3 py-2 text-sm aria-selected:bg-[var(--color-bg-elevated)]"
+                        >
+                          <s.icon className="h-4 w-4 text-[var(--color-fg-muted)]" />
+                          <span className="font-mono text-[var(--color-fg)]">{s.cmd}</span>
+                          <span className="text-[var(--color-fg-subtle)]">— {s.hint}</span>
+                        </Command.Item>
+                      ))}
+                    </Command.Group>
+                    <Command.Group heading="Theme">
+                      {THEMES.map((t) => (
+                        <Command.Item
+                          key={t.name}
+                          value={`theme ${t.label}`}
+                          onSelect={() => {
+                            setTheme(t.name);
+                            close();
+                          }}
+                          className="flex cursor-pointer items-center gap-2 rounded-md px-3 py-2 text-sm aria-selected:bg-[var(--color-bg-elevated)]"
+                        >
+                          <Palette className="h-4 w-4 text-[var(--color-fg-muted)]" />
+                          Switch to {t.label}
+                          <span className="ml-auto text-[10px] text-[var(--color-fg-subtle)]">
+                            {t.hint}
+                          </span>
+                        </Command.Item>
+                      ))}
+                    </Command.Group>
+                  </>
+                )}
               </Command.List>
             </Command>
           </motion.div>

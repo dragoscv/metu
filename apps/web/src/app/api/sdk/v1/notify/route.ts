@@ -1,14 +1,16 @@
 /**
  * SDK v1 — POST /api/sdk/v1/notify
- * Bearer auth (`notify:write` scope). Records a notification row; the
- * notification fabric (slice 5) fans it out to subscribed devices.
+ * Bearer auth (`notify:write` scope). Routes through the notification fabric
+ * (`notify()`): writes the row, broadcasts via hub, and fans out to web push +
+ * Expo subscriptions. Also emits `conductor/observe` so the supervisor sees
+ * external notifications.
  */
 import { NextResponse } from 'next/server';
 import { NotifyCreateSchema } from '@metu/protocol';
-import { getDb } from '@metu/db';
-import { notification } from '@metu/db/schema';
 import { forbidden, hasScope, resolveSession, unauthorized } from '@/lib/bearer';
 import { rateLimit } from '@/lib/ratelimit';
+import { notify } from '@/lib/notify';
+import { inngest } from '@/inngest/client';
 
 export const runtime = 'nodejs';
 
@@ -29,20 +31,29 @@ export async function POST(req: Request) {
     );
   }
 
-  const db = getDb();
-  const [row] = await db
-    .insert(notification)
-    .values({
-      workspaceId: session.workspaceId,
-      userId: session.userId,
-      title: parsed.data.title,
-      body: parsed.data.body ?? null,
-      urgency: parsed.data.urgency,
-      source: parsed.data.source ?? 'app',
-      actionUrl: parsed.data.actionUrl ?? null,
-      metadata: session.clientId ? { oauthClientId: session.clientId } : {},
-    })
-    .returning();
+  const result = await notify({
+    workspaceId: session.workspaceId,
+    userId: session.userId,
+    title: parsed.data.title,
+    body: parsed.data.body ?? undefined,
+    urgency: parsed.data.urgency,
+    source: parsed.data.source ?? 'app',
+    actionUrl: parsed.data.actionUrl ?? undefined,
+    metadata: session.clientId ? { oauthClientId: session.clientId } : {},
+  });
 
-  return NextResponse.json({ ok: true, id: row!.id });
+  await inngest.send({
+    name: 'conductor/observe',
+    data: {
+      workspaceId: session.workspaceId,
+      eventKind: 'notification.created',
+      payload: {
+        notificationId: result.id,
+        source: parsed.data.source ?? 'app',
+        urgency: parsed.data.urgency,
+      },
+    },
+  });
+
+  return NextResponse.json({ ok: true, id: result.id, delivered: result.delivered });
 }

@@ -15,6 +15,20 @@ import { parseScopes } from '@metu/auth/oauth';
 import { findActiveTokenByHash } from './oauth-provider';
 import { safeEqual } from './safe-equal';
 
+// Module-load assertion: in any non-test environment, if the dev token is
+// configured at all it MUST be at least 32 chars. Stops a 4-char placeholder
+// like `dev` from accidentally granting full workspace access in CI / preview.
+const DEV_TOKEN_MIN_LEN = 32;
+if (
+  process.env.NODE_ENV !== 'test' &&
+  process.env.METU_DEV_API_TOKEN &&
+  process.env.METU_DEV_API_TOKEN.length < DEV_TOKEN_MIN_LEN
+) {
+  throw new Error(
+    `METU_DEV_API_TOKEN must be ≥ ${DEV_TOKEN_MIN_LEN} chars; got ${process.env.METU_DEV_API_TOKEN.length}.`,
+  );
+}
+
 export interface ResolvedSession {
   workspaceId: string;
   userId: string;

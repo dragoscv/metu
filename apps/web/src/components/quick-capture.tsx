@@ -23,8 +23,19 @@ export function QuickCapture() {
         setOpen(false);
       }
     };
+    // Allow other components (e.g. CommandBar `/capture`) to open us with
+    // optional pre-filled text.
+    const onOpen = (e: Event) => {
+      const detail = (e as CustomEvent<{ text?: string }>).detail;
+      if (detail?.text) setContent(detail.text);
+      setOpen(true);
+    };
     window.addEventListener('keydown', onKey);
-    return () => window.removeEventListener('keydown', onKey);
+    window.addEventListener('metu:quick-capture', onOpen);
+    return () => {
+      window.removeEventListener('keydown', onKey);
+      window.removeEventListener('metu:quick-capture', onOpen);
+    };
   }, [open]);
 
   function submit() {

@@ -32,9 +32,17 @@ export async function hubBroadcast(input: BroadcastInput): Promise<{ delivered: 
   const url = process.env.HUB_URL;
   const secret = process.env.HUB_INTERNAL_SECRET;
   if (!url || !secret) {
-    if (process.env.NODE_ENV !== 'production') {
-      log.warn('hub.broadcast.unconfigured');
+    if (process.env.NODE_ENV === 'production') {
+      // Hard-fail in production: a missing hub means tool.invoke and
+      // notifications silently never reach connected devices. Surface it
+      // loudly so the next page load shows the misconfiguration.
+      log.error('hub.broadcast.unconfigured_in_production', {
+        hasUrl: !!url,
+        hasSecret: !!secret,
+      });
+      throw new Error('HUB_URL and HUB_INTERNAL_SECRET must be set in production');
     }
+    log.warn('hub.broadcast.unconfigured');
     return null;
   }
   const ac = new AbortController();

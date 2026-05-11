@@ -3,6 +3,7 @@ import { github } from '@metu/integrations';
 import { getDb } from '@metu/db';
 import { timelineEvent } from '@metu/db/schema';
 import { projectsByGithubRepoGlobal } from '@metu/db/queries';
+import { inngest } from '@/inngest/client';
 
 export const runtime = 'nodejs';
 
@@ -148,6 +149,23 @@ export async function POST(req: Request) {
       metadata: described.metadata,
     })),
   );
+
+  // Fan to the conductor so the supervisor can react. One observe per
+  // workspace is enough — multiple projects in the same workspace get
+  // collapsed by the tick debounce.
+  const seen = new Set<string>();
+  for (const l of links) {
+    if (seen.has(l.workspaceId)) continue;
+    seen.add(l.workspaceId);
+    await inngest.send({
+      name: 'conductor/observe',
+      data: {
+        workspaceId: l.workspaceId,
+        eventKind: described.kind,
+        payload: { repo: fullName, projectId: l.projectId, ...described.metadata },
+      },
+    });
+  }
 
   return NextResponse.json({ ok: true, routed: links.length });
 }

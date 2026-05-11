@@ -9,7 +9,7 @@ import type { IncomingMessage } from 'node:http';
 import type { WebSocket } from 'ws';
 import { getDb } from '@metu/db';
 import { device, deviceEvent } from '@metu/db/schema';
-import { and, eq } from 'drizzle-orm';
+import { eq } from 'drizzle-orm';
 import { ClientEventSchema, HelloSchema, PROTOCOL_VERSION } from '@metu/protocol';
 import { log } from '@metu/logger';
 import type { AuthenticatedToken } from './auth';
@@ -18,6 +18,14 @@ import { consumeConnBudget, newConnBudget, MAX_FRAME_BYTES } from './limits';
 
 const PING_INTERVAL_MS = 30_000;
 const HANDSHAKE_TIMEOUT_MS = 10_000;
+
+/**
+ * Sensitive device kinds locked to specific OAuth client ids. Override via
+ * env so non-prod / staging can use different client rows.
+ */
+const REQUIRED_CLIENT_FOR_KIND: Partial<Record<string, string>> = {
+  companion_desktop: process.env.METU_COMPANION_CLIENT_ID ?? 'metu_app_companion',
+};
 
 export interface SocketDeps {
   authenticateHello: (token: string) => Promise<AuthenticatedToken | null>;
@@ -80,53 +88,51 @@ export async function handleSocket(
         return;
       }
 
-      const db = getDb();
-      // Upsert device row keyed on (workspace, user, fingerprint).
-      const existing = await db
-        .select()
-        .from(device)
-        .where(
-          and(
-            eq(device.workspaceId, token.workspaceId),
-            eq(device.userId, token.userId),
-            eq(device.fingerprint, hello.fingerprint),
-          ),
-        )
-        .limit(1);
-
-      let deviceId: string;
-      if (existing[0]) {
-        deviceId = existing[0].id;
-        await db
-          .update(device)
-          .set({
-            kind: hello.kind,
-            platform: hello.platform,
-            name: hello.name,
-            version: hello.version ?? null,
-            capabilities: hello.capabilities,
-            presence: 'online',
-            lastSeenAt: new Date(),
-          })
-          .where(eq(device.id, deviceId));
-      } else {
-        const [row] = await db
-          .insert(device)
-          .values({
-            workspaceId: token.workspaceId,
-            userId: token.userId,
-            kind: hello.kind,
-            platform: hello.platform,
-            name: hello.name,
-            fingerprint: hello.fingerprint,
-            version: hello.version ?? null,
-            capabilities: hello.capabilities,
-            presence: 'online',
-            lastSeenAt: new Date(),
-          })
-          .returning();
-        deviceId = row!.id;
+      // Bind sensitive device kinds to specific OAuth client ids so a
+      // leaked access token from any other client cannot impersonate a
+      // companion or vscode-ext (which may have richer ACLs).
+      const requiredClientId = REQUIRED_CLIENT_FOR_KIND[hello.kind];
+      if (requiredClientId && token.clientId !== requiredClientId) {
+        send({
+          v: 1,
+          type: 'error',
+          error: 'kind_clientid_mismatch',
+        });
+        ws.close(4003, 'kind_clientid_mismatch');
+        return;
       }
+
+      const db = getDb();
+      // Atomic upsert keyed by the existing unique index
+      // (workspaceId, userId, fingerprint) — no read-then-write race.
+      const [row] = await db
+        .insert(device)
+        .values({
+          workspaceId: token.workspaceId,
+          userId: token.userId,
+          kind: hello.kind,
+          platform: hello.platform,
+          name: hello.name,
+          fingerprint: hello.fingerprint,
+          version: hello.version ?? null,
+          capabilities: hello.capabilities,
+          presence: 'online',
+          lastSeenAt: new Date(),
+        })
+        .onConflictDoUpdate({
+          target: [device.workspaceId, device.userId, device.fingerprint],
+          set: {
+            kind: hello.kind,
+            platform: hello.platform,
+            name: hello.name,
+            version: hello.version ?? null,
+            capabilities: hello.capabilities,
+            presence: 'online',
+            lastSeenAt: new Date(),
+          },
+        })
+        .returning();
+      const deviceId: string = row!.id;
 
       clearTimeout(handshakeTimer);
 

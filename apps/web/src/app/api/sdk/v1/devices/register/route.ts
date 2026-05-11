@@ -13,7 +13,6 @@
  */
 import { NextResponse } from 'next/server';
 import { z } from 'zod';
-import { and, eq } from 'drizzle-orm';
 import { getDb } from '@metu/db';
 import { device } from '@metu/db/schema';
 import { forbidden, hasScope, resolveSession, unauthorized } from '@/lib/bearer';
@@ -58,34 +57,8 @@ export async function POST(req: Request) {
   }
 
   const db = getDb();
-  const [existing] = await db
-    .select({ id: device.id })
-    .from(device)
-    .where(
-      and(
-        eq(device.workspaceId, session.workspaceId),
-        eq(device.userId, session.userId),
-        eq(device.fingerprint, parsed.data.fingerprint),
-      ),
-    )
-    .limit(1);
-
-  if (existing) {
-    await db
-      .update(device)
-      .set({
-        kind: parsed.data.kind,
-        platform: parsed.data.platform,
-        name: parsed.data.name,
-        version: parsed.data.version ?? null,
-        capabilities: parsed.data.capabilities,
-        lastSeenAt: new Date(),
-      })
-      .where(eq(device.id, existing.id));
-    return NextResponse.json({ ok: true, deviceId: existing.id, created: false });
-  }
-
-  const [created] = await db
+  // Atomic upsert keyed on (workspaceId, userId, fingerprint).
+  const [row] = await db
     .insert(device)
     .values({
       workspaceId: session.workspaceId,
@@ -98,9 +71,20 @@ export async function POST(req: Request) {
       capabilities: parsed.data.capabilities,
       lastSeenAt: new Date(),
     })
+    .onConflictDoUpdate({
+      target: [device.workspaceId, device.userId, device.fingerprint],
+      set: {
+        kind: parsed.data.kind,
+        platform: parsed.data.platform,
+        name: parsed.data.name,
+        version: parsed.data.version ?? null,
+        capabilities: parsed.data.capabilities,
+        lastSeenAt: new Date(),
+      },
+    })
     .returning();
-  if (!created) {
+  if (!row) {
     return NextResponse.json({ ok: false, error: 'persist_failed' }, { status: 500 });
   }
-  return NextResponse.json({ ok: true, deviceId: created.id, created: true });
+  return NextResponse.json({ ok: true, deviceId: row.id });
 }
