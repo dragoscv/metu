@@ -18,6 +18,7 @@ use tauri_plugin_global_shortcut::{Code, GlobalShortcutExt, Modifiers, Shortcut,
 use tauri_plugin_shell::ShellExt;
 
 mod a11y;
+mod caps;
 mod forms;
 mod fs;
 mod input;
@@ -33,6 +34,7 @@ mod windowing;
 async fn device_screenshot(
     args: screenshot::ScreenshotArgs,
 ) -> Result<screenshot::ScreenshotResult, String> {
+    caps::require("screenshot")?;
     // xcap is sync + may block; punt to a blocking thread so we don't stall
     // the Tauri event loop.
     tauri::async_runtime::spawn_blocking(move || screenshot::capture(args))
@@ -42,6 +44,7 @@ async fn device_screenshot(
 
 #[tauri::command]
 async fn device_list_windows() -> Result<Vec<windowing::WindowInfo>, String> {
+    caps::require("windows_read")?;
     tauri::async_runtime::spawn_blocking(windowing::list_windows)
         .await
         .map_err(|e| format!("join_failed: {e}"))?
@@ -49,6 +52,7 @@ async fn device_list_windows() -> Result<Vec<windowing::WindowInfo>, String> {
 
 #[tauri::command]
 async fn device_a11y_tree(args: a11y::A11yArgs) -> Result<a11y::A11yTree, String> {
+    caps::require("a11y_read")?;
     tauri::async_runtime::spawn_blocking(move || a11y::read(args))
         .await
         .map_err(|e| format!("join_failed: {e}"))?
@@ -58,6 +62,7 @@ async fn device_a11y_tree(args: a11y::A11yArgs) -> Result<a11y::A11yTree, String
 
 #[tauri::command]
 async fn device_a11y_find(args: a11y::A11yFindArgs) -> Result<a11y::A11yFindResult, String> {
+    caps::require("a11y_read")?;
     tauri::async_runtime::spawn_blocking(move || a11y::find(args))
         .await
         .map_err(|e| format!("join_failed: {e}"))?
@@ -65,6 +70,7 @@ async fn device_a11y_find(args: a11y::A11yFindArgs) -> Result<a11y::A11yFindResu
 
 #[tauri::command]
 async fn device_a11y_invoke(args: a11y::A11yActionArgs) -> Result<a11y::A11yActionResult, String> {
+    caps::require("a11y_invoke")?;
     tauri::async_runtime::spawn_blocking(move || a11y::invoke(args))
         .await
         .map_err(|e| format!("join_failed: {e}"))?
@@ -74,6 +80,7 @@ async fn device_a11y_invoke(args: a11y::A11yActionArgs) -> Result<a11y::A11yActi
 async fn device_a11y_set_value(
     args: a11y::A11yActionArgs,
 ) -> Result<a11y::A11yActionResult, String> {
+    caps::require("a11y_invoke")?;
     tauri::async_runtime::spawn_blocking(move || a11y::set_value(args))
         .await
         .map_err(|e| format!("join_failed: {e}"))?
@@ -83,6 +90,7 @@ async fn device_a11y_set_value(
 
 #[tauri::command]
 async fn device_see(args: see::SeeArgs) -> Result<see::SeeResult, String> {
+    caps::require("screenshot")?;
     tauri::async_runtime::spawn_blocking(move || see::see(args))
         .await
         .map_err(|e| format!("join_failed: {e}"))?
@@ -92,6 +100,7 @@ async fn device_see(args: see::SeeArgs) -> Result<see::SeeResult, String> {
 
 #[tauri::command]
 async fn device_type_text(args: input::TypeTextArgs) -> Result<input::InputOk, String> {
+    caps::require("input")?;
     tauri::async_runtime::spawn_blocking(move || input::type_text(args))
         .await
         .map_err(|e| format!("join_failed: {e}"))?
@@ -99,6 +108,7 @@ async fn device_type_text(args: input::TypeTextArgs) -> Result<input::InputOk, S
 
 #[tauri::command]
 async fn device_send_keys(args: input::SendKeysArgs) -> Result<input::InputOk, String> {
+    caps::require("input")?;
     tauri::async_runtime::spawn_blocking(move || input::send_keys(args))
         .await
         .map_err(|e| format!("join_failed: {e}"))?
@@ -106,6 +116,7 @@ async fn device_send_keys(args: input::SendKeysArgs) -> Result<input::InputOk, S
 
 #[tauri::command]
 async fn device_click(args: input::ClickArgs) -> Result<input::InputOk, String> {
+    caps::require("input")?;
     tauri::async_runtime::spawn_blocking(move || input::click(args))
         .await
         .map_err(|e| format!("join_failed: {e}"))?
@@ -113,6 +124,7 @@ async fn device_click(args: input::ClickArgs) -> Result<input::InputOk, String> 
 
 #[tauri::command]
 async fn device_media_key(args: input::MediaKeyArgs) -> Result<input::InputOk, String> {
+    caps::require("input")?;
     tauri::async_runtime::spawn_blocking(move || input::media_key(args))
         .await
         .map_err(|e| format!("join_failed: {e}"))?
@@ -143,6 +155,7 @@ async fn device_fs_list_roots() -> Result<fs::FsRootsResult, String> {
 
 #[tauri::command]
 async fn device_shell_exec(args: shell::ShellExecArgs) -> Result<shell::ShellExecResult, String> {
+    caps::require("shell")?;
     tauri::async_runtime::spawn_blocking(move || shell::exec(args))
         .await
         .map_err(|e| format!("join_failed: {e}"))?

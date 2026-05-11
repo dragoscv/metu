@@ -96,6 +96,10 @@ export async function createFolder(
   return j.folder;
 }
 
+export async function renameFolder(token: string, id: string, name: string): Promise<void> {
+  await api('/folders', { method: 'PATCH', token, body: JSON.stringify({ id, name }) });
+}
+
 export async function deleteFolder(token: string, id: string): Promise<void> {
   await api(`/folders?id=${encodeURIComponent(id)}`, { method: 'DELETE', token });
 }

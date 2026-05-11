@@ -73,6 +73,11 @@ export function ProviderCredentialForm() {
             if (r.ok) {
               toast.success('Saved.');
               setApiKey('');
+            } else if (r.error === 'plan_required') {
+              toast.error(
+                `Free tier allows 1 provider. Upgrade to Starter+ to add more.`,
+                { action: { label: 'Upgrade', onClick: () => (window.location.href = '/settings/billing') } },
+              );
             } else toast.error(r.error ?? 'Failed');
           })
         }

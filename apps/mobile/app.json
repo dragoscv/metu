@@ -19,6 +19,12 @@
       "package": "ro.metu.app",
       "permissions": ["RECORD_AUDIO"]
     },
-    "plugins": ["expo-router", "expo-secure-store", "expo-notifications"]
+    "plugins": ["expo-router", "expo-secure-store", "expo-notifications"],
+    "extra": {
+      "eas": {
+        "_comment": "Run `eas init` from apps/mobile and replace this with the printed projectId. Without it, getExpoPushTokenAsync rejects with no_eas_project_id.",
+        "projectId": ""
+      }
+    }
   }
 }

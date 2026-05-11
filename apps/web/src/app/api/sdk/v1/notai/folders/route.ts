@@ -63,6 +63,42 @@ export async function POST(req: Request) {
   return NextResponse.json({ ok: true, folder: rows[0] });
 }
 
+const PatchSchema = z.object({
+  id: z.string().uuid(),
+  name: z.string().min(1).max(80),
+});
+
+export async function PATCH(req: Request) {
+  const session = await resolveSession(req);
+  if (!session) return unauthorized();
+  if (!hasScope(session, 'capture:write')) return forbidden();
+  const limited = await rateLimit('sdk-write', session.userId);
+  if (limited) return limited;
+
+  const json = await req.json().catch(() => null);
+  const parsed = PatchSchema.safeParse(json);
+  if (!parsed.success) {
+    return NextResponse.json(
+      { ok: false, error: parsed.error.issues[0]?.message ?? 'invalid' },
+      { status: 400 },
+    );
+  }
+
+  const db = getDb();
+  await db
+    .update(notaiFolder)
+    .set({ name: parsed.data.name, updatedAt: new Date() })
+    .where(
+      and(
+        eq(notaiFolder.id, parsed.data.id),
+        eq(notaiFolder.workspaceId, session.workspaceId),
+        eq(notaiFolder.userId, session.userId),
+        isNull(notaiFolder.deletedAt),
+      ),
+    );
+  return NextResponse.json({ ok: true });
+}
+
 export async function DELETE(req: Request) {
   const session = await resolveSession(req);
   if (!session) return unauthorized();

@@ -12,9 +12,11 @@ import {
   type NotaiNote,
   createFolder,
   createNote,
+  deleteFolder,
   deleteNote,
   listFolders,
   listNotes,
+  renameFolder,
   updateNote,
 } from '@/lib/notes';
 
@@ -73,6 +75,34 @@ export function NotesApp({ token }: { token: string }) {
       setActiveFolder(f.id);
     } catch (e) {
       setErr(e instanceof Error ? e.message : 'folder create failed');
+    }
+  }
+
+  async function onRenameFolder(f: NotaiFolder) {
+    const name = window.prompt('Rename folder', f.name);
+    if (!name?.trim() || name.trim() === f.name) return;
+    const next = name.trim();
+    try {
+      await renameFolder(token, f.id, next);
+      setFolders((prev) => prev.map((x) => (x.id === f.id ? { ...x, name: next } : x)));
+    } catch (e) {
+      setErr(e instanceof Error ? e.message : 'folder rename failed');
+    }
+  }
+
+  async function onDeleteFolder(f: NotaiFolder) {
+    if (!window.confirm(`Delete folder "${f.name}"? Notes inside will move to All.`)) return;
+    try {
+      await deleteFolder(token, f.id);
+      setFolders((prev) => prev.filter((x) => x.id !== f.id));
+      // Notes whose folderId pointed here become "All" via the FK ON DELETE SET NULL —
+      // mirror that locally so the next render is consistent without a refetch.
+      setNotes((prev) =>
+        prev.map((n) => (n.folderId === f.id ? { ...n, folderId: null } : n)),
+      );
+      if (activeFolder === f.id) setActiveFolder(null);
+    } catch (e) {
+      setErr(e instanceof Error ? e.message : 'folder delete failed');
     }
   }
 
@@ -149,6 +179,12 @@ export function NotesApp({ token }: { token: string }) {
               key={f.id}
               type="button"
               onClick={() => setActiveFolder(f.id)}
+              onDoubleClick={() => onRenameFolder(f)}
+              onContextMenu={(e) => {
+                e.preventDefault();
+                onDeleteFolder(f);
+              }}
+              title="Click to filter · double-click to rename · right-click to delete"
               style={{
                 fontSize: 11,
                 padding: '0.2rem 0.5rem',
@@ -194,6 +230,9 @@ export function NotesApp({ token }: { token: string }) {
                   borderBottom: '1px solid #1a1a20',
                   padding: '0.6rem 0.75rem',
                   cursor: 'pointer',
+                  // Per-row view-transition name lets browsers animate
+                  // reorder / delete when the list changes (Chrome 111+).
+                  viewTransitionName: `notai-note-${n.id}`,
                 }}
               >
                 <div style={{ fontSize: 13, fontWeight: 600, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
