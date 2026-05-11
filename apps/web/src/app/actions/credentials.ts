@@ -50,7 +50,12 @@ export async function upsertProviderCredentialAction(input: UpsertProviderCreden
         config: parsed.data.config,
         isDefault: parsed.data.isDefault ? 1 : 0,
       })
-      .where(eq(providerCredential.id, existing[0].id));
+      .where(
+        and(
+          eq(providerCredential.id, existing[0].id),
+          eq(providerCredential.workspaceId, session.user.workspaceId),
+        ),
+      );
   } else {
     // Plan-gate: count existing distinct providers (excluding copilot
     // which has its own OAuth flow). Free tier caps at FREE_PROVIDER_LIMIT.
@@ -58,7 +63,9 @@ export async function upsertProviderCredentialAction(input: UpsertProviderCreden
       .selectDistinct({ provider: providerCredential.provider })
       .from(providerCredential)
       .where(eq(providerCredential.workspaceId, session.user.workspaceId));
-    const distinct = owned.filter((r) => r.provider !== 'copilot' && r.provider !== parsed.data.provider).length;
+    const distinct = owned.filter(
+      (r) => r.provider !== 'copilot' && r.provider !== parsed.data.provider,
+    ).length;
     if (distinct >= FREE_PROVIDER_LIMIT) {
       const gate = await requireTier(session.user.workspaceId, 'starter');
       if (!gate.ok) {

@@ -25,15 +25,20 @@ export function NotesApp({ token }: { token: string }) {
   const [folders, setFolders] = useState<NotaiFolder[]>([]);
   const [activeId, setActiveId] = useState<string | null>(null);
   const [activeFolder, setActiveFolder] = useState<string | null>(null);
+  const [search, setSearch] = useState('');
   const [loading, setLoading] = useState(true);
   const [err, setErr] = useState<string | null>(null);
   const [savedAt, setSavedAt] = useState<number | null>(null);
   const saveTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
-  const visibleNotes = useMemo(
-    () => (activeFolder ? notes.filter((n) => n.folderId === activeFolder) : notes),
-    [notes, activeFolder],
-  );
+  const visibleNotes = useMemo(() => {
+    let xs = activeFolder ? notes.filter((n) => n.folderId === activeFolder) : notes;
+    const q = search.trim().toLowerCase();
+    if (q) {
+      xs = xs.filter((n) => n.title.toLowerCase().includes(q) || n.body.toLowerCase().includes(q));
+    }
+    return xs;
+  }, [notes, activeFolder, search]);
   const active = useMemo(() => notes.find((n) => n.id === activeId) ?? null, [notes, activeId]);
 
   const refresh = useCallback(async () => {
@@ -97,9 +102,7 @@ export function NotesApp({ token }: { token: string }) {
       setFolders((prev) => prev.filter((x) => x.id !== f.id));
       // Notes whose folderId pointed here become "All" via the FK ON DELETE SET NULL —
       // mirror that locally so the next render is consistent without a refetch.
-      setNotes((prev) =>
-        prev.map((n) => (n.folderId === f.id ? { ...n, folderId: null } : n)),
-      );
+      setNotes((prev) => prev.map((n) => (n.folderId === f.id ? { ...n, folderId: null } : n)));
       if (activeFolder === f.id) setActiveFolder(null);
     } catch (e) {
       setErr(e instanceof Error ? e.message : 'folder delete failed');
@@ -146,19 +149,58 @@ export function NotesApp({ token }: { token: string }) {
       }}
     >
       <aside
-        style={{ borderRight: '1px solid #2a2a32', background: '#0f0f12', display: 'flex', flexDirection: 'column' }}
+        style={{
+          borderRight: '1px solid #2a2a32',
+          background: '#0f0f12',
+          display: 'flex',
+          flexDirection: 'column',
+        }}
       >
-        <header style={{ padding: '0.75rem', borderBottom: '1px solid #2a2a32', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-          <span style={{ fontSize: 12, color: '#9b9ba1', textTransform: 'uppercase', letterSpacing: 0.5 }}>Notes</span>
+        <header
+          style={{
+            padding: '0.75rem',
+            borderBottom: '1px solid #2a2a32',
+            display: 'flex',
+            justifyContent: 'space-between',
+            alignItems: 'center',
+          }}
+        >
+          <span
+            style={{
+              fontSize: 12,
+              color: '#9b9ba1',
+              textTransform: 'uppercase',
+              letterSpacing: 0.5,
+            }}
+          >
+            Notes
+          </span>
           <button
             type="button"
             onClick={onCreate}
-            style={{ background: '#7c3aed', color: 'white', border: 'none', borderRadius: 6, padding: '0.25rem 0.6rem', fontSize: 12, cursor: 'pointer' }}
+            style={{
+              background: '#7c3aed',
+              color: 'white',
+              border: 'none',
+              borderRadius: 6,
+              padding: '0.25rem 0.6rem',
+              fontSize: 12,
+              cursor: 'pointer',
+            }}
           >
             + New
           </button>
         </header>
-        <div style={{ borderBottom: '1px solid #2a2a32', padding: '0.4rem 0.5rem', display: 'flex', flexWrap: 'wrap', gap: 4, alignItems: 'center' }}>
+        <div
+          style={{
+            borderBottom: '1px solid #2a2a32',
+            padding: '0.4rem 0.5rem',
+            display: 'flex',
+            flexWrap: 'wrap',
+            gap: 4,
+            alignItems: 'center',
+          }}
+        >
           <button
             type="button"
             onClick={() => setActiveFolder(null)}
@@ -202,10 +244,37 @@ export function NotesApp({ token }: { token: string }) {
             type="button"
             onClick={onCreateFolder}
             title="New folder"
-            style={{ marginLeft: 'auto', fontSize: 11, padding: '0.2rem 0.4rem', borderRadius: 4, border: '1px dashed #2a2a32', cursor: 'pointer', background: 'transparent', color: '#9b9ba1' }}
+            style={{
+              marginLeft: 'auto',
+              fontSize: 11,
+              padding: '0.2rem 0.4rem',
+              borderRadius: 4,
+              border: '1px dashed #2a2a32',
+              cursor: 'pointer',
+              background: 'transparent',
+              color: '#9b9ba1',
+            }}
           >
             +
           </button>
+        </div>
+        <div style={{ borderBottom: '1px solid #2a2a32', padding: '0.4rem 0.5rem' }}>
+          <input
+            type="search"
+            value={search}
+            onChange={(e) => setSearch(e.target.value)}
+            placeholder="Search title or body…"
+            style={{
+              width: '100%',
+              background: '#1c1c22',
+              color: '#e7e7ea',
+              border: '1px solid #2a2a32',
+              borderRadius: 4,
+              padding: '0.3rem 0.5rem',
+              fontSize: 12,
+              outline: 'none',
+            }}
+          />
         </div>
         <div style={{ overflowY: 'auto', flex: 1 }}>
           {loading && visibleNotes.length === 0 ? (
@@ -235,10 +304,26 @@ export function NotesApp({ token }: { token: string }) {
                   viewTransitionName: `notai-note-${n.id}`,
                 }}
               >
-                <div style={{ fontSize: 13, fontWeight: 600, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                <div
+                  style={{
+                    fontSize: 13,
+                    fontWeight: 600,
+                    overflow: 'hidden',
+                    textOverflow: 'ellipsis',
+                    whiteSpace: 'nowrap',
+                  }}
+                >
                   {n.title || 'Untitled'}
                 </div>
-                <div style={{ fontSize: 11, color: '#9b9ba1', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                <div
+                  style={{
+                    fontSize: 11,
+                    color: '#9b9ba1',
+                    overflow: 'hidden',
+                    textOverflow: 'ellipsis',
+                    whiteSpace: 'nowrap',
+                  }}
+                >
                   {n.body.slice(0, 60) || 'Empty'}
                 </div>
               </button>
@@ -250,12 +335,28 @@ export function NotesApp({ token }: { token: string }) {
       <section style={{ display: 'flex', flexDirection: 'column' }}>
         {active ? (
           <>
-            <header style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '0.6rem 0.9rem', borderBottom: '1px solid #2a2a32' }}>
+            <header
+              style={{
+                display: 'flex',
+                justifyContent: 'space-between',
+                alignItems: 'center',
+                padding: '0.6rem 0.9rem',
+                borderBottom: '1px solid #2a2a32',
+              }}
+            >
               <input
                 value={active.title}
                 onChange={(e) => patchActive({ title: e.target.value })}
                 placeholder="Untitled"
-                style={{ flex: 1, background: 'transparent', color: '#e7e7ea', border: 'none', fontSize: 16, fontWeight: 600, outline: 'none' }}
+                style={{
+                  flex: 1,
+                  background: 'transparent',
+                  color: '#e7e7ea',
+                  border: 'none',
+                  fontSize: 16,
+                  fontWeight: 600,
+                  outline: 'none',
+                }}
               />
               <span style={{ fontSize: 11, color: '#9b9ba1', marginRight: 12 }}>
                 {savedAt ? `Saved ${new Date(savedAt).toLocaleTimeString()}` : 'Auto-saves'}
@@ -263,7 +364,15 @@ export function NotesApp({ token }: { token: string }) {
               <button
                 type="button"
                 onClick={() => onDelete(active.id)}
-                style={{ background: 'transparent', color: '#f87171', border: '1px solid #2a2a32', borderRadius: 6, padding: '0.25rem 0.6rem', fontSize: 12, cursor: 'pointer' }}
+                style={{
+                  background: 'transparent',
+                  color: '#f87171',
+                  border: '1px solid #2a2a32',
+                  borderRadius: 6,
+                  padding: '0.25rem 0.6rem',
+                  fontSize: 12,
+                  cursor: 'pointer',
+                }}
               >
                 Delete
               </button>
@@ -272,17 +381,38 @@ export function NotesApp({ token }: { token: string }) {
               value={active.body}
               onChange={(e) => patchActive({ body: e.target.value })}
               placeholder="Start typing… every save flows into your metu second brain."
-              style={{ flex: 1, background: '#0a0a0c', color: '#e7e7ea', border: 'none', padding: '1rem', fontSize: 14, lineHeight: 1.6, resize: 'none', outline: 'none', fontFamily: 'ui-sans-serif, system-ui, sans-serif' }}
+              style={{
+                flex: 1,
+                background: '#0a0a0c',
+                color: '#e7e7ea',
+                border: 'none',
+                padding: '1rem',
+                fontSize: 14,
+                lineHeight: 1.6,
+                resize: 'none',
+                outline: 'none',
+                fontFamily: 'ui-sans-serif, system-ui, sans-serif',
+              }}
             />
           </>
         ) : (
-          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', flex: 1, color: '#9b9ba1' }}>
+          <div
+            style={{
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              flex: 1,
+              color: '#9b9ba1',
+            }}
+          >
             Pick a note or create a new one.
           </div>
         )}
       </section>
       {err ? (
-        <p style={{ position: 'absolute', bottom: 16, right: 16, color: '#f87171', fontSize: 12 }}>{err}</p>
+        <p style={{ position: 'absolute', bottom: 16, right: 16, color: '#f87171', fontSize: 12 }}>
+          {err}
+        </p>
       ) : null}
     </div>
   );

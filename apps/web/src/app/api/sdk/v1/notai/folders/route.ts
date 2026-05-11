@@ -13,6 +13,7 @@ import { notaiFolder } from '@metu/db/schema';
 import { listNotaiFolders } from '@metu/db/queries';
 import { forbidden, hasScope, resolveSession, unauthorized } from '@/lib/bearer';
 import { rateLimit } from '@/lib/ratelimit';
+import { inngest } from '@/inngest/client';
 
 export const runtime = 'nodejs';
 
@@ -60,6 +61,14 @@ export async function POST(req: Request) {
     )
     .orderBy(desc(notaiFolder.createdAt))
     .limit(1);
+  await inngest.send({
+    name: 'conductor/observe',
+    data: {
+      workspaceId: session.workspaceId,
+      eventKind: 'notai.folder.created',
+      payload: { folderId: rows[0]?.id, name: parsed.data.name },
+    },
+  });
   return NextResponse.json({ ok: true, folder: rows[0] });
 }
 
@@ -96,6 +105,14 @@ export async function PATCH(req: Request) {
         isNull(notaiFolder.deletedAt),
       ),
     );
+  await inngest.send({
+    name: 'conductor/observe',
+    data: {
+      workspaceId: session.workspaceId,
+      eventKind: 'notai.folder.renamed',
+      payload: { folderId: parsed.data.id, name: parsed.data.name },
+    },
+  });
   return NextResponse.json({ ok: true });
 }
 
@@ -120,5 +137,13 @@ export async function DELETE(req: Request) {
         isNull(notaiFolder.deletedAt),
       ),
     );
+  await inngest.send({
+    name: 'conductor/observe',
+    data: {
+      workspaceId: session.workspaceId,
+      eventKind: 'notai.folder.deleted',
+      payload: { folderId: id },
+    },
+  });
   return NextResponse.json({ ok: true });
 }

@@ -17,6 +17,7 @@ import { getDb } from '@metu/db';
 import { device } from '@metu/db/schema';
 import { forbidden, hasScope, resolveSession, unauthorized } from '@/lib/bearer';
 import { rateLimit } from '@/lib/ratelimit';
+import { inngest } from '@/inngest/client';
 
 export const runtime = 'nodejs';
 
@@ -86,5 +87,13 @@ export async function POST(req: Request) {
   if (!row) {
     return NextResponse.json({ ok: false, error: 'persist_failed' }, { status: 500 });
   }
+  await inngest.send({
+    name: 'conductor/observe',
+    data: {
+      workspaceId: session.workspaceId,
+      eventKind: 'device.registered',
+      payload: { deviceId: row.id, kind: parsed.data.kind, platform: parsed.data.platform },
+    },
+  });
   return NextResponse.json({ ok: true, deviceId: row.id });
 }
