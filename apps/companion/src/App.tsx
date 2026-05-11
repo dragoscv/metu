@@ -13,15 +13,28 @@ import { loadAuth, saveAuth, clearAuth, type AuthState } from './state/auth';
 import { Pairing } from './ui/Pairing';
 import { Connected } from './ui/Connected';
 import { useHubConnection } from './state/useHubConnection';
+import { loadSensorSettings, loadSensorsEnabled, useSensorBridge } from './state/sensors-bridge';
 
 export function App() {
   const [auth, setAuth] = useState<AuthState | null | 'loading'>('loading');
+  const [sensorsTick, setSensorsTick] = useState(0);
 
   useEffect(() => {
     loadAuth().then(setAuth);
   }, []);
 
-  const status = useHubConnection(auth && auth !== 'loading' ? auth : null);
+  const hub = useHubConnection(auth && auth !== 'loading' ? auth : null);
+
+  // Sensor bridge — re-read settings whenever the panel bumps `sensorsTick`.
+  useSensorBridge(
+    hub.sendEnvelope,
+    loadSensorsEnabled(),
+    loadSensorSettings(),
+    hub.status === 'open',
+  );
+  // sensorsTick is read so React picks up panel edits (the call above
+  // closes over fresh values because each render reloads from localStorage).
+  void sensorsTick;
 
   // Best-effort LAN presence beacon: advertise the paired hub URL via
   // mDNS so other devices on the same network can discover it. Silently
@@ -60,7 +73,8 @@ export function App() {
   return (
     <Connected
       auth={auth}
-      status={status}
+      status={hub.status}
+      onSensorsChange={() => setSensorsTick((x) => x + 1)}
       onSignOut={async () => {
         await clearAuth();
         setAuth(null);

@@ -19,6 +19,16 @@ import { pushHubNotification } from './hub-notifications';
 
 export type HubStatus = 'idle' | 'connecting' | 'open' | 'closed' | 'error';
 
+export interface HubHandle {
+  status: HubStatus;
+  /**
+   * Send a client envelope over the open socket. Returns true when the
+   * frame was queued onto the socket, false when the connection is not
+   * yet open (caller may drop, retry, or buffer).
+   */
+  sendEnvelope: (envelope: Record<string, unknown>) => boolean;
+}
+
 const FINGERPRINT_KEY = 'metu.companion.fingerprint';
 
 function getOrCreateFingerprint(): string {
@@ -30,7 +40,7 @@ function getOrCreateFingerprint(): string {
   return fp;
 }
 
-export function useHubConnection(auth: AuthState | null): HubStatus {
+export function useHubConnection(auth: AuthState | null): HubHandle {
   const [status, setStatus] = useState<HubStatus>('idle');
   const wsRef = useRef<WebSocket | null>(null);
   const retryRef = useRef(0);
@@ -174,5 +184,16 @@ export function useHubConnection(auth: AuthState | null): HubStatus {
     };
   }, [accessToken, hubUrl]);
 
-  return status;
+  const sendEnvelope = (envelope: Record<string, unknown>): boolean => {
+    const ws = wsRef.current;
+    if (!ws || ws.readyState !== WebSocket.OPEN) return false;
+    try {
+      ws.send(JSON.stringify(envelope));
+      return true;
+    } catch {
+      return false;
+    }
+  };
+
+  return { status, sendEnvelope };
 }

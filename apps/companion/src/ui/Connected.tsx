@@ -5,6 +5,7 @@ import { PresencePanel } from '../forms/Panel';
 import { ObservingBadge } from './ObservingBadge';
 import { ClipboardRing } from './ClipboardRing';
 import { OnboardingWizard, shouldShowOnboarding } from './OnboardingWizard';
+import { SensorsPanel } from './SensorsPanel';
 import { UpdateBanner } from '../state/useUpdater';
 
 const labels: Record<HubStatus, string> = {
@@ -19,10 +20,12 @@ export function Connected({
   auth,
   status,
   onSignOut,
+  onSensorsChange,
 }: {
   auth: AuthState;
   status: HubStatus;
   onSignOut: () => Promise<void>;
+  onSensorsChange: () => void;
 }) {
   const ok = status === 'open';
   const [showOnboarding, setShowOnboarding] = useState(false);
@@ -47,6 +50,7 @@ export function Connected({
       </div>
       {ok && <PresencePanel auth={auth} />}
       {ok && <ClipboardRing auth={auth} />}
+      <SensorsPanel onChange={onSensorsChange} />
       <div className="card">
         <p className="muted" style={{ margin: 0 }}>
           Workspace
