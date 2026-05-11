@@ -82,7 +82,17 @@ export default async function NotificationsPage({
         }
         title="Notifications"
         description={`${unread.length} unread of ${rows.length} recent${urgencyFilter ? ` · filtered: ${urgencyFilter}` : ''}`}
-        actions={<NotificationsActions hasUnread={unread.length > 0} />}
+        actions={
+          <NotificationsActions
+            hasUnread={unread.length > 0}
+            urgency={urgencyFilter ?? undefined}
+            source={
+              sourceParam === 'conductor' || sourceParam === 'integration' || sourceParam === 'app'
+                ? sourceParam
+                : undefined
+            }
+          />
+        }
       />
       <UrgencyFilterChips active={urgencyFilter} />
       <SourceFilterChips active={sourceParam} urgency={urgencyFilter} />

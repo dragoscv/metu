@@ -7,7 +7,7 @@
  */
 'use server';
 import { z } from 'zod';
-import { eq, and, isNull, desc } from 'drizzle-orm';
+import { eq, and, isNull, desc, like } from 'drizzle-orm';
 import { revalidatePath } from 'next/cache';
 import { getDb } from '@metu/db';
 import { notification, notificationSubscription } from '@metu/db/schema';
@@ -173,15 +173,41 @@ export async function ackNotificationAction(id: string): Promise<{ ok: boolean }
   return { ok: true };
 }
 
-export async function ackAllNotificationsAction(): Promise<{ ok: boolean }> {
+const ackAllFilterSchema = z
+  .object({
+    urgency: z.enum(['low', 'normal', 'high', 'critical']).optional(),
+    source: z.enum(['conductor', 'integration', 'app']).optional(),
+  })
+  .optional();
+
+export async function ackAllNotificationsAction(
+  input?: z.input<typeof ackAllFilterSchema>,
+): Promise<{ ok: boolean }> {
   const session = await auth();
   if (!session?.user?.id) return { ok: false };
+  const parsed = ackAllFilterSchema.safeParse(input);
+  if (!parsed.success) return { ok: false };
+  const filter = parsed.data;
   const db = getDb();
   const now = new Date();
   await db
     .update(notification)
     .set({ acknowledgedAt: now, readAt: now })
-    .where(and(eq(notification.userId, session.user.id), isNull(notification.acknowledgedAt)));
+    .where(
+      and(
+        eq(notification.userId, session.user.id),
+        eq(notification.workspaceId, session.user.workspaceId),
+        isNull(notification.acknowledgedAt),
+        filter?.urgency ? eq(notification.urgency, filter.urgency) : undefined,
+        filter?.source === 'conductor'
+          ? eq(notification.source, 'conductor')
+          : filter?.source === 'integration'
+            ? like(notification.source, 'integration:%')
+            : filter?.source === 'app'
+              ? like(notification.source, 'app:%')
+              : undefined,
+      ),
+    );
   revalidatePath('/');
   return { ok: true };
 }
