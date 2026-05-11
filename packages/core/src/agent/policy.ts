@@ -30,6 +30,21 @@ const KIND_DEFAULT: Record<ToolKind, AutonomyMode> = {
 };
 
 /**
+ * Tools that are NEVER permitted to run without an explicit human
+ * approval, regardless of `tool_acl` overrides or `agent_policy.defaultMode`.
+ * Touch real people (Telegram chat, email inbox) and aren't meaningfully
+ * undoable — we refuse to honor any autopilot/auto_with_undo override.
+ */
+const FORCE_ASK_TOOLS = new Set<string>(['send_telegram', 'send_email']);
+
+/**
+ * Once MTD spend crosses this fraction of `workspace.monthlyCostCapUsd`,
+ * autopilot/auto_with_undo on mutating tools is bumped down to `ask`.
+ * Read-only tools are unaffected.
+ */
+const MONTHLY_SOFT_BRAKE_FRACTION = 0.5;
+
+/**
  * Effective ACL for (workspace, tool [, integration]).
  *
  * Precedence:
@@ -86,7 +101,96 @@ export async function resolveAcl(
   if (policyMode === 'observe') return 'observe';
 
   if (tool?.kind === 'read') return 'autopilot';
-  return policyMode ?? KIND_DEFAULT[tool?.kind ?? 'high_risk'];
+  const resolved = policyMode ?? KIND_DEFAULT[tool?.kind ?? 'high_risk'];
+
+  if (FORCE_ASK_TOOLS.has(toolName) && resolved !== 'observe') return 'ask';
+
+  if (resolved === 'autopilot' || resolved === 'auto_with_undo') {
+    if (await monthlyBrakeTripped(workspaceId)) return 'ask';
+  }
+
+  return resolved;
+}
+
+/**
+ * `true` when MTD tool-call spend has crossed
+ * `MONTHLY_SOFT_BRAKE_FRACTION` of the workspace's monthly cap. Returns
+ * false when `unlimitedAi` is set or no cap is configured.
+ */
+async function monthlyBrakeTripped(workspaceId: string): Promise<boolean> {
+  const db = getDb();
+  const [ws] = await db
+    .select({
+      unlimitedAi: workspace.unlimitedAi,
+      monthlyCostCapUsd: workspace.monthlyCostCapUsd,
+    })
+    .from(workspace)
+    .where(eq(workspace.id, workspaceId))
+    .limit(1);
+  if (!ws || ws.unlimitedAi) return false;
+  const cap = ws.monthlyCostCapUsd != null ? Number(ws.monthlyCostCapUsd) : NaN;
+  if (!Number.isFinite(cap) || cap <= 0) return false;
+
+  const [agg] = await db
+    .select({
+      cost: sql<number>`coalesce(sum(${toolCallTable.actualCostUsd}), 0)::float8`,
+    })
+    .from(toolCallTable)
+    .where(
+      and(
+        eq(toolCallTable.workspaceId, workspaceId),
+        sql`${toolCallTable.requestedAt} >= date_trunc('month', now())`,
+        ne(toolCallTable.status, 'rejected'),
+      ),
+    );
+  const spent = Number(agg?.cost ?? 0);
+  return spent >= cap * MONTHLY_SOFT_BRAKE_FRACTION;
+}
+
+/**
+ * Cheap snapshot of today / MTD spend vs configured caps. Surfaced on
+ * Conductor tool proposals so the user sees budget impact before
+ * approving. Returns `null` if neither cap is configured (no point
+ * showing zeros to a user who has opted into unlimited mode).
+ */
+async function getBudgetSnapshot(workspaceId: string): Promise<{
+  todaySpend: number;
+  mtdSpend: number;
+  dailyCap: number | null;
+  monthlyCap: number | null;
+} | null> {
+  const db = getDb();
+  const [ws] = await db
+    .select({
+      unlimitedAi: workspace.unlimitedAi,
+      monthlyCostCapUsd: workspace.monthlyCostCapUsd,
+    })
+    .from(workspace)
+    .where(eq(workspace.id, workspaceId))
+    .limit(1);
+  if (!ws || ws.unlimitedAi) return null;
+  const [policy] = await db
+    .select({ dailyCostCapUsd: agentPolicy.dailyCostCapUsd })
+    .from(agentPolicy)
+    .where(eq(agentPolicy.workspaceId, workspaceId))
+    .limit(1);
+  const dailyCap = policy?.dailyCostCapUsd != null ? Number(policy.dailyCostCapUsd) : null;
+  const monthlyCap = ws.monthlyCostCapUsd != null ? Number(ws.monthlyCostCapUsd) : null;
+  if (dailyCap == null && monthlyCap == null) return null;
+
+  const [agg] = await db
+    .select({
+      today: sql<number>`coalesce(sum(${toolCallTable.actualCostUsd}) filter (where ${toolCallTable.requestedAt} >= date_trunc('day', now())), 0)::float8`,
+      mtd: sql<number>`coalesce(sum(${toolCallTable.actualCostUsd}) filter (where ${toolCallTable.requestedAt} >= date_trunc('month', now())), 0)::float8`,
+    })
+    .from(toolCallTable)
+    .where(and(eq(toolCallTable.workspaceId, workspaceId), ne(toolCallTable.status, 'rejected')));
+  return {
+    todaySpend: Number(agg?.today ?? 0),
+    mtdSpend: Number(agg?.mtd ?? 0),
+    dailyCap,
+    monthlyCap,
+  };
 }
 
 /**
@@ -292,14 +396,22 @@ export async function runTool(input: RunToolInput): Promise<RunToolResult> {
       .where(
         and(eq(toolCallTable.id, toolCallId), eq(toolCallTable.workspaceId, input.workspaceId)),
       );
+    const budget = await getBudgetSnapshot(input.workspaceId);
+    const budgetLine = budget
+      ? ` — today $${budget.todaySpend.toFixed(2)}${
+          budget.dailyCap != null ? ` / $${budget.dailyCap.toFixed(2)}` : ''
+        }, MTD $${budget.mtdSpend.toFixed(2)}${
+          budget.monthlyCap != null ? ` / $${budget.monthlyCap.toFixed(2)}` : ''
+        }`
+      : '';
     await db.insert(timelineEvent).values({
       workspaceId: input.workspaceId,
       userId: input.userId,
       kind: 'conductor.tool.proposed',
       title: `Conductor wants to run ${input.tool}`,
-      body: JSON.stringify(parsedArgs).slice(0, 500),
+      body: JSON.stringify(parsedArgs).slice(0, 500) + budgetLine,
       importance: 0.5,
-      payload: { toolCallId, tool: input.tool },
+      payload: { toolCallId, tool: input.tool, budget },
     });
     // Push a notification so HITL doesn't require the user to visit /audit.
     // urgency=high for high_risk tools (send_telegram, merge_pr, etc), normal otherwise.
@@ -307,7 +419,7 @@ export async function runTool(input: RunToolInput): Promise<RunToolResult> {
       workspaceId: input.workspaceId,
       userId: input.userId,
       title: `Approve: ${input.tool}`,
-      body: JSON.stringify(parsedArgs).slice(0, 280),
+      body: JSON.stringify(parsedArgs).slice(0, 240) + budgetLine,
       urgency: tool!.kind === 'high_risk' ? 'high' : 'normal',
       source: 'conductor:tool-approval',
       actionUrl: `/audit/${toolCallId}`,
@@ -316,7 +428,7 @@ export async function runTool(input: RunToolInput): Promise<RunToolResult> {
         { id: 'reject', label: 'Reject', kind: 'reject' as const, toolCallId },
         { id: 'open', label: 'Open audit', kind: 'open' as const, href: `/audit/${toolCallId}` },
       ],
-      metadata: { toolCallId, tool: input.tool, kind: tool!.kind },
+      metadata: { toolCallId, tool: input.tool, kind: tool!.kind, budget },
     });
     return { toolCallId, status: 'awaiting_approval' };
   }

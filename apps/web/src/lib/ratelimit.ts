@@ -74,6 +74,8 @@ const limiters: Record<string, Limiter> = {
   // realistically peaks ~10/min; cap higher to absorb a quick scan
   // across all connected providers.
   'byok-test': buildLimiter('rl:byok-test', 30, 60),
+  // Workspace export. Heavy DB scan; 1 / 30min / user is plenty.
+  'workspace-export': buildLimiter('rl:workspace-export', 2, 30 * 60),
 };
 
 export type LimiterKind = keyof typeof limiters;

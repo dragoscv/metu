@@ -66,8 +66,9 @@ URL). Apply it to any new outbound URL feature.
   fallback or check `if (!key) return null`.
 - OAuth tokens: stored as `sha256(token)`. Plain `metu_at_*`/`metu_rt_*`
   are returned ONCE and never logged.
-- **Webhook secret on `oauthClient.webhookSecret` is currently plaintext** —
-  hashing/sealing is a known follow-up. Don't expand the surface area.
+- Webhook secret: stored as `sha256(secret)` on `oauthClient.webhookSecretHash`.
+  Plaintext is returned ONCE on creation (UI shows a copy-once banner) and
+  never persisted. HMAC verification on inbound webhooks uses the hash.
 
 ## Refresh-token rotation
 

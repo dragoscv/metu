@@ -173,7 +173,7 @@ UI: mission-control toast tray (sonner) + an `/dashboard/notifications` history 
 
 ## 3. Companion desktop app — Tauri v2
 
-`apps/desktop` (new). Stack:
+`apps/companion` (Tauri 2). Stack:
 
 - Rust core + React UI (re-uses `packages/ui`).
 - Tauri v2 plugins: tray, notifications, global-shortcut, autostart, single-instance, deep-link, http, store, sql (sqlite), updater, fs (scoped).
