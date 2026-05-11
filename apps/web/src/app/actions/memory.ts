@@ -12,6 +12,7 @@ import { getDb } from '@metu/db';
 import { memoryChunk } from '@metu/db/schema';
 import { memory } from '@metu/core';
 import { appendTimelineEvent } from '@metu/db/queries';
+import { timelineEvent } from '@metu/db/schema';
 
 // ---------------------------------------------------------------------------
 // Types
@@ -319,4 +320,58 @@ export async function deleteMemoryChunkAction(
     );
   revalidatePath('/memory');
   return { ok: true };
+}
+
+// ---------------------------------------------------------------------------
+// Recent recall searches (drives the "Recent" chips on the recall panel)
+// ---------------------------------------------------------------------------
+
+export interface RecentRecallSearch {
+  query: string;
+  mode: 'hybrid' | 'semantic' | 'keyword';
+  hitCount: number;
+  occurredAt: string;
+}
+
+export async function listRecentRecallSearchesAction({
+  limit = 8,
+}: { limit?: number } = {}): Promise<
+  { ok: true; items: RecentRecallSearch[] } | { ok: false; error: string }
+> {
+  const session = await auth();
+  if (!session) return { ok: false, error: 'Unauthenticated' };
+  const db = getDb();
+  // Pull a wider window then dedupe by query so the chips stay distinct.
+  const rows = await db
+    .select({
+      title: timelineEvent.title,
+      payload: timelineEvent.payload,
+      occurredAt: timelineEvent.occurredAt,
+    })
+    .from(timelineEvent)
+    .where(
+      and(
+        eq(timelineEvent.workspaceId, session.user.workspaceId),
+        eq(timelineEvent.kind, 'memory.recall'),
+      ),
+    )
+    .orderBy(desc(timelineEvent.occurredAt))
+    .limit(limit * 4);
+
+  const seen = new Set<string>();
+  const items: RecentRecallSearch[] = [];
+  for (const r of rows) {
+    const key = r.title.trim().toLowerCase();
+    if (!key || seen.has(key)) continue;
+    seen.add(key);
+    const p = (r.payload ?? {}) as { mode?: string; hitCount?: number };
+    items.push({
+      query: r.title,
+      mode: (p.mode as RecentRecallSearch['mode']) ?? 'hybrid',
+      hitCount: typeof p.hitCount === 'number' ? p.hitCount : 0,
+      occurredAt: r.occurredAt.toISOString(),
+    });
+    if (items.length >= limit) break;
+  }
+  return { ok: true, items };
 }
