@@ -776,6 +776,270 @@ const sendEmailTool: ToolDefinition<typeof sendEmailArgs> = {
   },
 };
 
+// ─── set_task_status ───────────────────────────────────────────────────────
+
+const setTaskStatusArgs = z.object({
+  taskId: z.string().uuid(),
+  status: z.enum(['inbox', 'next', 'doing', 'blocked', 'done', 'dropped']),
+  blockedReason: z.string().max(400).optional(),
+});
+
+const setTaskStatusTool: ToolDefinition<typeof setTaskStatusArgs> = {
+  name: 'set_task_status',
+  description:
+    'Move a task to a different status (inbox/next/doing/blocked/done/dropped). When marking blocked, supply blockedReason. Setting done timestamps completedAt; clearing it later restores nulls. Reversible via undo.',
+  kind: 'low_risk',
+  args: setTaskStatusArgs,
+  async execute(args, ctx) {
+    const db = getDb();
+    const [before] = await db
+      .select({
+        id: task.id,
+        status: task.status,
+        blockedReason: task.blockedReason,
+        completedAt: task.completedAt,
+      })
+      .from(task)
+      .where(and(eq(task.id, args.taskId), eq(task.workspaceId, ctx.workspaceId)))
+      .limit(1);
+    if (!before) throw new Error('task_not_found');
+    const completedAt = args.status === 'done' ? new Date() : null;
+    await db
+      .update(task)
+      .set({
+        status: args.status,
+        blockedReason: args.status === 'blocked' ? (args.blockedReason ?? null) : null,
+        completedAt,
+      })
+      .where(and(eq(task.id, args.taskId), eq(task.workspaceId, ctx.workspaceId)));
+    return {
+      result: { taskId: args.taskId, status: args.status },
+      undoPayload: {
+        taskId: args.taskId,
+        previousStatus: before.status,
+        previousBlockedReason: before.blockedReason,
+        previousCompletedAt: before.completedAt?.toISOString() ?? null,
+      },
+    };
+  },
+  async undo(payload, ctx) {
+    const db = getDb();
+    await db
+      .update(task)
+      .set({
+        status: payload.previousStatus as
+          | 'inbox'
+          | 'next'
+          | 'doing'
+          | 'blocked'
+          | 'done'
+          | 'dropped',
+        blockedReason: (payload.previousBlockedReason as string | null) ?? null,
+        completedAt: payload.previousCompletedAt
+          ? new Date(String(payload.previousCompletedAt))
+          : null,
+      })
+      .where(and(eq(task.id, String(payload.taskId)), eq(task.workspaceId, ctx.workspaceId)));
+  },
+};
+
+// ─── move_task ─────────────────────────────────────────────────────────────
+
+const moveTaskArgs = z.object({
+  taskId: z.string().uuid(),
+  projectId: z.string().uuid().nullable().describe('Target project, or null to detach.'),
+});
+
+const moveTaskTool: ToolDefinition<typeof moveTaskArgs> = {
+  name: 'move_task',
+  description:
+    'Move a task to a different project (or detach with projectId=null). Workspace-scoped — both task and target project must belong to the active workspace. Reversible via undo.',
+  kind: 'low_risk',
+  args: moveTaskArgs,
+  async execute(args, ctx) {
+    const db = getDb();
+    const [before] = await db
+      .select({ id: task.id, projectId: task.projectId })
+      .from(task)
+      .where(and(eq(task.id, args.taskId), eq(task.workspaceId, ctx.workspaceId)))
+      .limit(1);
+    if (!before) throw new Error('task_not_found');
+    if (args.projectId) {
+      const [proj] = await db
+        .select({ id: project.id })
+        .from(project)
+        .where(and(eq(project.id, args.projectId), eq(project.workspaceId, ctx.workspaceId)))
+        .limit(1);
+      if (!proj) throw new Error('project_not_found');
+    }
+    await db
+      .update(task)
+      .set({ projectId: args.projectId })
+      .where(and(eq(task.id, args.taskId), eq(task.workspaceId, ctx.workspaceId)));
+    return {
+      result: { taskId: args.taskId, projectId: args.projectId },
+      undoPayload: { taskId: args.taskId, previousProjectId: before.projectId },
+    };
+  },
+  async undo(payload, ctx) {
+    const db = getDb();
+    await db
+      .update(task)
+      .set({ projectId: (payload.previousProjectId as string | null) ?? null })
+      .where(and(eq(task.id, String(payload.taskId)), eq(task.workspaceId, ctx.workspaceId)));
+  },
+};
+
+// ─── set_task_due_date ─────────────────────────────────────────────────────
+
+const setTaskDueDateArgs = z.object({
+  taskId: z.string().uuid(),
+  dueAt: z.string().datetime().nullable().describe('ISO timestamp, or null to clear.'),
+});
+
+const setTaskDueDateTool: ToolDefinition<typeof setTaskDueDateArgs> = {
+  name: 'set_task_due_date',
+  description:
+    'Set or clear a task due date. Pass an ISO timestamp to schedule, or null to remove. Reversible via undo.',
+  kind: 'low_risk',
+  args: setTaskDueDateArgs,
+  async execute(args, ctx) {
+    const db = getDb();
+    const [before] = await db
+      .select({ id: task.id, dueAt: task.dueAt })
+      .from(task)
+      .where(and(eq(task.id, args.taskId), eq(task.workspaceId, ctx.workspaceId)))
+      .limit(1);
+    if (!before) throw new Error('task_not_found');
+    const next = args.dueAt ? new Date(args.dueAt) : null;
+    await db
+      .update(task)
+      .set({ dueAt: next })
+      .where(and(eq(task.id, args.taskId), eq(task.workspaceId, ctx.workspaceId)));
+    return {
+      result: { taskId: args.taskId, dueAt: args.dueAt },
+      undoPayload: { taskId: args.taskId, previousDueAt: before.dueAt?.toISOString() ?? null },
+    };
+  },
+  async undo(payload, ctx) {
+    const db = getDb();
+    await db
+      .update(task)
+      .set({
+        dueAt: payload.previousDueAt ? new Date(String(payload.previousDueAt)) : null,
+      })
+      .where(and(eq(task.id, String(payload.taskId)), eq(task.workspaceId, ctx.workspaceId)));
+  },
+};
+
+// ─── link_capture_to_project ───────────────────────────────────────────────
+
+const linkCaptureArgs = z.object({
+  captureId: z.string().uuid(),
+  projectId: z.string().uuid().nullable().describe('Target project, or null to detach.'),
+});
+
+const linkCaptureTool: ToolDefinition<typeof linkCaptureArgs> = {
+  name: 'link_capture_to_project',
+  description:
+    'Re-tag a capture with a project (or detach). Useful when the conductor decides a brain-dump capture belongs to a specific project after the fact. Reversible via undo.',
+  kind: 'low_risk',
+  args: linkCaptureArgs,
+  async execute(args, ctx) {
+    const db = getDb();
+    const [before] = await db
+      .select({ id: capture.id, projectId: capture.projectId })
+      .from(capture)
+      .where(and(eq(capture.id, args.captureId), eq(capture.workspaceId, ctx.workspaceId)))
+      .limit(1);
+    if (!before) throw new Error('capture_not_found');
+    if (args.projectId) {
+      const [proj] = await db
+        .select({ id: project.id })
+        .from(project)
+        .where(and(eq(project.id, args.projectId), eq(project.workspaceId, ctx.workspaceId)))
+        .limit(1);
+      if (!proj) throw new Error('project_not_found');
+    }
+    await db
+      .update(capture)
+      .set({ projectId: args.projectId })
+      .where(and(eq(capture.id, args.captureId), eq(capture.workspaceId, ctx.workspaceId)));
+    return {
+      result: { captureId: args.captureId, projectId: args.projectId },
+      undoPayload: { captureId: args.captureId, previousProjectId: before.projectId },
+    };
+  },
+  async undo(payload, ctx) {
+    const db = getDb();
+    await db
+      .update(capture)
+      .set({ projectId: (payload.previousProjectId as string | null) ?? null })
+      .where(
+        and(eq(capture.id, String(payload.captureId)), eq(capture.workspaceId, ctx.workspaceId)),
+      );
+  },
+};
+
+// ─── snooze_task ───────────────────────────────────────────────────────────
+
+const snoozeTaskArgs = z.object({
+  taskId: z.string().uuid(),
+  until: z
+    .string()
+    .datetime()
+    .describe('ISO timestamp to wake up at — sets dueAt and moves to inbox.'),
+});
+
+const snoozeTaskTool: ToolDefinition<typeof snoozeTaskArgs> = {
+  name: 'snooze_task',
+  description:
+    'Snooze a task: move it back to inbox and set its dueAt to the supplied wake-up time. Use to defer work without losing it.',
+  kind: 'low_risk',
+  args: snoozeTaskArgs,
+  async execute(args, ctx) {
+    const db = getDb();
+    const [before] = await db
+      .select({
+        id: task.id,
+        status: task.status,
+        dueAt: task.dueAt,
+      })
+      .from(task)
+      .where(and(eq(task.id, args.taskId), eq(task.workspaceId, ctx.workspaceId)))
+      .limit(1);
+    if (!before) throw new Error('task_not_found');
+    await db
+      .update(task)
+      .set({ status: 'inbox', dueAt: new Date(args.until) })
+      .where(and(eq(task.id, args.taskId), eq(task.workspaceId, ctx.workspaceId)));
+    return {
+      result: { taskId: args.taskId, until: args.until },
+      undoPayload: {
+        taskId: args.taskId,
+        previousStatus: before.status,
+        previousDueAt: before.dueAt?.toISOString() ?? null,
+      },
+    };
+  },
+  async undo(payload, ctx) {
+    const db = getDb();
+    await db
+      .update(task)
+      .set({
+        status: payload.previousStatus as
+          | 'inbox'
+          | 'next'
+          | 'doing'
+          | 'blocked'
+          | 'done'
+          | 'dropped',
+        dueAt: payload.previousDueAt ? new Date(String(payload.previousDueAt)) : null,
+      })
+      .where(and(eq(task.id, String(payload.taskId)), eq(task.workspaceId, ctx.workspaceId)));
+  },
+};
+
 // ─── archive_project ───────────────────────────────────────────────────────
 
 const archiveProjectArgs = z.object({
@@ -1041,6 +1305,11 @@ export const TOOLS = {
   list_tasks: listTasksTool,
   github_repo_stats: githubRepoStatsTool,
   create_task: createTaskTool,
+  set_task_status: setTaskStatusTool,
+  move_task: moveTaskTool,
+  set_task_due_date: setTaskDueDateTool,
+  snooze_task: snoozeTaskTool,
+  link_capture_to_project: linkCaptureTool,
   pin_to_goal: pinToGoalTool,
   propose_decision: proposeDecisionTool,
   tag_capture: tagCaptureTool,
