@@ -100,14 +100,18 @@ export async function recall(params: {
   until?: Date | null;
   minScore?: number;
   mode?: 'hybrid' | 'semantic' | 'keyword';
+  dedupe?: boolean;
   limit?: number;
 }) {
   const mode = params.mode ?? 'hybrid';
+  const dedupe = params.dedupe ?? true;
+  // Over-fetch a bit so post-dedupe still has limit results.
+  const fetchLimit = dedupe ? Math.min((params.limit ?? 10) * 3, 50) : (params.limit ?? 10);
 
   // Keyword-only avoids the embed call entirely — saves tokens, useful
   // for exact-phrase searches over recent captures.
   if (mode === 'keyword') {
-    return recallByEmbedding({
+    const result = await recallByEmbedding({
       workspaceId: params.workspaceId,
       embedding: [],
       projectId: params.projectId,
@@ -116,8 +120,9 @@ export async function recall(params: {
       until: params.until,
       mode,
       query: params.query,
-      limit: params.limit ?? 10,
+      limit: fetchLimit,
     });
+    return dedupe ? dedupeRecallResult(result, params.limit ?? 10) : result;
   }
 
   const { model } = await getModel({
@@ -129,7 +134,7 @@ export async function recall(params: {
     value: params.query,
   });
 
-  return recallByEmbedding({
+  const result = await recallByEmbedding({
     workspaceId: params.workspaceId,
     embedding,
     projectId: params.projectId,
@@ -139,6 +144,57 @@ export async function recall(params: {
     minScore: params.minScore,
     mode,
     query: params.query,
-    limit: params.limit ?? 10,
+    limit: fetchLimit,
   });
+  return dedupe ? dedupeRecallResult(result, params.limit ?? 10) : result;
+}
+
+/**
+ * Collapse near-identical hits — same sourceId always wins the highest-
+ * scoring chunk; otherwise we hash a normalized prefix (lowercased,
+ * collapsed whitespace, first 120 chars) and keep one row per hash.
+ * Preserves the original result envelope shape (`{rows: ...}` or array).
+ */
+function dedupeRecallResult<T>(result: T, limit: number): T {
+  const rows =
+    ((result as { rows?: unknown[] }).rows as Array<{
+      id: string;
+      content: string;
+      similarity: number;
+      source_id: string | null;
+    }>) ??
+    (result as unknown as Array<{
+      id: string;
+      content: string;
+      similarity: number;
+      source_id: string | null;
+    }>);
+  if (!Array.isArray(rows)) return result;
+
+  const bySource = new Map<string, (typeof rows)[number]>();
+  const byPrefix = new Map<string, (typeof rows)[number]>();
+  for (const row of rows) {
+    if (row.source_id) {
+      const prev = bySource.get(row.source_id);
+      if (!prev || (row.similarity ?? 0) > (prev.similarity ?? 0)) {
+        bySource.set(row.source_id, row);
+      }
+      continue;
+    }
+    const key = (row.content ?? '').toLowerCase().replace(/\s+/g, ' ').trim().slice(0, 120);
+    if (!key) continue;
+    const prev = byPrefix.get(key);
+    if (!prev || (row.similarity ?? 0) > (prev.similarity ?? 0)) {
+      byPrefix.set(key, row);
+    }
+  }
+
+  const merged = [...bySource.values(), ...byPrefix.values()]
+    .sort((a, b) => (b.similarity ?? 0) - (a.similarity ?? 0))
+    .slice(0, limit);
+
+  if ((result as { rows?: unknown[] }).rows) {
+    return { ...(result as object), rows: merged } as T;
+  }
+  return merged as unknown as T;
 }
