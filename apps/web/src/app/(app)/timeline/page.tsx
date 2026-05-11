@@ -10,6 +10,7 @@ import { Activity } from 'lucide-react';
 import Link from 'next/link';
 import { TimelineList } from '@/components/timeline/timeline-list';
 import { TimelineToolbar } from '@/components/timeline/timeline-toolbar';
+import { TimelineTopSources } from '@/components/timeline/timeline-top-sources';
 
 const BTN_PRIMARY =
   'inline-flex h-8 items-center gap-2 rounded-md bg-[var(--color-brand)] px-3 text-sm font-medium text-[var(--color-brand-fg)] hover:opacity-90';
@@ -70,6 +71,8 @@ export default async function TimelinePage({ searchParams }: PageProps) {
         title="Timeline"
         description="Episodic memory. Every meaningful event, in order."
       />
+
+      <TimelineTopSources workspaceId={wsId} />
 
       <TimelineToolbar kindFacets={kindFacets} projects={projects} />
 

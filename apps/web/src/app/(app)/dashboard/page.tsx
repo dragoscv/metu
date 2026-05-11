@@ -12,9 +12,10 @@ import { ArrowRight, AlertTriangle, Compass, EyeOff } from 'lucide-react';
 import Link from 'next/link';
 import { and, desc, eq, isNull } from 'drizzle-orm';
 import { getDb } from '@metu/db';
-import { goal, target } from '@metu/db/schema';
+import { agentPolicy, goal, target } from '@metu/db/schema';
 import { BrainDump } from '@/components/brain-dump';
 import { RecomputeFocusButton } from '@/components/recompute-focus';
+import { PauseAutonomyToggle } from '@/components/pause-autonomy-toggle';
 import { DashboardTabs } from '@/components/dashboard-tabs';
 import { ConductorBacklog } from '@/components/conductor-backlog';
 import { ContinuityStrip } from '@/components/continuity-strip';
@@ -33,12 +34,18 @@ export default async function Dashboard({
   const sp = await searchParams;
   const tab = (sp.tab ?? 'now') as 'now' | 'inbox' | 'plan' | 'widgets';
 
-  const [latestFocus, projects, openTasks, blocked] = await Promise.all([
+  const [latestFocus, projects, openTasks, blocked, policyRow] = await Promise.all([
     focus.getLatestFocus(workspaceId, session.user.id),
     listProjects(workspaceId),
     listOpenTasks(workspaceId),
     listBlockedTasks(workspaceId),
+    getDb()
+      .select({ enabled: agentPolicy.enabled })
+      .from(agentPolicy)
+      .where(eq(agentPolicy.workspaceId, workspaceId))
+      .limit(1),
   ]);
+  const autonomyEnabled = policyRow[0]?.enabled ?? true;
 
   const ignoredIds = (latestFocus?.ignoredProjectIds as string[]) ?? [];
   const nowTask = openTasks.find((t) => t.id === latestFocus?.nowTaskId) ?? null;
@@ -56,7 +63,12 @@ export default async function Dashboard({
           </span>
         }
         title={`${greeting()}, ${session.user.name?.split(' ')[0] ?? 'there'}.`}
-        actions={<RecomputeFocusButton />}
+        actions={
+          <div className="flex items-center gap-2">
+            <PauseAutonomyToggle initialEnabled={autonomyEnabled} />
+            <RecomputeFocusButton />
+          </div>
+        }
       />
 
       <DashboardTabs active={tab} />
