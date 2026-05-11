@@ -45,6 +45,10 @@ interface PageProps {
 const DEFAULT_SINCE_DAYS = 7;
 
 function parseSince(since: string | undefined): Date {
+  if (since === 'today') {
+    const now = new Date();
+    return new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate()));
+  }
   const m = since?.match(/^(\d+)d$/);
   const days = m ? Number(m[1]) : DEFAULT_SINCE_DAYS;
   return new Date(Date.now() - days * 24 * 60 * 60 * 1000);

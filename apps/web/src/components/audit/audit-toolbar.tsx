@@ -32,12 +32,15 @@ interface Preset {
   tools?: string[];
   statuses?: string[];
   q?: string;
+  since?: string;
 }
 
 // Presets surface common views without forcing the user through the
 // facet menus. `q` matches `tool LIKE %q%` — so 'billing' catches every
 // `billing.*` and `subscription.*` tool the OAuth + Stripe code emits.
 const PRESETS: Preset[] = [
+  { label: 'Today', since: 'today' },
+  { label: 'Last 7d', since: '7d' },
   { label: 'Billing & Stripe', q: 'billing' },
   { label: 'Awaiting approval', statuses: ['awaiting_approval'] },
   { label: 'Failures', statuses: ['failed'] },
@@ -93,11 +96,12 @@ export function AuditToolbar({ toolFacets, statusFacets, runKindFacets }: Props)
 
   const clearAll = () => setFilters({ tools: '', statuses: '', kinds: '', since: '', q: '' });
 
-  const applyPreset = (p: { tools?: string[]; statuses?: string[]; q?: string }) => {
+  const applyPreset = (p: Preset) => {
     setFilters({
       tools: (p.tools ?? []).join(','),
       statuses: (p.statuses ?? []).join(','),
       q: p.q ?? '',
+      since: p.since ?? '',
     });
   };
 
@@ -118,7 +122,8 @@ export function AuditToolbar({ toolFacets, statusFacets, runKindFacets }: Props)
           const isActive =
             arraysEq(p.tools ?? [], selectedTools) &&
             arraysEq(p.statuses ?? [], selectedStatuses) &&
-            (p.q ?? '') === filters.q;
+            (p.q ?? '') === filters.q &&
+            (p.since ?? '') === filters.since;
           return (
             <button
               key={p.label}
