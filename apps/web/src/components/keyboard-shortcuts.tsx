@@ -9,6 +9,7 @@ const GO_MAP: Record<string, { href: string; label: string }> = {
   p: { href: '/projects', label: 'Projects' },
   g: { href: '/goals', label: 'Goals' },
   t: { href: '/timeline', label: 'Timeline' },
+  r: { href: '/review', label: 'Review' },
   m: { href: '/memory', label: 'Memory' },
   c: { href: '/chat', label: 'Chat' },
   u: { href: '/metu', label: 'METU' },
