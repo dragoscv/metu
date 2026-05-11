@@ -24,9 +24,11 @@ This page tells you exactly what to flip to turn each on.
 
 ### To enable
 
-1. `pnpm --filter @metu/web add @sentry/nextjs` — the package is an
-   optional peer; the dynamic imports in `instrumentation.ts` (server)
-   and `instrumentation-client.ts` (browser) are no-ops without it.
+1. `@sentry/nextjs` is already installed in `apps/web` (since batch 2,
+   commit `91aabe1`). The dynamic imports in `instrumentation.ts`
+   (server) and `instrumentation-client.ts` (browser) stay no-ops
+   until `SENTRY_DSN` / `NEXT_PUBLIC_SENTRY_DSN` are set, so dev runs
+   without an account.
 2. Set the env vars (in `.env.local` for dev, in your secret store for
    production):
    ```env

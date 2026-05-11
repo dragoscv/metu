@@ -154,12 +154,20 @@ export function ConductorChat({
       >
         <ol className="space-y-4">
           <AnimatePresence initial={false}>
-            {messages.map((m) => (
+            {messages.map((m, i) => (
               <motion.li
                 key={m.id}
                 initial={{ opacity: 0, y: 8 }}
                 animate={{ opacity: 1, y: 0 }}
-                transition={{ duration: 0.25 }}
+                // Stagger the entrance so a flurry of messages from a
+                // conductor tick reads as a stream rather than a popcorn
+                // burst. Capped so very-long histories don't accumulate
+                // a multi-second delay on initial render.
+                transition={{
+                  duration: 0.22,
+                  ease: [0.22, 1, 0.36, 1],
+                  delay: Math.min(i * 0.04, 0.4),
+                }}
                 className="flex flex-col gap-1"
               >
                 <span className="text-[10px] uppercase tracking-wider text-[var(--color-fg-subtle)]">

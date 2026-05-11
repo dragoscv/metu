@@ -227,6 +227,14 @@ export const agentPolicy = pgTable('agent_policy', {
   tickIntervalSec: integer('tick_interval_sec').notNull().default(300),
   /** Approval timeout in seconds before an "ask" auto-rejects. */
   approvalTimeoutSec: integer('approval_timeout_sec').notNull().default(86400),
+  /**
+   * Workspace gate for the companion-side Ollama bridge. When false
+   * (default) the conductor will not route any LLM call through a
+   * connected device's localhost:11434 — even if the user has paired
+   * such a device. Flipping this on is an explicit "I trust local
+   * inference for this workspace" decision.
+   */
+  ollamaEnabled: boolean('ollama_enabled').notNull().default(false),
   metadata: jsonb('metadata')
     .notNull()
     .default(sql`'{}'::jsonb`),

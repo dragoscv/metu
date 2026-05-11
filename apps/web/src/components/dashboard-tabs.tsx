@@ -22,17 +22,26 @@ export function DashboardTabs({
   basePath?: string;
 }) {
   return (
-    <nav className="flex flex-wrap gap-1 border-b border-[var(--color-border)] pb-2">
+    <nav
+      className="flex flex-wrap gap-1 border-b border-[var(--color-border)] pb-2"
+      style={{ viewTransitionName: 'dashboard-tabs' }}
+    >
       {DASHBOARD_TABS.map((t) => (
         <Link
           key={t.key}
           href={t.key === 'now' ? basePath : `${basePath}?tab=${t.key}`}
+          // Next.js 16 viewTransition: opt the navigation into the
+          // browser's View Transitions API so the tab pane crossfades
+          // instead of snapping. Cheap and degrades gracefully where
+          // the API is missing.
+          {...({ viewTransition: true } as Record<string, unknown>)}
           className={cn(
             'rounded-md px-3 py-1.5 text-sm transition-colors',
             active === t.key
               ? 'bg-[var(--color-bg-card)] text-[var(--color-fg)]'
               : 'text-[var(--color-fg-muted)] hover:bg-[var(--color-bg-elevated)] hover:text-[var(--color-fg)]',
           )}
+          style={active === t.key ? { viewTransitionName: 'dashboard-tab-active' } : undefined}
           title={t.hint}
         >
           {t.label}
