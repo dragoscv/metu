@@ -225,6 +225,7 @@ export async function captureMemoryAction(
 const recallSchema = z.object({
   query: z.string().trim().min(2).max(500),
   sourceKind: z.string().min(1).max(40).optional(),
+  mode: z.enum(['hybrid', 'semantic', 'keyword']).default('hybrid'),
   limit: z.number().int().min(1).max(30).default(12),
 });
 
@@ -235,12 +236,13 @@ export async function recallMemoryAction(
   if (!session) return { ok: false, error: 'Unauthenticated' };
   const parsed = recallSchema.safeParse(input);
   if (!parsed.success) return { ok: false, error: 'Type at least 2 characters' };
-  const { query, sourceKind, limit } = parsed.data;
+  const { query, sourceKind, mode, limit } = parsed.data;
 
   try {
     const res = await memory.recall({
       workspaceId: session.user.workspaceId,
       query,
+      mode,
       limit: limit * 2, // over-fetch then filter client-side by sourceKind
     });
     const rawRows = (res as { rows?: unknown[] }).rows ?? (res as unknown[]);
@@ -266,6 +268,24 @@ export async function recallMemoryAction(
       createdAt:
         typeof r.created_at === 'string' ? r.created_at : new Date(r.created_at).toISOString(),
     }));
+
+    // Best-effort: log so /timeline + recent-searches surface this query.
+    void appendTimelineEvent({
+      workspaceId: session.user.workspaceId,
+      userId: session.user.id ?? null,
+      projectId: null,
+      kind: 'memory.recall',
+      title: query.slice(0, 200),
+      body: `${hits.length} hit${hits.length === 1 ? '' : 's'} (${mode})`,
+      payload: {
+        mode,
+        hitCount: hits.length,
+        sourceKind: sourceKind ?? null,
+        source: 'web.memory_panel',
+      },
+      importance: 0.1,
+    }).catch(() => undefined);
+
     return { ok: true, hits };
   } catch (err) {
     return {
