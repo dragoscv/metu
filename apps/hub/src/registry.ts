@@ -42,4 +42,14 @@ export const registry = {
   size(): number {
     return byDevice.size;
   },
+  /** Number of workspaces with at least one live connection. */
+  workspaceCount(): number {
+    return byWorkspace.size;
+  },
+  /** Connection counts grouped by device kind. */
+  byKind(): Record<string, number> {
+    const out: Record<string, number> = {};
+    for (const c of byDevice.values()) out[c.kind] = (out[c.kind] ?? 0) + 1;
+    return out;
+  },
 };

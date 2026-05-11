@@ -34,6 +34,29 @@ app.get('/healthz', (c) =>
   c.json({ ok: true, connections: registry.size(), uptimeSec: Math.floor(process.uptime()) }),
 );
 
+// Prometheus-style text exposition. Cheap; no auth — exposes counts only.
+app.get('/metrics', (c) => {
+  const kinds = registry.byKind();
+  const lines = [
+    '# HELP metu_hub_connections Number of live websocket connections.',
+    '# TYPE metu_hub_connections gauge',
+    `metu_hub_connections ${registry.size()}`,
+    '# HELP metu_hub_workspaces Number of workspaces with a live connection.',
+    '# TYPE metu_hub_workspaces gauge',
+    `metu_hub_workspaces ${registry.workspaceCount()}`,
+    '# HELP metu_hub_connections_by_kind Live connections grouped by device kind.',
+    '# TYPE metu_hub_connections_by_kind gauge',
+    ...Object.entries(kinds).map(
+      ([kind, n]) => `metu_hub_connections_by_kind{kind="${kind.replace(/"/g, '')}"} ${n}`,
+    ),
+    '# HELP metu_hub_uptime_seconds Hub process uptime in seconds.',
+    '# TYPE metu_hub_uptime_seconds counter',
+    `metu_hub_uptime_seconds ${Math.floor(process.uptime())}`,
+    '',
+  ];
+  return c.text(lines.join('\n'), 200, { 'content-type': 'text/plain; version=0.0.4' });
+});
+
 registerInternalRoutes(app);
 
 const server = serve({ fetch: app.fetch, port }, (info) => {
