@@ -65,6 +65,7 @@ export const memoryJanitorWeekly = inngest.createFunction(
 
     const captureResult = await step.run('delete-captures', async () => {
       const db = getDb();
+      // workspace-scope-ignore: tenant-wide cron purge by design.
       const deleted = await db.delete(capture).where(inArray(capture.id, ids)).returning();
       return { count: deleted.length };
     });

@@ -57,7 +57,7 @@ export async function recomputeMomentum(workspaceId: string, projectId: string) 
       momentumScore: normalized,
       lastMeaningfulActivityAt: lastMeaningful,
     })
-    .where(eq(project.id, projectId));
+    .where(and(eq(project.id, projectId), eq(project.workspaceId, workspaceId)));
 
   return { score: normalized, lastMeaningfulActivityAt: lastMeaningful };
 }
@@ -106,7 +106,10 @@ export async function generateProjectPulse(workspaceId: string, projectId: strin
     prompt: ctx,
   });
 
-  await db.update(project).set({ stateSummary: text.trim() }).where(eq(project.id, projectId));
+  await db
+    .update(project)
+    .set({ stateSummary: text.trim() })
+    .where(and(eq(project.id, projectId), eq(project.workspaceId, workspaceId)));
 
   return { pulse: text.trim(), provider, modelId };
 }

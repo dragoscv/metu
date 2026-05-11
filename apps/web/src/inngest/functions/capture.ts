@@ -64,7 +64,10 @@ export const onCaptureCreated = inngest.createFunction(
       }),
     );
 
-    await db.update(capture).set({ status: 'ready' }).where(eq(capture.id, captureId));
+    await db
+      .update(capture)
+      .set({ status: 'ready' })
+      .where(and(eq(capture.id, captureId), eq(capture.workspaceId, workspaceId)));
 
     await db.insert(timelineEvent).values({
       workspaceId,

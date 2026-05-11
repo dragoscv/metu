@@ -37,7 +37,8 @@
     "release:companion:major": "node scripts/release-companion.mjs major",
     "browser-ext:package": "node scripts/package-browser-ext.mjs",
     "browser-ext:package:prod": "node scripts/package-browser-ext.mjs --prod",
-    "lint:actions": "node scripts/check-actionlint.mjs --all"
+    "lint:actions": "node scripts/check-actionlint.mjs --all",
+    "lint:workspace-scope": "node scripts/lint-workspace-scope.mjs --strict"
   },
   "devDependencies": {
     "turbo": "catalog:",
