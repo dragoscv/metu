@@ -34,7 +34,7 @@ export function ConductorStripOpener({
     <button
       type="button"
       onClick={() => window.dispatchEvent(new CustomEvent('conductor:toggle'))}
-      className="bg-[var(--color-bg-elevated)]/95 hover:border-[var(--color-brand)]/60 group pointer-events-auto flex items-center gap-3 rounded-full border border-[var(--color-border)] px-4 py-2 text-xs shadow-lg backdrop-blur transition hover:shadow-xl focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--color-brand)] focus-visible:ring-offset-2 focus-visible:ring-offset-[var(--color-bg)]"
+      className="bg-[var(--color-bg-elevated)]/95 hover:border-[var(--color-brand)]/60 group pointer-events-auto relative flex items-center gap-3 rounded-full border border-[var(--color-border)] px-4 py-2 text-xs shadow-lg backdrop-blur transition hover:shadow-xl focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--color-brand)] focus-visible:ring-offset-2 focus-visible:ring-offset-[var(--color-bg)]"
       aria-label="Open Conductor (Ctrl+J)"
     >
       <span className="sr-only" aria-live="polite">
@@ -79,6 +79,24 @@ export function ConductorStripOpener({
       <kbd className="group-hover:border-[var(--color-brand)]/40 ml-1 rounded border border-[var(--color-border)] px-1.5 py-0.5 font-mono text-[10px] text-[var(--color-fg-subtle)]">
         Ctrl+J
       </kbd>
+      {/* Bottom edge gradient progress: today's spend vs cap. Hidden when no cap. */}
+      {spendPct > 0 ? (
+        <span
+          aria-hidden
+          className="pointer-events-none absolute inset-x-3 bottom-0 h-[2px] overflow-hidden rounded-full"
+        >
+          <span
+            className={`block h-full rounded-full transition-all duration-500 ${
+              spendPct >= 0.9
+                ? 'bg-gradient-to-r from-amber-400 via-rose-400 to-rose-500'
+                : spendPct >= 0.6
+                  ? 'bg-gradient-to-r from-emerald-400 via-amber-300 to-amber-400'
+                  : 'bg-gradient-to-r from-emerald-400/70 to-emerald-300/90'
+            }`}
+            style={{ width: `${Math.max(2, spendPct * 100).toFixed(1)}%` }}
+          />
+        </span>
+      ) : null}
     </button>
   );
 }

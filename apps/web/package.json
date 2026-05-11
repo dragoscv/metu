@@ -26,6 +26,7 @@
     "@metu/types": "workspace:*",
     "@metu/ui": "workspace:*",
     "@metu/voice": "workspace:*",
+    "@sentry/nextjs": "^10.52.0",
     "@tanstack/react-query": "catalog:",
     "@upstash/ratelimit": "catalog:",
     "@upstash/redis": "catalog:",

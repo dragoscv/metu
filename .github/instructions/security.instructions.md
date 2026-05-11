@@ -55,9 +55,8 @@ It rejects:
 
 In `NODE_ENV=production` it also requires `https:`.
 
-Currently applied: `connectExternalMcpAction`. **Apply it** to any new
-outbound URL feature. Webhook URLs in `actions/apps.ts` is a known
-follow-up — apply when touched.
+Currently applied: `connectExternalMcpAction`, `registerAppAction` (webhook
+URL). Apply it to any new outbound URL feature.
 
 ## Secrets at rest
 
@@ -88,9 +87,16 @@ Any new auth-touching endpoint or expensive operation needs a limiter.
 
 - Never log: access tokens, refresh tokens, sealed `iv+tag` pairs, OAuth
   client secrets, ENCRYPTION_KEY, raw user PII more than necessary.
-- All logging is currently `console.*` (pino + Sentry are documented but
-  not installed — known follow-up). Use grep-friendly prefixes:
-  `'[oauth] token rotated', { clientId }`.
+- Use the structured `log` from `@metu/logger` (auto-redacts a known set
+  of secret keys + scrubs JWT/`metu_at_*`/`metu_rt_*` shapes from any
+  string). `installConsoleRedactor()` is wired in `instrumentation.ts`
+  so even bare `console.*` calls get scrubbed.
+- Sentry: `@sentry/nextjs` is installed and wired via
+  `instrumentation.ts` + `instrumentation-client.ts`. Activates only
+  when `SENTRY_DSN` (server) / `NEXT_PUBLIC_SENTRY_DSN` (browser) is
+  set; safe no-op otherwise.
+- Pino is intentionally NOT used — the custom logger emits the same
+  structured JSON shape Cloud Logging needs and avoids an extra dep.
 
 ## Headers / CSP
 

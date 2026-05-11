@@ -221,17 +221,18 @@ Net effect: notai becomes a memory-aware editor; mmo becomes a memory-aware game
 
 ## 6. Vertical slices (delivery order)
 
-| #   | Slice                                  | Includes                                                           | Status          |
-| --- | -------------------------------------- | ------------------------------------------------------------------ | --------------- |
-| 0   | Master plan + schema + scaffolding     | this doc, db migrations, empty packages, conductor stub            | **in progress** |
-| 1   | Conversations + Conductor (web only)   | UI, streaming chat, tools, autonomy, audit                         | next            |
-| 2   | OAuth2 provider + @metu/sdk + protocol | OIDC endpoints, sdk skeleton, hub skeleton                         |                 |
-| 3   | Devices + notifications                | device pages, web push, expo push, presence                        |                 |
-| 4   | Companion desktop app v1               | Tauri scaffold, capture+tray+notifs, OAuth pairing                 |                 |
-| 5   | Watchers fan-out                       | github+gcal+gmail+stripe+telegram → conductor events               |                 |
-| 6   | Companion advanced                     | window tracking, clipboard, file watcher, wake-word, Ollama tunnel |                 |
-| 7   | notai + mmo wired up                   | both apps consume @metu/sdk, register as OAuth clients             |                 |
-| 8   | UI polish                              | command bar, conductor strip, view transitions, animations         |                 |
+| #   | Slice                                  | Includes                                                                                                                                                     | Status      |
+| --- | -------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------ | ----------- |
+| 0   | Master plan + schema + scaffolding     | this doc, db migrations (0000–0022), empty packages, conductor                                                                                               | **shipped** |
+| 1   | Conversations + Conductor (web only)   | UI, streaming chat, tools, autonomy, audit, planner+repair                                                                                                   | **shipped** |
+| 2   | OAuth2 provider + @metu/sdk + protocol | OIDC endpoints (authorize/token/userinfo/jwks/.well-known/device), sdk, hub                                                                                  | **shipped** |
+| 3   | Devices + notifications                | device pages, web push (VAPID), expo push, presence, hub fanout                                                                                              | **shipped** |
+| 4   | Companion desktop app v1               | Tauri scaffold, capture+tray+notifs, OAuth device-flow pairing                                                                                               | **shipped** |
+| 5   | Watchers fan-out                       | github+gcal+gmail+stripe+telegram → timeline_event → conductor/observe                                                                                       | **shipped** |
+| 6   | Companion advanced (v1.5)              | window tracking, clipboard, file watcher, wake-word, Ollama tunnel                                                                                           | next        |
+| 7   | notai + mmo wired up                   | both apps consume @metu/sdk, register as OAuth clients                                                                                                       | scaffolding |
+| 8   | UI polish                              | command bar (cmdk + slash incl. /tool), conductor strip + spend gradient, view transitions                                                                   | **shipped** |
+| 9   | Hardening pass                         | SSRF/SSRF (registerApp), token-length floor, hub clientId binding, ON CONFLICT upserts, prod-required env hard-errors, idempotent migrations, Sentry install | **shipped** |
 
 Each slice is end-to-end (schema → server → UI → tests) and shippable.
 

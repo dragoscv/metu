@@ -41,6 +41,7 @@ const SLASH_HELP: { cmd: string; hint: string; icon: typeof Search }[] = [
   { cmd: '/capture', hint: 'fast capture', icon: Inbox },
   { cmd: '/focus', hint: 'recompute focus', icon: Sparkles },
   { cmd: '/chat', hint: 'send to Conductor', icon: MessageSquare },
+  { cmd: '/tool', hint: 'pick an agent tool', icon: Bot },
   { cmd: '/go', hint: 'navigate', icon: Zap },
 ];
 
@@ -69,6 +70,7 @@ const ACTIONS = [{ label: 'Recompute focus', href: '/dashboard?recompute=1', ico
 export function CommandBar() {
   const [open, setOpen] = useState(false);
   const [value, setValue] = useState('');
+  const [tools, setTools] = useState<{ name: string; description: string; kind: string }[]>([]);
   const router = useRouter();
   const { setTheme } = useTheme();
 
@@ -93,6 +95,19 @@ export function CommandBar() {
   const slash = slashMatch
     ? { cmd: '/' + slashMatch[1]!.toLowerCase(), arg: slashMatch[2] ?? '' }
     : null;
+
+  // Lazy-load the tool catalog the first time the user opens /tool. Cheap
+  // GET; cached in component state for the lifetime of the page.
+  useEffect(() => {
+    if (slash?.cmd === '/tool' && tools.length === 0) {
+      void fetch('/api/tools/list')
+        .then((r) => (r.ok ? r.json() : null))
+        .then((j: { tools?: typeof tools } | null) => {
+          if (j?.tools) setTools(j.tools);
+        })
+        .catch(() => undefined);
+    }
+  }, [slash?.cmd, tools.length]);
 
   function close() {
     setOpen(false);
@@ -121,6 +136,17 @@ export function CommandBar() {
         router.push(`/chat?q=${encodeURIComponent(slash.arg)}`);
         close();
         return;
+      case '/tool': {
+        // If an exact name was typed, fire the global event so any open
+        // surface can react. Otherwise the picker UI handles selection.
+        const name = slash.arg.trim();
+        if (name && tools.some((t) => t.name === name)) {
+          window.dispatchEvent(new CustomEvent('metu:run-tool', { detail: { name } }));
+          router.push(`/agents?tool=${encodeURIComponent(name)}`);
+          close();
+        }
+        return;
+      }
       case '/go':
         router.push(slash.arg.startsWith('/') ? slash.arg : `/${slash.arg}`);
         close();
@@ -182,6 +208,35 @@ export function CommandBar() {
                         ↵ run
                       </span>
                     </Command.Item>
+                    {slash.cmd === '/tool' &&
+                      tools
+                        .filter(
+                          (t) =>
+                            !slash.arg ||
+                            t.name.toLowerCase().includes(slash.arg.toLowerCase()) ||
+                            t.description.toLowerCase().includes(slash.arg.toLowerCase()),
+                        )
+                        .slice(0, 12)
+                        .map((t) => (
+                          <Command.Item
+                            key={t.name}
+                            value={`tool ${t.name} ${t.description}`}
+                            onSelect={() => {
+                              window.dispatchEvent(
+                                new CustomEvent('metu:run-tool', { detail: { name: t.name } }),
+                              );
+                              router.push(`/agents?tool=${encodeURIComponent(t.name)}`);
+                              close();
+                            }}
+                            className="flex cursor-pointer items-center gap-2 rounded-md px-3 py-2 text-sm aria-selected:bg-[var(--color-bg-elevated)]"
+                          >
+                            <Bot className="h-4 w-4 text-[var(--color-fg-muted)]" />
+                            <span className="font-mono text-[var(--color-fg)]">{t.name}</span>
+                            <span className="ml-auto truncate text-[10px] text-[var(--color-fg-subtle)]">
+                              {t.kind}
+                            </span>
+                          </Command.Item>
+                        ))}
                     {SLASH_HELP.map((s) => (
                       <Command.Item
                         key={s.cmd}

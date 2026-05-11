@@ -1,0 +1,28 @@
+{
+  "name": "@metu/notai",
+  "version": "0.0.1",
+  "private": true,
+  "description": "notai — note-taking app that signs in with metu and uses metu as its second-brain (memory + notifications + sync). Reference implementation for the @metu/sdk OIDC + capture flow.",
+  "scripts": {
+    "dev": "next dev --port 24896",
+    "build": "next build",
+    "start": "next start --port 24896",
+    "lint": "eslint .",
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "@metu/sdk": "workspace:*",
+    "next": "catalog:",
+    "next-auth": "^5.0.0-beta.25",
+    "react": "catalog:",
+    "react-dom": "catalog:",
+    "zod": "catalog:"
+  },
+  "devDependencies": {
+    "@metu/config": "workspace:*",
+    "@types/node": "catalog:",
+    "@types/react": "catalog:",
+    "@types/react-dom": "catalog:",
+    "typescript": "catalog:"
+  }
+}
