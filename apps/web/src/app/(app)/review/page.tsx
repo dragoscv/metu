@@ -1,8 +1,8 @@
 import { auth } from '@metu/auth';
 import { redirect } from 'next/navigation';
-import { weeklyReviewSummary } from '@metu/db/queries';
+import { listGoalsFiltered, weeklyReviewSummary } from '@metu/db/queries';
 import { Badge, Card, EmptyState, Page, PageHeader } from '@metu/ui';
-import { CalendarDays, Sparkles } from 'lucide-react';
+import { CalendarDays, Sparkles, Target } from 'lucide-react';
 import Link from 'next/link';
 
 export const dynamic = 'force-dynamic';
@@ -20,7 +20,14 @@ export default async function ReviewPage({ searchParams }: PageProps) {
   const w = Number(sp.window ?? 7);
   const windowDays = VALID_WINDOWS.has(w) ? w : 7;
 
-  const summary = await weeklyReviewSummary(session.user.workspaceId, windowDays);
+  const [summary, goals] = await Promise.all([
+    weeklyReviewSummary(session.user.workspaceId, windowDays),
+    listGoalsFiltered({
+      workspaceId: session.user.workspaceId,
+      status: 'active',
+      sort: 'weight',
+    }),
+  ]);
 
   const totalSignals =
     summary.captures + summary.toolCalls + summary.tasksCompleted + summary.topProjects.length;
@@ -148,6 +155,55 @@ export default async function ReviewPage({ searchParams }: PageProps) {
             )}
           </Card>
         </div>
+      )}
+
+      {goals.length > 0 && (
+        <Card>
+          <div className="mb-3 flex items-baseline justify-between">
+            <div>
+              <h2 className="text-sm font-medium">Active goals</h2>
+              <p className="mt-0.5 text-xs text-[var(--color-fg-subtle)]">
+                Heaviest weight first. Tap to open.
+              </p>
+            </div>
+            <Target className="h-3.5 w-3.5 text-[var(--color-fg-subtle)]" />
+          </div>
+          <ul className="space-y-2">
+            {goals.slice(0, 8).map((g) => {
+              const pct = Math.round((g.progress ?? 0) * 100);
+              const driftTone =
+                g.drift === 'stalled'
+                  ? 'bg-[var(--color-danger)]'
+                  : g.drift === 'slipping'
+                    ? 'bg-[var(--color-warning)]'
+                    : 'bg-[var(--color-success)]';
+              return (
+                <li key={g.id}>
+                  <Link
+                    href={`/goals/${g.id}`}
+                    className="block rounded-md px-2 py-1.5 transition hover:bg-[var(--color-bg-elevated)]"
+                  >
+                    <div className="mb-1 flex items-center justify-between gap-2">
+                      <span className="truncate text-sm font-medium">{g.title}</span>
+                      <div className="flex items-center gap-2 text-[11px] text-[var(--color-fg-subtle)]">
+                        <Badge variant="neutral" size="sm">
+                          w{g.weight}
+                        </Badge>
+                        <span className="tabular-nums">{pct}%</span>
+                      </div>
+                    </div>
+                    <div className="h-1 overflow-hidden rounded-full bg-[var(--color-bg-elevated)]">
+                      <div
+                        className={`h-full ${driftTone}`}
+                        style={{ width: `${pct}%` }}
+                      />
+                    </div>
+                  </Link>
+                </li>
+              );
+            })}
+          </ul>
+        </Card>
       )}
     </Page>
   );
