@@ -8,6 +8,10 @@
     "./config": "./src/config.ts",
     "./oauth": "./src/oauth.ts"
   },
+  "scripts": {
+    "test": "vitest run",
+    "test:watch": "vitest"
+  },
   "dependencies": {
     "@metu/db": "workspace:*",
     "@auth/drizzle-adapter": "catalog:",
@@ -18,7 +22,8 @@
     "@metu/config": "workspace:*",
     "next": "catalog:",
     "react": "catalog:",
-    "typescript": "catalog:"
+    "typescript": "catalog:",
+    "vitest": "catalog:"
   },
   "peerDependencies": {
     "next": "catalog:",
