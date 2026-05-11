@@ -7,6 +7,7 @@ import { useCallback, useEffect, useMemo, useState, useTransition } from 'react'
 import { AnimatePresence, motion } from 'framer-motion';
 import {
   ArrowDown,
+  ArrowUpRight,
   Check,
   Copy,
   Loader2,
@@ -536,6 +537,14 @@ function RecallHitItem({ hit }: { hit: MemoryRecallHit }) {
           >
             {copied ? <Check className="h-3.5 w-3.5" /> : <Copy className="h-3.5 w-3.5" />}
           </button>
+          <a
+            href={`/timeline?q=${encodeURIComponent(hit.content.slice(0, 80))}`}
+            aria-label="Open in timeline"
+            title="Find this in the timeline"
+            className="rounded p-1 text-[var(--color-fg-subtle)] transition-colors hover:bg-[var(--color-bg-overlay)] hover:text-[var(--color-fg)]"
+          >
+            <ArrowUpRight className="h-3.5 w-3.5" />
+          </a>
         </div>
       </div>
       <p className="whitespace-pre-wrap text-sm text-[var(--color-fg)]">{hit.content}</p>
