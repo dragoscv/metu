@@ -123,12 +123,17 @@ const SCRUB_RULES: Array<{ re: RegExp; replace: string }> = [
     re: /\b[A-Za-z0-9_-]{12,}\.[A-Za-z0-9_-]{12,}\.[A-Za-z0-9_-]{12,}\b/g,
     replace: '[redacted-jwt]',
   },
-  { re: /\b(authorization|bearer)\s*[:=]?\s*[A-Za-z0-9._\-+/=]{8,}/gi, replace: '$1 [redacted]' },
+  // First-party token shape — must run before the generic bearer/key rule so
+  // a `bearer metu_at_…` payload keeps the `metu_at_[redacted]` marker.
+  { re: /\bmetu_(at|rt)_[A-Za-z0-9_-]+/g, replace: 'metu_$1_[redacted]' },
+  {
+    re: /\b(authorization|bearer)\s*[:=]?\s*(?!metu_(?:at|rt)_)[A-Za-z0-9._\-+/=]{8,}/gi,
+    replace: '$1 [redacted]',
+  },
   {
     re: /\b(token|secret|api[_-]?key|access[_-]?token|refresh[_-]?token|webhook[_-]?secret|client[_-]?secret|encryption[_-]?key|password)(["'\s]*[:=]\s*["']?)([^"'\s,}\[\]]{6,})/gi,
     replace: '$1$2[redacted]',
   },
-  { re: /\bmetu_(at|rt)_[A-Za-z0-9_-]+/g, replace: 'metu_$1_[redacted]' },
 ];
 
 export function scrubString(input: string): string {

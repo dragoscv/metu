@@ -21,6 +21,21 @@ const TOKEN_KEY = 'metu.accessToken';
 const REFRESH_KEY = 'metu.refreshToken';
 const DEFAULT_SCOPES = 'openid profile capture:write recall:read notify:write';
 
+/** Timestamp of the most recent successful capture this session (ms epoch). */
+let lastCapturedAt: number | null = null;
+/** Listeners notified after lastCapturedAt changes; lets the status bar refresh. */
+const onLastCaptureChange: Array<() => void> = [];
+
+function relativeTime(ms: number): string {
+  const s = Math.floor((Date.now() - ms) / 1000);
+  if (s < 60) return `${s}s ago`;
+  const m = Math.floor(s / 60);
+  if (m < 60) return `${m}m ago`;
+  const h = Math.floor(m / 60);
+  if (h < 24) return `${h}h ago`;
+  return `${Math.floor(h / 24)}d ago`;
+}
+
 interface Cfg {
   apiUrl: string;
   hubUrl: string;
@@ -329,8 +344,9 @@ export async function activate(ctx: vscode.ExtensionContext): Promise<void> {
   function renderStatus(): void {
     if (auth.token) {
       const dot = hub.statusDot();
+      const last = lastCapturedAt ? ` · last capture ${relativeTime(lastCapturedAt)}` : '';
       status.text = `$(brain) metu ${dot}`;
-      status.tooltip = `metu — signed in. Hub: ${hub.statusLabel()}. Click to capture.`;
+      status.tooltip = `metu — signed in. Hub: ${hub.statusLabel()}${last}. Click to capture.`;
       status.command = 'metu.capture';
     } else {
       status.text = '$(brain) metu: sign in';
@@ -342,6 +358,10 @@ export async function activate(ctx: vscode.ExtensionContext): Promise<void> {
   renderStatus();
   ctx.subscriptions.push(auth.onChange(renderStatus));
   ctx.subscriptions.push(hub.onStatusChange(renderStatus));
+  onLastCaptureChange.push(renderStatus);
+  // Re-render every 30s so the relative timestamp stays fresh.
+  const tickTimer = setInterval(renderStatus, 30_000);
+  ctx.subscriptions.push({ dispose: () => clearInterval(tickTimer) });
 
   // Auto-connect when we already have a token.
   if (auth.token) hub.connect();
@@ -474,6 +494,8 @@ async function captureCmd(client: MetuClient): Promise<void> {
       source: 'vscode-ext',
       metadata: meta,
     });
+    lastCapturedAt = Date.now();
+    onLastCaptureChange.forEach((fn) => fn());
     vscode.window.setStatusBarMessage('$(check) metu captured', 2000);
   } catch (e) {
     vscode.window.showErrorMessage(`metu capture failed: ${(e as Error).message}`);

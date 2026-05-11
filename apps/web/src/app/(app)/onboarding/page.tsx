@@ -15,6 +15,7 @@ import Link from 'next/link';
 import { Card, CardTitle, Page, PageHeader } from '@metu/ui';
 import { listAvailableProviders } from '@metu/ai';
 import { indexMemory } from '@metu/core/memory';
+import { inngest } from '@/inngest/client';
 
 type Step = 'connect' | 'capture' | 'done';
 
@@ -29,6 +30,14 @@ async function captureFirstNoteAction(formData: FormData): Promise<void> {
     sourceKind: 'capture',
     content,
     metadata: { source: 'onboarding' },
+  });
+  await inngest.send({
+    name: 'conductor/observe',
+    data: {
+      workspaceId: session.user.workspaceId,
+      eventKind: 'onboarding.completed',
+      payload: { step: 'capture', userId: session.user.id },
+    },
   });
   redirect('/onboarding?step=done');
 }

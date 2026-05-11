@@ -21,6 +21,9 @@ export default function MarketingLayout({ children }: { children: ReactNode }) {
           </Link>
           <nav className="flex items-center gap-4 text-xs text-[var(--color-fg-subtle)]">
             <Link href="/docs">Docs</Link>
+            <Link href="/docs/sdk">SDK</Link>
+            <Link href="/docs/companion">Companion</Link>
+            <Link href="/docs/security">Security</Link>
             <Link
               href="/sign-in"
               className="rounded-md bg-[var(--color-brand)] px-3 py-1 text-white"

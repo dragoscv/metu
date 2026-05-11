@@ -22,6 +22,7 @@ import { open as openSealed } from '@metu/ai';
 import { agent } from '@metu/core';
 import { forbidden, hasScope, resolveSession, unauthorized } from '@/lib/bearer';
 import { rateLimit } from '@/lib/ratelimit';
+import { inngest } from '@/inngest/client';
 
 export const runtime = 'nodejs';
 
@@ -122,6 +123,20 @@ export async function POST(req: Request) {
     row.expiresAt && row.expiresAt > new Date()
       ? row.expiresAt
       : new Date(Date.now() + parsed.data.ttlSec * 1000);
+
+  await inngest.send({
+    name: 'conductor/observe',
+    data: {
+      workspaceId: session.workspaceId,
+      eventKind: 'creds.borrowed',
+      payload: {
+        integrationId: row.id,
+        kind: row.kind,
+        purpose: parsed.data.purpose,
+        borrower: session.clientId ?? 'unknown',
+      },
+    },
+  });
 
   return NextResponse.json({
     ok: true,
