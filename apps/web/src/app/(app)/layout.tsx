@@ -3,7 +3,11 @@ import { redirect } from 'next/navigation';
 import { and, desc, eq, ne } from 'drizzle-orm';
 import { getDb } from '@metu/db';
 import { conversation } from '@metu/db/schema';
-import { attentionToolCallCount, recentTimelineEventCount } from '@metu/db/queries';
+import {
+  attentionToolCallCount,
+  recentTimelineEventCount,
+  notificationUnreadCount,
+} from '@metu/db/queries';
 import { getUserWorkspaces } from '@metu/db/queries';
 import { PageTransition } from '@metu/ui';
 import { AppSidebar } from '@/components/app-sidebar';
@@ -64,14 +68,16 @@ export default async function AppLayout({ children }: { children: React.ReactNod
   // long enough that the user notices the day's signals when they open
   // the app in the morning.
   const since24h = new Date(Date.now() - 24 * 60 * 60 * 1000);
-  const [timelineCount, auditAttention, workspaces] = await Promise.all([
+  const [timelineCount, auditAttention, unreadNotifications, workspaces] = await Promise.all([
     recentTimelineEventCount(workspaceId, since24h),
     attentionToolCallCount(workspaceId, since24h),
+    notificationUnreadCount(workspaceId, session.user.id),
     getUserWorkspaces(session.user.id),
   ]);
   const sidebarBadges: Record<string, number> = {
     '/timeline': timelineCount,
     '/audit': auditAttention,
+    '/notifications': unreadNotifications,
   };
   const workspaceOptions = workspaces.map((w) => ({
     id: w.workspace.id,

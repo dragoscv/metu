@@ -524,3 +524,43 @@ export async function listRelatedToolCalls(params: {
   // Re-sort ascending so the chain reads top-to-bottom oldest → newest.
   return rows.slice().reverse();
 }
+
+/**
+ * Group recent failures by (tool, error-prefix) to surface the
+ * top-N recurring failure modes — same tool failing for the same
+ * reason is the highest-leverage signal for "go fix this".
+ *
+ * The error key is the first 80 chars of the error string, lowercased
+ * and trimmed, which is a coarse-but-effective fingerprint without
+ * dragging in a real similarity model.
+ */
+export async function toolCallFailureClusters(workspaceId: string, since: Date, limit = 5) {
+  const db = getDb();
+  const rows = await db
+    .select({
+      tool: toolCall.tool,
+      errorKey: sql<string>`coalesce(lower(trim(left(${toolCall.error}, 80))), '(no error message)')`,
+      count: sql<number>`count(*)::int`,
+      lastAt: sql<Date>`max(${toolCall.requestedAt})`,
+    })
+    .from(toolCall)
+    .where(
+      and(
+        eq(toolCall.workspaceId, workspaceId),
+        eq(toolCall.status, 'failed'),
+        sql`${toolCall.requestedAt} >= ${since}`,
+      ),
+    )
+    .groupBy(
+      toolCall.tool,
+      sql`coalesce(lower(trim(left(${toolCall.error}, 80))), '(no error message)')`,
+    )
+    .orderBy(desc(sql`count(*)`))
+    .limit(limit);
+  return rows.map((r) => ({
+    tool: r.tool,
+    errorKey: r.errorKey,
+    count: typeof r.count === 'string' ? Number(r.count) : r.count,
+    lastAt: r.lastAt instanceof Date ? r.lastAt : new Date(r.lastAt),
+  }));
+}

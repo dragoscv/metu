@@ -6,6 +6,7 @@ import { Bell } from 'lucide-react';
 import { getDb } from '@metu/db';
 import { notification } from '@metu/db/schema';
 import { NotificationsActions } from '@/components/notifications-actions';
+import { DismissNotificationButton } from '@/components/dismiss-notification-button';
 import Link from 'next/link';
 import { formatDistanceToNow } from 'date-fns';
 
@@ -80,7 +81,10 @@ export default async function NotificationsPage() {
                   </span>
                 </div>
                 {r.body ? <p className="text-sm text-[var(--color-fg-muted)]">{r.body}</p> : null}
-                <div className="text-[11px] text-[var(--color-fg-subtle)]">{r.source}</div>
+                <div className="flex items-center justify-between gap-2">
+                  <span className="text-[11px] text-[var(--color-fg-subtle)]">{r.source}</span>
+                  {r.acknowledgedAt === null ? <DismissNotificationButton id={r.id} /> : null}
+                </div>
               </Card>
             );
             return r.actionUrl ? (

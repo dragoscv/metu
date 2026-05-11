@@ -9,4 +9,5 @@ export * from './audit';
 export * from './continuity';
 export * from './presence';
 export * from './notai';
+export * from './notifications';
 export * from './weekly';

@@ -25,6 +25,7 @@ import { AuditToolbar } from '@/components/audit/audit-toolbar';
 import { AuditList } from '@/components/audit/audit-list';
 import { AuditAclPanel } from '@/components/audit/audit-acl-panel';
 import { AuditCostPanel } from '@/components/audit/audit-cost-panel';
+import { AuditFailureClusters } from '@/components/audit/audit-failure-clusters';
 import { AgentRunPanel } from '@/components/audit/agent-run-panel';
 import { CompanionAgentPanel } from '@/components/audit/companion-agent-panel';
 
@@ -150,6 +151,8 @@ export default async function AuditPage({ searchParams }: PageProps) {
 
       <AuditCostPanel daily={dailyCost} top={topByCost} totalCost={summary.cost} />
 
+      <AuditFailureClusters workspaceId={wsId} since={since} />
+
       <AgentRunPanel rows={runRows} />
 
       <CompanionAgentPanel workspaceId={wsId} since={since} />
@@ -162,7 +165,11 @@ export default async function AuditPage({ searchParams }: PageProps) {
         runKindFacets={runKindFacets}
       />
 
-      {summary.total === 0 && tools.length === 0 && statuses.length === 0 && runKinds.length === 0 && !sp.q ? (
+      {summary.total === 0 &&
+      tools.length === 0 &&
+      statuses.length === 0 &&
+      runKinds.length === 0 &&
+      !sp.q ? (
         <EmptyState
           icon={<ScrollText className="h-5 w-5" />}
           title="The Conductor hasn’t acted yet"

@@ -62,6 +62,7 @@ export const NAV: NavNode[] = [
   { kind: 'leaf', href: '/onboarding', label: 'Get started', icon: Rocket },
   { kind: 'leaf', href: '/resume', label: 'Resume', icon: RotateCcw },
   { kind: 'leaf', href: '/dashboard', label: 'Now', icon: Compass },
+  { kind: 'leaf', href: '/notifications', label: 'Notifications', icon: Bell },
   { kind: 'leaf', href: '/metu', label: 'METU', icon: Sparkles },
   {
     kind: 'group',
