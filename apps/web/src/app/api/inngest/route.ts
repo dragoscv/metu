@@ -31,6 +31,8 @@ import { weeklyDigestEmailCron } from '@/inngest/functions/weekly-digest-email';
 import { gcsCleanupCron } from '@/inngest/functions/gcs-cleanup';
 import { memoryJanitorWeekly } from '@/inngest/functions/memory-janitor';
 import { projectDeathDetectionWeekly } from '@/inngest/functions/project-death';
+import { nightlyHousekeepingCron } from '@/inngest/functions/nightly-housekeeping';
+import { pushReceiptPollCron } from '@/inngest/functions/push-receipt-poll';
 
 export const runtime = 'nodejs';
 export const maxDuration = 300;
@@ -66,5 +68,7 @@ export const { GET, POST, PUT } = serve({
     gcsCleanupCron,
     memoryJanitorWeekly,
     projectDeathDetectionWeekly,
+    nightlyHousekeepingCron,
+    pushReceiptPollCron,
   ],
 });

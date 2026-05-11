@@ -7,6 +7,8 @@
  */
 import type { z } from 'zod';
 import { type ServerEventSchema } from '@metu/protocol';
+import { getDb } from '@metu/db';
+import { hubDlqEnvelope } from '@metu/db/schema';
 import { log } from './logger';
 
 export type ServerEvent = z.infer<typeof ServerEventSchema>;
@@ -47,6 +49,7 @@ export async function hubBroadcast(input: BroadcastInput): Promise<{ delivered: 
   }
   const ac = new AbortController();
   const timeout = setTimeout(() => ac.abort(), 5_000);
+  let failureReason: string | null = null;
   try {
     const res = await fetch(`${url.replace(/\/$/, '')}/internal/broadcast`, {
       method: 'POST',
@@ -58,10 +61,9 @@ export async function hubBroadcast(input: BroadcastInput): Promise<{ delivered: 
       signal: ac.signal,
     });
     if (!res.ok) {
-      log.error('hub.broadcast.failed', {
-        status: res.status,
-        body: await res.text().catch(() => ''),
-      });
+      const body = await res.text().catch(() => '');
+      log.error('hub.broadcast.failed', { status: res.status, body });
+      failureReason = `http_${res.status}`;
       return null;
     }
     const body = (await res.json()) as { ok: boolean; delivered: number };
@@ -69,11 +71,28 @@ export async function hubBroadcast(input: BroadcastInput): Promise<{ delivered: 
   } catch (err) {
     if ((err as { name?: string }).name === 'AbortError') {
       log.error('hub.broadcast.timeout', { ms: 5000 });
+      failureReason = 'timeout';
     } else {
       log.error('hub.broadcast.error', undefined, err);
+      failureReason = err instanceof Error ? `error:${err.message.slice(0, 80)}` : 'error:unknown';
     }
     return null;
   } finally {
     clearTimeout(timeout);
+    if (failureReason) {
+      try {
+        await getDb()
+          .insert(hubDlqEnvelope)
+          .values({
+            workspaceId: input.workspaceId,
+            kinds: input.kinds ?? [],
+            deviceIds: input.deviceIds ?? [],
+            envelope: input.envelope,
+            reason: failureReason,
+          });
+      } catch (dbErr) {
+        log.error('hub.broadcast.dlq_persist_failed', undefined, dbErr);
+      }
+    }
   }
 }

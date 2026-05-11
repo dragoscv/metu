@@ -4,6 +4,7 @@
  * One file because they share types, refresh callbacks, and animation state.
  */
 import { useCallback, useEffect, useMemo, useState, useTransition } from 'react';
+import { parseAsString, parseAsStringLiteral, useQueryStates } from 'nuqs';
 import { AnimatePresence, motion } from 'framer-motion';
 import {
   ArrowDown,
@@ -304,9 +305,20 @@ function QuickCapture({ onCaptured }: { onCaptured: () => Promise<void> | void }
 // ---------------------------------------------------------------------------
 
 function RecallPanel() {
-  const [query, setQuery] = useState('');
-  const [filter, setFilter] = useState<SourceKind | 'all'>('all');
-  const [mode, setMode] = useState<'hybrid' | 'semantic' | 'keyword'>('hybrid');
+  const [urlState, setUrlState] = useQueryStates(
+    {
+      q: parseAsString.withDefault(''),
+      mode: parseAsStringLiteral(['hybrid', 'semantic', 'keyword'] as const).withDefault('hybrid'),
+      kind: parseAsString.withDefault('all'),
+    },
+    { history: 'replace', shallow: true },
+  );
+  const query = urlState.q;
+  const mode = urlState.mode;
+  const filter = urlState.kind as SourceKind | 'all';
+  const setQuery = (q: string) => void setUrlState({ q });
+  const setMode = (m: typeof mode) => void setUrlState({ mode: m });
+  const setFilter = (k: SourceKind | 'all') => void setUrlState({ kind: k });
   const [hits, setHits] = useState<MemoryRecallHit[] | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [pending, start] = useTransition();
@@ -346,7 +358,7 @@ function RecallPanel() {
   const run = () => runWith(query);
 
   const reset = () => {
-    setQuery('');
+    void setUrlState({ q: '' });
     setHits(null);
     setError(null);
   };

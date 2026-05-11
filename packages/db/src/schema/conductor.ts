@@ -585,6 +585,76 @@ export const notificationSubscription = pgTable(
   ],
 );
 
+/**
+ * Expo push receipts. After we send via /v2/push/send Expo returns a
+ * `ticketId`; the actual delivery status is only available later via
+ * /v2/push/getReceipts. We persist tickets here, and an Inngest cron
+ * polls them, marking ok/error and disabling subscriptions on
+ * permanent failures.
+ */
+export const pushReceipt = pgTable(
+  'push_receipt',
+  {
+    id: uuid('id')
+      .primaryKey()
+      .default(sql`gen_random_uuid()`),
+    workspaceId: uuid('workspace_id')
+      .notNull()
+      .references(() => workspace.id, { onDelete: 'cascade' }),
+    subscriptionId: uuid('subscription_id')
+      .notNull()
+      .references(() => notificationSubscription.id, { onDelete: 'cascade' }),
+    notificationId: uuid('notification_id').references(() => notification.id, {
+      onDelete: 'set null',
+    }),
+    ticketId: text('ticket_id').notNull(),
+    /** 'pending' | 'ok' | 'error' */
+    status: text('status').notNull().default('pending'),
+    errorCode: text('error_code'),
+    createdAt: timestamp('created_at', { withTimezone: true })
+      .notNull()
+      .default(sql`now()`),
+    checkedAt: timestamp('checked_at', { withTimezone: true }),
+  },
+  (t) => [
+    uniqueIndex('push_receipt_ticket_idx').on(t.ticketId),
+    index('push_receipt_pending_idx').on(t.status, t.createdAt),
+  ],
+);
+
+/**
+ * Dead-letter queue for failed `hubBroadcast()` calls. Operator-side
+ * read + replay only — see /api/internal/hub/dlq.
+ */
+export const hubDlqEnvelope = pgTable(
+  'hub_dlq_envelope',
+  {
+    id: uuid('id')
+      .primaryKey()
+      .default(sql`gen_random_uuid()`),
+    workspaceId: uuid('workspace_id')
+      .notNull()
+      .references(() => workspace.id, { onDelete: 'cascade' }),
+    kinds: jsonb('kinds')
+      .notNull()
+      .default(sql`'[]'::jsonb`),
+    deviceIds: jsonb('device_ids')
+      .notNull()
+      .default(sql`'[]'::jsonb`),
+    envelope: jsonb('envelope').notNull(),
+    reason: text('reason').notNull(),
+    attempts: integer('attempts').notNull().default(1),
+    lastAttemptAt: timestamp('last_attempt_at', { withTimezone: true })
+      .notNull()
+      .default(sql`now()`),
+    replayedAt: timestamp('replayed_at', { withTimezone: true }),
+    createdAt: timestamp('created_at', { withTimezone: true })
+      .notNull()
+      .default(sql`now()`),
+  },
+  (t) => [index('hub_dlq_pending_idx').on(t.workspaceId, t.createdAt)],
+);
+
 // ─── Relations ────────────────────────────────────────────────────────────
 
 export const conversationRelations = relations(conversation, ({ many, one }) => ({

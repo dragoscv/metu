@@ -62,6 +62,7 @@ const limiters: Record<string, Limiter> = {
   // minute; cap at 20/min/user to absorb retries without enabling abuse.
   'conductor-chat': buildLimiter('rl:conductor-chat', 20, 60),
   'sdk-write': buildLimiter('rl:sdk-write', 120, 60),
+  'sdk-read': buildLimiter('rl:sdk-read', 240, 60),
   // Voice broker: minting Realtime sessions hits a paid BYOK endpoint and a
   // human can only realistically open ~1 per minute. Cap fairly tightly.
   'voice-realtime': buildLimiter('rl:voice-realtime', 5, 60),

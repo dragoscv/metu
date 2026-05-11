@@ -15,7 +15,7 @@
  */
 import { and, eq } from 'drizzle-orm';
 import { getDb } from '@metu/db';
-import { agentPolicy, notification, notificationSubscription } from '@metu/db/schema';
+import { agentPolicy, notification, notificationSubscription, pushReceipt } from '@metu/db/schema';
 import webpush from 'web-push';
 import { Expo } from 'expo-server-sdk';
 import { hubBroadcast } from './hub';
@@ -223,12 +223,21 @@ export async function notify(input: NotifyInput): Promise<{ id: string; delivere
       for (const chunk of chunks) {
         try {
           const tickets = await expo.sendPushNotificationsAsync(chunk);
+          const receiptRows: Array<typeof pushReceipt.$inferInsert> = [];
           for (let i = 0; i < tickets.length; i++) {
             const ticket = tickets[i];
             const item = items[cursor + i];
             if (!ticket || !item) continue;
             if (ticket.status === 'ok') {
               okCount++;
+              if (ticket.id) {
+                receiptRows.push({
+                  workspaceId: input.workspaceId,
+                  subscriptionId: item.subId,
+                  notificationId,
+                  ticketId: ticket.id,
+                });
+              }
               continue;
             }
             // Error ticket — Expo encodes the actionable reason on
@@ -248,6 +257,9 @@ export async function notify(input: NotifyInput): Promise<{ id: string; delivere
                 .set({ enabled: false })
                 .where(eq(notificationSubscription.id, item.subId));
             }
+          }
+          if (receiptRows.length > 0) {
+            await db.insert(pushReceipt).values(receiptRows).onConflictDoNothing();
           }
         } catch (err) {
           log.error('notify.expo.push_failed', { chunkSize: chunk.length }, err);
@@ -375,12 +387,21 @@ export async function sendPushOnly(input: {
       for (const chunk of chunks) {
         try {
           const tickets = await expo.sendPushNotificationsAsync(chunk);
+          const receiptRows: Array<typeof pushReceipt.$inferInsert> = [];
           for (let i = 0; i < tickets.length; i++) {
             const ticket = tickets[i];
             const item = items[cursor + i];
             if (!ticket || !item) continue;
             if (ticket.status === 'ok') {
               okCount++;
+              if (ticket.id) {
+                receiptRows.push({
+                  workspaceId: input.workspaceId,
+                  subscriptionId: item.subId,
+                  notificationId: input.notificationId ?? null,
+                  ticketId: ticket.id,
+                });
+              }
               continue;
             }
             const reason = (ticket.details as { error?: string } | undefined)?.error ?? 'unknown';
@@ -390,6 +411,9 @@ export async function sendPushOnly(input: {
                 .set({ enabled: false })
                 .where(eq(notificationSubscription.id, item.subId));
             }
+          }
+          if (receiptRows.length > 0) {
+            await db.insert(pushReceipt).values(receiptRows).onConflictDoNothing();
           }
         } catch (err) {
           log.error('notify.push_only.expo_failed', { chunkSize: chunk.length }, err);
