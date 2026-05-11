@@ -5,9 +5,14 @@ import {
   timelineKindFacets,
 } from '@metu/db/queries';
 import { redirect } from 'next/navigation';
-import { Page, PageHeader } from '@metu/ui';
+import { EmptyState, Page, PageHeader } from '@metu/ui';
+import { Activity } from 'lucide-react';
+import Link from 'next/link';
 import { TimelineList } from '@/components/timeline/timeline-list';
 import { TimelineToolbar } from '@/components/timeline/timeline-toolbar';
+
+const BTN_PRIMARY =
+  'inline-flex h-8 items-center gap-2 rounded-md bg-[var(--color-brand)] px-3 text-sm font-medium text-[var(--color-brand-fg)] hover:opacity-90';
 
 export const dynamic = 'force-dynamic';
 
@@ -68,7 +73,20 @@ export default async function TimelinePage({ searchParams }: PageProps) {
 
       <TimelineToolbar kindFacets={kindFacets} projects={projects} />
 
-      <TimelineList initialItems={initialItems} initialCursor={nextCursor} />
+      {initialItems.length === 0 && kinds.length === 0 && !sp.projectId && !sp.q && !since ? (
+        <EmptyState
+          icon={<Activity className="h-5 w-5" />}
+          title="No timeline events yet"
+          description="Captures, tool calls, decisions, and recall searches all flow into this view. Drop a thought in the inbox to get started."
+          action={
+            <Link href="/inbox" className={BTN_PRIMARY}>
+              Go to inbox
+            </Link>
+          }
+        />
+      ) : (
+        <TimelineList initialItems={initialItems} initialCursor={nextCursor} />
+      )}
     </Page>
   );
 }
