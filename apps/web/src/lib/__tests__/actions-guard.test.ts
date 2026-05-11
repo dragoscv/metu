@@ -43,9 +43,6 @@ const WORKSPACE_EXEMPT = new Set<string>([
   // copilot-models / copilot store per-user prefs not per-workspace data
   'copilot-models.ts',
   'copilot.ts',
-  // notifications.ts updates are scoped by `notification.userId = session.user.id`. A user is the
-  // strongest scoping primitive (a notification is delivered to one user, not to a workspace).
-  'notifications.ts',
   // autonomy.ts updates `workspace.id = wsId` directly — the table identity IS the scope.
   'autonomy.ts',
 ]);

@@ -120,6 +120,7 @@ export async function unsubscribePushAction(id: string): Promise<{ ok: boolean }
       and(
         eq(notificationSubscription.id, id),
         eq(notificationSubscription.userId, session.user.id),
+        eq(notificationSubscription.workspaceId, session.user.workspaceId),
       ),
     );
   return { ok: true };
@@ -168,7 +169,13 @@ export async function ackNotificationAction(id: string): Promise<{ ok: boolean }
   await db
     .update(notification)
     .set({ acknowledgedAt: new Date(), readAt: new Date() })
-    .where(and(eq(notification.id, id), eq(notification.userId, session.user.id)));
+    .where(
+      and(
+        eq(notification.id, id),
+        eq(notification.userId, session.user.id),
+        eq(notification.workspaceId, session.user.workspaceId),
+      ),
+    );
   revalidatePath('/');
   return { ok: true };
 }
