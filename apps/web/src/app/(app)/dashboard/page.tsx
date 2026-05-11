@@ -20,6 +20,7 @@ import { ConductorBacklog } from '@/components/conductor-backlog';
 import { ContinuityStrip } from '@/components/continuity-strip';
 import { PlanTabClient } from '@/components/dashboard/plan-tab-client';
 import { OnboardingChecklist } from '@/components/dashboard/onboarding-checklist';
+import { ProposedActionsStrip } from '@/components/dashboard/proposed-actions-strip';
 
 export default async function Dashboard({
   searchParams,
@@ -70,6 +71,7 @@ export default async function Dashboard({
           blocked={blocked}
         />
       )}
+      {tab === 'now' && <ProposedActionsStrip workspaceId={workspaceId} />}
       {tab === 'now' && <OnboardingChecklist workspaceId={workspaceId} />}
       {tab === 'now' && <ContinuityStrip workspaceId={workspaceId} />}
       {tab === 'now' && <ConductorBacklog workspaceId={workspaceId} />}
