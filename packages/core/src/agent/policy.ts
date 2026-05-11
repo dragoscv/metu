@@ -30,6 +30,48 @@ const KIND_DEFAULT: Record<ToolKind, AutonomyMode> = {
 };
 
 /**
+ * Tools that always emit a low-urgency notification on success, regardless
+ * of autonomy mode, so the user keeps continuous visibility into local
+ * tunnels and other high-trust passthroughs. Audit row is written separately.
+ */
+const VISIBILITY_NOTIFY_TOOLS = new Set<string>(['device.ollama_chat']);
+
+async function emitVisibilityNotification(
+  workspaceId: string,
+  userId: string,
+  toolName: string,
+  args: unknown,
+  result: unknown,
+): Promise<void> {
+  const db = getDb();
+  let title = `${toolName}`;
+  let body = '';
+  if (toolName === 'device.ollama_chat') {
+    const a = (args ?? {}) as { model?: string; messages?: Array<{ content?: string }> };
+    const model = typeof a.model === 'string' ? a.model : 'unknown';
+    const promptBytes = Array.isArray(a.messages)
+      ? a.messages.reduce(
+          (n, m) => n + (typeof m?.content === 'string' ? Buffer.byteLength(m.content) : 0),
+          0,
+        )
+      : 0;
+    const r = (result ?? {}) as { outputTokens?: number };
+    const outTokens = typeof r.outputTokens === 'number' ? r.outputTokens : null;
+    title = `Ollama: model=${model}`;
+    body = `prompt-bytes=${promptBytes}${outTokens != null ? ` · out-tokens=${outTokens}` : ''}`;
+  }
+  await db.insert(notification).values({
+    workspaceId,
+    userId,
+    title,
+    body,
+    urgency: 'low',
+    source: 'conductor:tool-visibility',
+    metadata: { tool: toolName },
+  });
+}
+
+/**
  * Tools that are NEVER permitted to run without an explicit human
  * approval, regardless of `tool_acl` overrides or `agent_policy.defaultMode`.
  * Touch real people (Telegram chat, email inbox) and aren't meaningfully
@@ -501,6 +543,17 @@ export async function runTool(input: RunToolInput): Promise<RunToolResult> {
       .where(
         and(eq(toolCallTable.id, toolCallId), eq(toolCallTable.workspaceId, input.workspaceId)),
       );
+    if (VISIBILITY_NOTIFY_TOOLS.has(input.tool)) {
+      await emitVisibilityNotification(
+        input.workspaceId,
+        input.userId,
+        input.tool,
+        parsedArgs,
+        result,
+      ).catch(() => {
+        /* best-effort */
+      });
+    }
     return { toolCallId, status: 'success', result };
   } catch (err) {
     const msg = err instanceof Error ? err.message : String(err);
@@ -586,6 +639,15 @@ export async function approveToolCall(
         finishedAt: new Date(),
       })
       .where(and(eq(toolCallTable.id, toolCallId), eq(toolCallTable.workspaceId, workspaceId)));
+    // Continuous-visibility notification for high-trust local tunnels.
+    // The audit log already records the call; this just surfaces it.
+    if (VISIBILITY_NOTIFY_TOOLS.has(row.tool)) {
+      await emitVisibilityNotification(workspaceId, userId, row.tool, row.args, result).catch(
+        () => {
+          /* best-effort */
+        },
+      );
+    }
     return { toolCallId, status: 'success', result };
   } catch (err) {
     const msg = err instanceof Error ? err.message : String(err);
