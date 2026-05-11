@@ -15,6 +15,7 @@ const BTN_PRIMARY =
 import { redirect } from 'next/navigation';
 import { ProjectsGrid } from '@/components/projects/projects-grid';
 import { ProjectsToolbar } from '@/components/projects/projects-toolbar';
+import { SeedDemoButton } from '@/components/dashboard/seed-demo-button';
 
 export const dynamic = 'force-dynamic';
 
@@ -128,12 +129,15 @@ export default async function ProjectsPage({
         <EmptyState
           icon={<FolderKanban className="h-5 w-5" />}
           title="No projects yet"
-          description="Create your first project to get started."
+          description="Create your first project, or seed a sample one so you can poke around."
           action={
-            <Link href="/projects/new" className={BTN_PRIMARY}>
-              <Plus className="h-4 w-4" />
-              New project
-            </Link>
+            <div className="flex items-center gap-2">
+              <Link href="/projects/new" className={BTN_PRIMARY}>
+                <Plus className="h-4 w-4" />
+                New project
+              </Link>
+              <SeedDemoButton />
+            </div>
           }
         />
       ) : (
