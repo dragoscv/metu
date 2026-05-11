@@ -8,6 +8,7 @@
 import { auth } from '@metu/auth';
 import { redirect } from 'next/navigation';
 import {
+  agentRunSummary,
   listToolCalls,
   toolCallByAclMode,
   toolCallDailyCost,
@@ -23,6 +24,7 @@ import { AuditToolbar } from '@/components/audit/audit-toolbar';
 import { AuditList } from '@/components/audit/audit-list';
 import { AuditAclPanel } from '@/components/audit/audit-acl-panel';
 import { AuditCostPanel } from '@/components/audit/audit-cost-panel';
+import { AgentRunPanel } from '@/components/audit/agent-run-panel';
 import { CompanionAgentPanel } from '@/components/audit/companion-agent-panel';
 
 export const dynamic = 'force-dynamic';
@@ -79,6 +81,7 @@ export default async function AuditPage({ searchParams }: PageProps) {
     dailyCost,
     topByCost,
     aclRows,
+    runRows,
   ] = await Promise.all([
     listToolCalls({
       workspaceId: wsId,
@@ -96,6 +99,7 @@ export default async function AuditPage({ searchParams }: PageProps) {
     toolCallDailyCost(wsId, since),
     toolCallTopByCost(wsId, since, 5),
     toolCallByAclMode(wsId, since),
+    agentRunSummary(wsId, since),
   ]);
 
   const initialItems = items.map((r) => ({
@@ -144,6 +148,8 @@ export default async function AuditPage({ searchParams }: PageProps) {
       </div>
 
       <AuditCostPanel daily={dailyCost} top={topByCost} totalCost={summary.cost} />
+
+      <AgentRunPanel rows={runRows} />
 
       <CompanionAgentPanel workspaceId={wsId} since={since} />
 

@@ -223,6 +223,30 @@ export async function toolCallRunKindFacets(workspaceId: string, since?: Date | 
   return rows;
 }
 
+/**
+ * Per-status agent run rollup. Powers the audit page's "agent runs" tile
+ * so a glance shows how the planner + Inngest workers are doing
+ * (running / success / failed / cancelled) and what they cost.
+ */
+export async function agentRunSummary(workspaceId: string, since: Date) {
+  const db = getDb();
+  const rows = await db
+    .select({
+      status: agentRun.status,
+      count: sql<number>`count(*)::int`,
+      cost: sql<number>`coalesce(sum(${agentRun.costUsd}), 0)::float8`,
+    })
+    .from(agentRun)
+    .where(and(eq(agentRun.workspaceId, workspaceId), sql`${agentRun.startedAt} >= ${since}`))
+    .groupBy(agentRun.status)
+    .orderBy(desc(sql`count(*)`));
+  return rows.map((r) => ({
+    status: r.status,
+    count: typeof r.count === 'string' ? Number(r.count) : r.count,
+    cost: typeof r.cost === 'string' ? Number(r.cost) : r.cost,
+  }));
+}
+
 /** Lightweight aggregates for the page header strip. */
 export async function toolCallSummary(workspaceId: string, since: Date) {
   const db = getDb();
