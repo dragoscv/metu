@@ -84,6 +84,8 @@ export function registerInternalRoutes(app: Hono) {
   // connections. No-op when Redis isn't configured.
   subscribe((msg) => {
     if (msg.workspaceId == null) return;
+    // Skip our own publishes — local fast path already delivered them.
+    if (msg.origin === HUB_INSTANCE_ID) return;
     const conns = registry
       .forWorkspace(msg.workspaceId)
       .filter((c) => (msg.kinds ? msg.kinds.includes(c.kind) : true))

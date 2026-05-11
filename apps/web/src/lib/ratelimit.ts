@@ -69,6 +69,10 @@ const limiters: Record<string, Limiter> = {
   // upstream BYOK request — 30/min is plenty for human pace, low enough
   // to deter accidental loops.
   'voice-transcribe': buildLimiter('rl:voice-transcribe', 30, 60),
+  // BYOK key probe — settings page button. One human pressing buttons
+  // realistically peaks ~10/min; cap higher to absorb a quick scan
+  // across all connected providers.
+  'byok-test': buildLimiter('rl:byok-test', 30, 60),
 };
 
 export type LimiterKind = keyof typeof limiters;

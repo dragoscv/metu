@@ -3,6 +3,7 @@ import { redirect } from 'next/navigation';
 import { Card, CardTitle, Page, PageHeader } from '@metu/ui';
 import { listAvailableProviders, getProviderPolicy } from '@metu/ai';
 import { ProviderCredentialForm } from '@/components/provider-credential-form';
+import { ProviderKeyTester } from '@/components/provider-key-tester';
 import { CopilotConnect } from '@/components/copilot-connect';
 import { ProviderPolicyForm } from '@/components/provider-policy-form';
 import { TestNotificationCard } from '@/components/test-notification-card';
@@ -114,6 +115,15 @@ export default async function SettingsPage() {
           Encrypted with AES-256-GCM and stored per workspace.
         </p>
         <ProviderCredentialForm />
+      </Card>
+
+      <Card>
+        <CardTitle>Test connected keys</CardTitle>
+        <p className="mt-2 mb-3 text-xs text-[var(--color-fg-subtle)]">
+          Pings the cheapest list endpoint for each provider with your stored
+          credential. Latency is round-trip from this server.
+        </p>
+        <ProviderKeyTester providers={connectedProviders} />
       </Card>
 
       <TestNotificationCard />

@@ -10,6 +10,7 @@
  */
 import { auth } from '@metu/auth';
 import { exportToolCalls, type ToolCallStatusFilter } from '@metu/db/queries';
+import { requireTier } from '@/lib/tier-gate';
 import { NextResponse, type NextRequest } from 'next/server';
 
 export const dynamic = 'force-dynamic';
@@ -75,6 +76,14 @@ export async function GET(req: NextRequest) {
   const wsId = session.user.workspaceId;
   if (!wsId) {
     return NextResponse.json({ error: 'No workspace' }, { status: 403 });
+  }
+  // CSV export is a paid feature — basic in-app /audit view stays free.
+  const gate = await requireTier(wsId, 'pro');
+  if (!gate.ok) {
+    return NextResponse.json(
+      { error: 'plan_required', tier: gate.tier, minTier: gate.minTier },
+      { status: 402 },
+    );
   }
 
   const sp = req.nextUrl.searchParams;
