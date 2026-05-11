@@ -89,3 +89,78 @@ export async function deleteAccountAction(input: z.input<typeof deleteSchema>) {
   await signOut({ redirect: false });
   redirect('/sign-in?deleted=1');
 }
+
+// ─── Avatar upload ────────────────────────────────────────────────────────
+
+const AVATAR_MAX_BYTES = 2 * 1024 * 1024; // 2 MiB
+const AVATAR_MIME_ALLOW = new Set(['image/png', 'image/jpeg', 'image/webp']);
+
+/**
+ * Upload a new avatar. Validates size and content type, uploads to the
+ * public-read GCS bucket, then writes the public URL to `user.image`.
+ * Old avatar (if it was on our bucket) is best-effort deleted afterwards.
+ */
+export async function uploadAvatarAction(
+  formData: FormData,
+): Promise<{ ok: true; url: string } | { ok: false; error: string }> {
+  const session = await auth();
+  if (!session) return { ok: false, error: 'unauthorized' };
+
+  const file = formData.get('file');
+  if (!(file instanceof File)) return { ok: false, error: 'file missing' };
+  if (file.size <= 0) return { ok: false, error: 'empty file' };
+  if (file.size > AVATAR_MAX_BYTES) return { ok: false, error: 'file too large (max 2 MiB)' };
+  if (!AVATAR_MIME_ALLOW.has(file.type)) {
+    return { ok: false, error: 'unsupported type (use png, jpeg or webp)' };
+  }
+
+  const { gcs } = await import('@metu/integrations');
+  const ext = file.type === 'image/png' ? 'png' : file.type === 'image/webp' ? 'webp' : 'jpg';
+  const key = gcs.newStorageKey(`avatars/${session.user.id}`, ext);
+  const buf = Buffer.from(await file.arrayBuffer());
+
+  let publicUrl: string;
+  try {
+    const uploaded = await gcs.uploadPublicObject({
+      storageKey: key,
+      contentType: file.type,
+      data: buf,
+    });
+    publicUrl = uploaded.url;
+  } catch (err) {
+    return { ok: false, error: `upload failed: ${err instanceof Error ? err.message : 'unknown'}` };
+  }
+
+  const db = getDb();
+  const [prev] = await db
+    .select({ image: user.image })
+    .from(user)
+    .where(eq(user.id, session.user.id))
+    .limit(1);
+
+  await db.update(user).set({ image: publicUrl }).where(eq(user.id, session.user.id));
+
+  await db.insert(timelineEvent).values({
+    workspaceId: session.user.workspaceId,
+    userId: session.user.id,
+    kind: 'profile.updated',
+    title: 'Avatar updated',
+    body: publicUrl,
+  });
+
+  // Best-effort cleanup of the previous object if it lived on our public bucket.
+  if (prev?.image) {
+    const publicBase = process.env.GCS_PUBLIC_BASE_URL
+      ? process.env.GCS_PUBLIC_BASE_URL
+      : `https://storage.googleapis.com/${process.env.GCS_PUBLIC_BUCKET ?? 'metu-public'}`;
+    if (prev.image.startsWith(publicBase + '/')) {
+      const oldKey = prev.image.slice(publicBase.length + 1);
+      void gcs.deletePublicObject(oldKey).catch(() => {
+        /* lifecycle policy will catch orphans */
+      });
+    }
+  }
+
+  revalidatePath('/settings/profile');
+  return { ok: true, url: publicUrl };
+}

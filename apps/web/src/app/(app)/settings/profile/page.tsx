@@ -7,6 +7,7 @@ import {
   setPreferredLanguageAction,
 } from '@/app/actions/workspace-preferences';
 import { updateDisplayNameAction, deleteAccountAction } from '@/app/actions/profile';
+import { AvatarUploader } from './AvatarUploader';
 
 export const metadata = { title: 'Profile · metu' };
 
@@ -59,6 +60,7 @@ export default async function ProfilePage() {
             <p className="truncate text-sm text-[var(--color-fg-muted)]">{u.email}</p>
           </div>
         </div>
+        <AvatarUploader currentImage={u.image ?? null} />
       </Card>
 
       <Card>
@@ -184,8 +186,8 @@ export default async function ProfilePage() {
       <Card variant="outline">
         <CardTitle>Roadmap</CardTitle>
         <CardDescription className="mt-2">
-          Avatar upload, passkey (WebAuthn) registration, and OAuth-provider unlinking are queued
-          for the next batch. Sign-in identity is currently mirrored from Google.
+          Passkey (WebAuthn) registration and OAuth-provider unlinking are queued for the next
+          batch. Sign-in identity is currently mirrored from Google.
         </CardDescription>
       </Card>
     </Page>
