@@ -19,10 +19,13 @@ export default function MarketingLayout({ children }: { children: ReactNode }) {
           <Link href="/" className="text-sm font-semibold tracking-tight">
             metu
           </Link>
-          <nav className="flex items-center gap-4 text-xs text-[var(--color-fg-subtle)]">
+          <nav className="flex flex-wrap items-center gap-x-4 gap-y-1 text-xs text-[var(--color-fg-subtle)]">
             <Link href="/docs">Docs</Link>
             <Link href="/docs/sdk">SDK</Link>
             <Link href="/docs/companion">Companion</Link>
+            <Link href="/docs/byok">BYOK</Link>
+            <Link href="/docs/integrations">Integrations</Link>
+            <Link href="/docs/mcp">MCP</Link>
             <Link href="/docs/security">Security</Link>
             <Link
               href="/sign-in"

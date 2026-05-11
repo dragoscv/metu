@@ -26,6 +26,7 @@ export function NotesApp({ token }: { token: string }) {
   const [activeId, setActiveId] = useState<string | null>(null);
   const [activeFolder, setActiveFolder] = useState<string | null>(null);
   const [search, setSearch] = useState('');
+  const [selection, setSelection] = useState<Set<string>>(new Set());
   const [loading, setLoading] = useState(true);
   const [err, setErr] = useState<string | null>(null);
   const [savedAt, setSavedAt] = useState<number | null>(null);
@@ -132,6 +133,49 @@ export function NotesApp({ token }: { token: string }) {
       if (activeId === id) setActiveId(null);
     } catch (e) {
       setErr(e instanceof Error ? e.message : 'delete failed');
+    }
+  }
+
+  function onRowClick(id: string, e: React.MouseEvent) {
+    if (e.metaKey || e.ctrlKey || e.shiftKey) {
+      // Multi-select toggle. Shift behaves the same as Cmd here — proper
+      // range-select would need a lastSelectedIndex anchor.
+      e.preventDefault();
+      setSelection((prev) => {
+        const next = new Set(prev);
+        if (next.has(id)) next.delete(id);
+        else next.add(id);
+        return next;
+      });
+      return;
+    }
+    setSelection(new Set());
+    setActiveId(id);
+  }
+
+  async function onBulkDelete() {
+    if (selection.size === 0) return;
+    if (!window.confirm(`Delete ${selection.size} note${selection.size === 1 ? '' : 's'}?`)) return;
+    const ids = [...selection];
+    try {
+      await Promise.all(ids.map((id) => deleteNote(token, id)));
+      setNotes((prev) => prev.filter((n) => !selection.has(n.id)));
+      if (activeId && selection.has(activeId)) setActiveId(null);
+      setSelection(new Set());
+    } catch (e) {
+      setErr(e instanceof Error ? e.message : 'bulk delete failed');
+    }
+  }
+
+  async function onBulkMove(folderId: string | null) {
+    if (selection.size === 0) return;
+    const ids = [...selection];
+    try {
+      await Promise.all(ids.map((id) => updateNote(token, id, { folderId })));
+      setNotes((prev) => prev.map((n) => (selection.has(n.id) ? { ...n, folderId } : n)));
+      setSelection(new Set());
+    } catch (e) {
+      setErr(e instanceof Error ? e.message : 'bulk move failed');
     }
   }
 
@@ -276,6 +320,77 @@ export function NotesApp({ token }: { token: string }) {
             }}
           />
         </div>
+        {selection.size > 0 ? (
+          <div
+            style={{
+              borderBottom: '1px solid #2a2a32',
+              padding: '0.4rem 0.5rem',
+              display: 'flex',
+              alignItems: 'center',
+              gap: 6,
+              background: '#16121f',
+              flexWrap: 'wrap',
+            }}
+          >
+            <span style={{ fontSize: 11, color: '#c4b5fd' }}>{selection.size} selected</span>
+            <select
+              onChange={(e) => {
+                const v = e.target.value;
+                if (!v) return;
+                onBulkMove(v === '__none__' ? null : v);
+                e.currentTarget.value = '';
+              }}
+              defaultValue=""
+              style={{
+                fontSize: 11,
+                background: '#1c1c22',
+                color: '#e7e7ea',
+                border: '1px solid #2a2a32',
+                borderRadius: 4,
+                padding: '0.2rem 0.4rem',
+              }}
+            >
+              <option value="" disabled>
+                Move to…
+              </option>
+              <option value="__none__">All (no folder)</option>
+              {folders.map((f) => (
+                <option key={f.id} value={f.id}>
+                  {f.name}
+                </option>
+              ))}
+            </select>
+            <button
+              type="button"
+              onClick={onBulkDelete}
+              style={{
+                fontSize: 11,
+                background: 'transparent',
+                color: '#f87171',
+                border: '1px solid #2a2a32',
+                borderRadius: 4,
+                padding: '0.2rem 0.5rem',
+                cursor: 'pointer',
+              }}
+            >
+              Delete
+            </button>
+            <button
+              type="button"
+              onClick={() => setSelection(new Set())}
+              style={{
+                fontSize: 11,
+                marginLeft: 'auto',
+                background: 'transparent',
+                color: '#9b9ba1',
+                border: 'none',
+                cursor: 'pointer',
+              }}
+            >
+              Clear
+            </button>
+          </div>
+        ) : null}
         <div style={{ overflowY: 'auto', flex: 1 }}>
           {loading && visibleNotes.length === 0 ? (
             <p style={{ padding: '0.75rem', color: '#9b9ba1', fontSize: 12 }}>Loading…</p>
@@ -288,12 +403,16 @@ export function NotesApp({ token }: { token: string }) {
               <button
                 key={n.id}
                 type="button"
-                onClick={() => setActiveId(n.id)}
+                onClick={(e) => onRowClick(n.id, e)}
                 style={{
                   display: 'block',
                   width: '100%',
                   textAlign: 'left',
-                  background: n.id === activeId ? '#1c1c22' : 'transparent',
+                  background: selection.has(n.id)
+                    ? '#3b1d6b'
+                    : n.id === activeId
+                      ? '#1c1c22'
+                      : 'transparent',
                   color: '#e7e7ea',
                   border: 'none',
                   borderBottom: '1px solid #1a1a20',

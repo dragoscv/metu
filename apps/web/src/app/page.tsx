@@ -77,19 +77,19 @@ export default async function Landing() {
       <section className="mx-auto grid max-w-5xl gap-4 px-6 pb-24 md:grid-cols-3">
         {[
           {
-            icon: Compass,
-            title: 'Focus Engine',
-            desc: 'Tells you what NOT to do. Reduces decision space ruthlessly.',
+            icon: Zap,
+            title: 'Capture',
+            desc: 'Anything you type, dictate, paste, or visit. Browser, VS Code, mobile, Telegram, MCP.',
           },
           {
             icon: Brain,
-            title: 'Memory that lasts',
-            desc: 'Episodic + semantic recall over every commit, capture, decision.',
+            title: 'Recall',
+            desc: 'Hybrid semantic + keyword search over everything. /recall in chat, command palette, or SDK.',
           },
           {
-            icon: Zap,
-            title: 'BYOK AI mesh',
-            desc: 'Anthropic, OpenAI, Azure, Gemini, Copilot — pick per-task.',
+            icon: Compass,
+            title: 'Resume',
+            desc: 'After 3 days, 3 weeks, or 3 months — metu knows where you left off and the next minimum step.',
           },
         ].map((f) => (
           <div

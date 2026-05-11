@@ -11,6 +11,7 @@ import { getDb } from '@metu/db';
 import { oauthClient, oauthToken } from '@metu/db/schema';
 import { Card, Page, PageHeader } from '@metu/ui';
 import { revokeApiTokenAction } from '@/app/actions/api-tokens';
+import { IssueApiTokenForm } from '@/components/issue-api-token-form';
 
 export const dynamic = 'force-dynamic';
 
@@ -47,6 +48,11 @@ export default async function ApiTokensPage() {
         title="API tokens"
         description="Active bearer tokens for SDK calls. Revoke anything you don't recognise."
       />
+
+      <Card>
+        <div className="mb-3 text-sm font-medium">Issue a new token</div>
+        <IssueApiTokenForm />
+      </Card>
 
       {rows.length === 0 ? (
         <Card>

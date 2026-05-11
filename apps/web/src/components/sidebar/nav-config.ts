@@ -21,6 +21,7 @@ import {
   Library,
   MessageSquare,
   Plug,
+  Rocket,
   RotateCcw,
   ScrollText,
   Settings as SettingsIcon,
@@ -58,6 +59,7 @@ export interface NavGroup {
 export type NavNode = NavLeaf | NavGroup;
 
 export const NAV: NavNode[] = [
+  { kind: 'leaf', href: '/onboarding', label: 'Get started', icon: Rocket },
   { kind: 'leaf', href: '/resume', label: 'Resume', icon: RotateCcw },
   { kind: 'leaf', href: '/dashboard', label: 'Now', icon: Compass },
   { kind: 'leaf', href: '/metu', label: 'METU', icon: Sparkles },
