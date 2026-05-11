@@ -1,7 +1,7 @@
 import { auth } from '@metu/auth';
 import { redirect } from 'next/navigation';
 import { and, desc, eq } from 'drizzle-orm';
-import { Page, PageHeader, Card, Badge } from '@metu/ui';
+import { Page, PageHeader, Card, Badge, cn } from '@metu/ui';
 import { Bell } from 'lucide-react';
 import { getDb } from '@metu/db';
 import { notification } from '@metu/db/schema';
@@ -12,9 +12,23 @@ import { formatDistanceToNow } from 'date-fns';
 
 export const dynamic = 'force-dynamic';
 
-export default async function NotificationsPage() {
+const URGENCY_VALUES = ['low', 'normal', 'high', 'critical'] as const;
+type Urgency = (typeof URGENCY_VALUES)[number];
+
+export default async function NotificationsPage({
+  searchParams,
+}: {
+  searchParams: Promise<{ urgency?: string }>;
+}) {
   const session = await auth();
   if (!session?.user?.id) redirect('/sign-in');
+
+  const sp = await searchParams;
+  const urgencyFilter: Urgency | null = (URGENCY_VALUES as readonly string[]).includes(
+    sp.urgency ?? '',
+  )
+    ? (sp.urgency as Urgency)
+    : null;
 
   const db = getDb();
   const rows = await db
@@ -34,6 +48,7 @@ export default async function NotificationsPage() {
       and(
         eq(notification.userId, session.user.id),
         eq(notification.workspaceId, session.user.workspaceId),
+        urgencyFilter ? eq(notification.urgency, urgencyFilter) : undefined,
       ),
     )
     .orderBy(desc(notification.createdAt))
@@ -51,9 +66,10 @@ export default async function NotificationsPage() {
           </span>
         }
         title="Notifications"
-        description={`${unread.length} unread of ${rows.length} recent`}
+        description={`${unread.length} unread of ${rows.length} recent${urgencyFilter ? ` · filtered: ${urgencyFilter}` : ''}`}
         actions={<NotificationsActions hasUnread={unread.length > 0} />}
       />
+      <UrgencyFilterChips active={urgencyFilter} />
       {rows.length === 0 ? (
         <Card className="text-sm text-[var(--color-fg-muted)]">
           No notifications yet. The Conductor will surface things here as they happen.
@@ -98,5 +114,36 @@ export default async function NotificationsPage() {
         </div>
       )}
     </Page>
+  );
+}
+
+function UrgencyFilterChips({ active }: { active: Urgency | null }) {
+  const chips: { label: string; href: string; value: Urgency | null }[] = [
+    { label: 'All', href: '/notifications', value: null },
+    { label: 'Critical', href: '/notifications?urgency=critical', value: 'critical' },
+    { label: 'High', href: '/notifications?urgency=high', value: 'high' },
+    { label: 'Normal', href: '/notifications?urgency=normal', value: 'normal' },
+    { label: 'Low', href: '/notifications?urgency=low', value: 'low' },
+  ];
+  return (
+    <div className="mb-3 flex flex-wrap gap-1.5">
+      {chips.map((c) => {
+        const isActive = c.value === active;
+        return (
+          <Link
+            key={c.label}
+            href={c.href}
+            className={cn(
+              'rounded-full border px-2.5 py-1 text-xs transition-colors',
+              isActive
+                ? 'bg-[var(--color-brand)]/10 border-[var(--color-brand)] text-[var(--color-brand)]'
+                : 'border-[var(--color-border)] text-[var(--color-fg-muted)] hover:bg-[var(--color-bg-overlay)]',
+            )}
+          >
+            {c.label}
+          </Link>
+        );
+      })}
+    </div>
   );
 }

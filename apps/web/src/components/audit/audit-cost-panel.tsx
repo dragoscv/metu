@@ -4,6 +4,7 @@
  * recharts/client deps) since it's read-only and small.
  */
 import { Card, CardTitle } from '@metu/ui';
+import Link from 'next/link';
 
 interface DailyPoint {
   day: string;
@@ -73,18 +74,24 @@ export function AuditCostPanel({ daily, top, totalCost }: Props) {
               const pct = totalCost > 0 ? Math.min(100, (t.total / totalCost) * 100) : 0;
               return (
                 <li key={t.tool} className="text-xs">
-                  <div className="flex items-baseline justify-between gap-2">
-                    <span className="truncate font-mono">{t.tool}</span>
-                    <span className="shrink-0 tabular-nums text-[var(--color-fg-subtle)]">
-                      ${t.total.toFixed(4)} <span className="opacity-60">· {t.calls}</span>
-                    </span>
-                  </div>
-                  <div className="mt-1 h-1.5 overflow-hidden rounded-full bg-[var(--color-bg-elevated)]">
-                    <div
-                      className="bg-[var(--color-brand)]/70 h-full rounded-full"
-                      style={{ width: `${pct}%` }}
-                    />
-                  </div>
+                  <Link
+                    href={`/audit?tools=${encodeURIComponent(t.tool)}`}
+                    className="-mx-1 block rounded px-1 py-0.5 transition-colors hover:bg-[var(--color-bg-overlay)]"
+                    title={`Filter audit by ${t.tool}`}
+                  >
+                    <div className="flex items-baseline justify-between gap-2">
+                      <span className="truncate font-mono">{t.tool}</span>
+                      <span className="shrink-0 tabular-nums text-[var(--color-fg-subtle)]">
+                        ${t.total.toFixed(4)} <span className="opacity-60">· {t.calls}</span>
+                      </span>
+                    </div>
+                    <div className="mt-1 h-1.5 overflow-hidden rounded-full bg-[var(--color-bg-elevated)]">
+                      <div
+                        className="bg-[var(--color-brand)]/70 h-full rounded-full"
+                        style={{ width: `${pct}%` }}
+                      />
+                    </div>
+                  </Link>
                 </li>
               );
             })}
