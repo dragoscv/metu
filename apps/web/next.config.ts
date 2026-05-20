@@ -39,6 +39,8 @@ const nextConfig: NextConfig = {
     '@google-cloud/secret-manager',
     '@google-cloud/speech',
     'telegraf',
+    '@sentry/node',
+    '@sentry/nextjs',
   ],
   async headers() {
     // CSP: 'unsafe-inline' on script-src is currently required because Next.js

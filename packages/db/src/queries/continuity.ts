@@ -93,7 +93,7 @@ export async function countActiveProjectsWithoutFreshBriefing(
   staleAfterMs = 24 * 60 * 60 * 1000,
 ): Promise<number> {
   const db = getDb();
-  const cutoff = new Date(Date.now() - staleAfterMs);
+  const cutoffIso = new Date(Date.now() - staleAfterMs).toISOString();
   const [row] = await db
     .select({ n: sql<number>`count(*)::int` })
     .from(project)
@@ -106,7 +106,7 @@ export async function countActiveProjectsWithoutFreshBriefing(
           select 1 from ${continuityBriefing} cb
           where cb.project_id = ${project.id}
             and cb.workspace_id = ${workspaceId}
-            and cb.generated_at >= ${cutoff}
+            and cb.generated_at >= ${cutoffIso}::timestamptz
         )`,
       ),
     );

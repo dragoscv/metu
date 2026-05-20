@@ -3,12 +3,19 @@ import { z } from 'zod';
 import { revalidatePath } from 'next/cache';
 import { auth } from '@metu/auth';
 import { seal } from '@metu/ai/crypto';
-import { createOauthApp, deleteOauthApp, deleteOauthConnection } from '@metu/db/queries';
+import {
+  createOauthApp,
+  deleteOauthApp,
+  deleteOauthConnection,
+  upsertOauthAppByKind,
+} from '@metu/db/queries';
 import { getDb } from '@metu/db';
 import { timelineEvent } from '@metu/db/schema';
+import { integrationKindSchema } from '@metu/types';
 import { discoverOidc } from '@/lib/oauth/discover';
 import { callbackUrl } from '@/lib/oauth/pkce';
 import { assertSafeOutboundUrl } from '@/lib/safe-equal';
+import { WEB_OAUTH } from '@/lib/integrations/web-oauth-config';
 
 const slugRegex = /^[a-z0-9](?:[a-z0-9-]{0,38}[a-z0-9])?$/;
 
@@ -176,4 +183,91 @@ export async function deleteOauthConnectionAction(id: string) {
     });
   revalidatePath('/integrations');
   return { ok: true as const };
+}
+
+// ─── Per-kind OAuth client credentials ────────────────────────────────────
+// Lets a workspace BYO OAuth client_id/secret for any built-in integration
+// (slack, gcal, twitter, …) without redeploying. The /api/integrations/oauth/
+// [kind] flow consults this row first, then falls back to env vars.
+
+const upsertKindSchema = z.object({
+  kind: integrationKindSchema,
+  clientId: z.string().min(1).max(200),
+  clientSecret: z.string().min(1).max(2000),
+  scopes: z.string().max(500).optional().default(''),
+  authorizeUrl: z.string().url().optional().or(z.literal('')),
+  tokenUrl: z.string().url().optional().or(z.literal('')),
+  pkce: z.boolean().optional(),
+  tokenAuthMethod: z.enum(['client_secret_post', 'client_secret_basic']).optional(),
+});
+
+export async function upsertOauthAppForKindAction(
+  formData: FormData,
+): Promise<{ ok: true; appId: string } | { ok: false; error: string }> {
+  const session = await auth();
+  if (!session) return { ok: false, error: 'Unauthenticated' };
+
+  const raw = {
+    kind: String(formData.get('kind') ?? ''),
+    clientId: String(formData.get('clientId') ?? '').trim(),
+    clientSecret: String(formData.get('clientSecret') ?? ''),
+    scopes: String(formData.get('scopes') ?? '').trim(),
+    authorizeUrl: String(formData.get('authorizeUrl') ?? '').trim(),
+    tokenUrl: String(formData.get('tokenUrl') ?? '').trim(),
+    pkce: formData.get('pkce') === 'on' || formData.get('pkce') === 'true',
+    tokenAuthMethod: String(formData.get('tokenAuthMethod') ?? 'client_secret_post') as
+      | 'client_secret_post'
+      | 'client_secret_basic',
+  };
+  const parsed = upsertKindSchema.safeParse(raw);
+  if (!parsed.success) {
+    return { ok: false, error: parsed.error.issues[0]?.message ?? 'Validation failed' };
+  }
+
+  // Auto-fill URLs from the static catalog when the user didn't override.
+  const fallback = WEB_OAUTH[parsed.data.kind];
+  const authorizeUrl = parsed.data.authorizeUrl || fallback?.authorizeUrl;
+  const tokenUrl = parsed.data.tokenUrl || fallback?.tokenUrl;
+  if (!authorizeUrl || !tokenUrl) {
+    return {
+      ok: false,
+      error: `${parsed.data.kind} has no built-in URLs — provide authorizeUrl + tokenUrl explicitly.`,
+    };
+  }
+  const scopes = parsed.data.scopes || fallback?.scope || '';
+  const pkce = parsed.data.pkce ?? fallback?.pkce ?? true;
+  const extraAuthParams = (fallback?.extraAuthParams ?? {}) as Record<string, string>;
+
+  const sealed = seal(parsed.data.clientSecret);
+  const appId = await upsertOauthAppByKind({
+    workspaceId: session.user.workspaceId,
+    name: `${parsed.data.kind} (workspace OAuth)`,
+    slug: `kind-${parsed.data.kind}`,
+    authorizeUrl,
+    tokenUrl,
+    clientId: parsed.data.clientId,
+    clientSecretCiphertext: sealed.ciphertext,
+    clientSecretIv: sealed.iv,
+    clientSecretTag: sealed.tag,
+    scopes,
+    pkce,
+    kind: parsed.data.kind,
+    extraAuthParams,
+    tokenAuthMethod: parsed.data.tokenAuthMethod,
+  });
+
+  await getDb()
+    .insert(timelineEvent)
+    .values({
+      workspaceId: session.user.workspaceId,
+      userId: session.user.id,
+      kind: 'oauth_app.kind_credentials_saved',
+      title: `Saved OAuth credentials for ${parsed.data.kind}`,
+      payload: { appId, kind: parsed.data.kind },
+      importance: 0.5,
+    });
+
+  revalidatePath('/integrations');
+  revalidatePath('/integrations/oauth-apps');
+  return { ok: true, appId };
 }

@@ -7,6 +7,8 @@ import { toolCallAclWarnings } from '@metu/db/queries';
 import { agent } from '@metu/core';
 import { Page, PageHeader } from '@metu/ui';
 import { AutonomyForm, type AutonomyMode } from '@/components/autonomy-form';
+import { ConductorActivityLevelForm } from '@/components/conductor-activity-level-form';
+import { getConductorActivityLevel } from '@/app/actions/workspace-preferences';
 
 const KIND_DEFAULT: Record<'read' | 'low_risk' | 'high_risk', AutonomyMode> = {
   read: 'autopilot',
@@ -141,6 +143,7 @@ export default async function AutonomyPage() {
         title="Autonomy"
         description="Configure how the Conductor acts on your behalf. Every tool the agent can call is governed by these rules — scoped per-integration when relevant."
       />
+      <ConductorActivityLevelForm initial={await getConductorActivityLevel(wsId)} />
       <AutonomyForm
         initial={{
           defaultMode,

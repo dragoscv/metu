@@ -115,6 +115,13 @@ function TimelineRow({ event }: { event: TimelineRowDTO }) {
   const tone = TONE_BG[meta.tone] ?? TONE_BG.neutral;
   const sourceLink = resolveSourceLink(event.kind, event.payload, event.projectId);
   const time = new Date(event.occurredAt);
+  // payload.tags is a free-form string[] populated by mobile/web captures
+  // when the user includes #hashtags. Cap visible chips at 4.
+  const tags = Array.isArray((event.payload as { tags?: unknown }).tags)
+    ? (event.payload as { tags: unknown[] }).tags
+        .filter((t): t is string => typeof t === 'string')
+        .slice(0, 4)
+    : [];
 
   return (
     <motion.li layout className="group">
@@ -157,6 +164,19 @@ function TimelineRow({ event }: { event: TimelineRowDTO }) {
           <ChevronRight className="h-4 w-4 text-[var(--color-fg-subtle)]" />
         </div>
       </Link>
+      {tags.length > 0 && (
+        <div className="-mt-1 mb-1 ml-12 flex flex-wrap gap-1">
+          {tags.map((t) => (
+            <Link
+              key={t}
+              href={`/timeline?tag=${encodeURIComponent(t)}`}
+              className="rounded-full bg-[var(--color-bg-overlay)] px-2 py-0.5 text-[10px] text-[var(--color-fg-muted)] hover:text-[var(--color-fg)]"
+            >
+              #{t}
+            </Link>
+          ))}
+        </div>
+      )}
     </motion.li>
   );
 }

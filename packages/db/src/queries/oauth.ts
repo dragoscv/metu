@@ -19,6 +19,9 @@ export interface OauthAppRow {
   clientSecretTag: string;
   scopes: string;
   pkce: boolean;
+  kind: string | null;
+  extraAuthParams: Record<string, string>;
+  tokenAuthMethod: string;
   discovered: Record<string, unknown>;
   createdAt: Date;
   updatedAt: Date;
@@ -85,6 +88,9 @@ export interface CreateOauthAppInput {
   clientSecretTag: string;
   scopes: string;
   pkce: boolean;
+  kind?: string | null;
+  extraAuthParams?: Record<string, string>;
+  tokenAuthMethod?: string;
   discovered?: Record<string, unknown>;
 }
 
@@ -107,10 +113,64 @@ export async function createOauthApp(input: CreateOauthAppInput): Promise<string
       clientSecretTag: input.clientSecretTag,
       scopes: input.scopes,
       pkce: input.pkce,
+      kind: (input.kind ?? null) as never,
+      extraAuthParams: input.extraAuthParams ?? {},
+      tokenAuthMethod: input.tokenAuthMethod ?? 'client_secret_post',
       discovered: input.discovered ?? {},
     })
     .returning();
   return inserted[0]!.id;
+}
+
+/**
+ * Fetch the workspace's OAuth app for a given integration kind, including
+ * the sealed secret. Used by the per-kind callback to exchange the code.
+ * Returns null when no DB-stored app exists — callers fall back to env.
+ */
+export async function getOauthAppByKind(
+  workspaceId: string,
+  kind: string,
+): Promise<OauthAppRow | null> {
+  const db = getDb();
+  const rows = await db
+    .select()
+    .from(oauthApp)
+    .where(and(eq(oauthApp.workspaceId, workspaceId), eq(oauthApp.kind, kind as never)))
+    .limit(1);
+  return (rows[0] ?? null) as OauthAppRow | null;
+}
+
+/**
+ * Upsert by (workspaceId, kind). Used by the OAuth-apps admin UI when
+ * the user pastes a `<provider>` client_id/secret pair.
+ */
+export async function upsertOauthAppByKind(
+  input: CreateOauthAppInput & { kind: string },
+): Promise<string> {
+  const existing = await getOauthAppByKind(input.workspaceId, input.kind);
+  if (existing) {
+    const db = getDb();
+    await db
+      .update(oauthApp)
+      .set({
+        name: input.name,
+        authorizeUrl: input.authorizeUrl,
+        tokenUrl: input.tokenUrl,
+        userinfoUrl: input.userinfoUrl ?? null,
+        revokeUrl: input.revokeUrl ?? null,
+        clientId: input.clientId,
+        clientSecretCiphertext: input.clientSecretCiphertext,
+        clientSecretIv: input.clientSecretIv,
+        clientSecretTag: input.clientSecretTag,
+        scopes: input.scopes,
+        pkce: input.pkce,
+        extraAuthParams: input.extraAuthParams ?? {},
+        tokenAuthMethod: input.tokenAuthMethod ?? 'client_secret_post',
+      })
+      .where(and(eq(oauthApp.workspaceId, input.workspaceId), eq(oauthApp.id, existing.id)));
+    return existing.id;
+  }
+  return createOauthApp(input);
 }
 
 export async function deleteOauthApp(workspaceId: string, id: string) {

@@ -33,6 +33,11 @@
         "category": "metu"
       },
       {
+        "command": "metu.captureFile",
+        "title": "metu: Capture entire file",
+        "category": "metu"
+      },
+      {
         "command": "metu.recall",
         "title": "metu: Recall from memory",
         "category": "metu"
@@ -69,6 +74,12 @@
         "icon": "$(refresh)"
       },
       {
+        "command": "metu.dismissBacklogItem",
+        "title": "metu: Dismiss backlog item",
+        "category": "metu",
+        "icon": "$(close)"
+      },
+      {
         "command": "metu.signIn",
         "title": "metu: Sign in",
         "category": "metu"
@@ -76,6 +87,31 @@
       {
         "command": "metu.signOut",
         "title": "metu: Sign out",
+        "category": "metu"
+      },
+      {
+        "command": "metu.openWeb",
+        "title": "metu: Open web app",
+        "category": "metu"
+      },
+      {
+        "command": "metu.openTimeline",
+        "title": "metu: Open timeline in browser",
+        "category": "metu"
+      },
+      {
+        "command": "metu.openAudit",
+        "title": "metu: Open audit log in browser",
+        "category": "metu"
+      },
+      {
+        "command": "metu.openCapturesForWorkspace",
+        "title": "metu: Open captures filtered by current workspace",
+        "category": "metu"
+      },
+      {
+        "command": "metu.captureClipboard",
+        "title": "metu: Capture clipboard",
         "category": "metu"
       }
     ],
@@ -126,6 +162,11 @@
         "mac": "cmd+alt+m"
       },
       {
+        "command": "metu.captureClipboard",
+        "key": "ctrl+alt+v",
+        "mac": "cmd+alt+v"
+      },
+      {
         "command": "metu.recall",
         "key": "ctrl+alt+r",
         "mac": "cmd+alt+r"
@@ -159,6 +200,20 @@
           "command": "metu.refreshBacklog",
           "when": "view == metu.conductorBacklog",
           "group": "navigation"
+        }
+      ],
+      "view/item/context": [
+        {
+          "command": "metu.dismissBacklogItem",
+          "when": "view == metu.conductorBacklog && viewItem == backlogItem",
+          "group": "inline"
+        }
+      ],
+      "editor/context": [
+        {
+          "command": "metu.capture",
+          "when": "editorHasSelection",
+          "group": "metu@1"
         }
       ]
     }

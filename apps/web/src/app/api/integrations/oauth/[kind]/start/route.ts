@@ -2,7 +2,7 @@ import { NextResponse } from 'next/server';
 import { cookies } from 'next/headers';
 import { auth } from '@metu/auth';
 import { integrationKindSchema } from '@metu/types';
-import { webOauthConfig } from '@/lib/integrations/web-oauth-config';
+import { resolveOauthConfig } from '@/lib/integrations/effective-oauth-config';
 import { newPkce, randomUrlSafe } from '@/lib/oauth/pkce';
 
 const COOKIE_TTL_S = 600;
@@ -22,7 +22,7 @@ export async function GET(req: Request, { params }: { params: Promise<{ kind: st
     return NextResponse.redirect(new URL('/integrations?oauth_error=invalid_kind', req.url));
   }
   const kind = kindParse.data;
-  const resolved = webOauthConfig(kind);
+  const resolved = await resolveOauthConfig(session.user.workspaceId, kind);
   if (!resolved) {
     return NextResponse.redirect(
       new URL(
@@ -31,7 +31,7 @@ export async function GET(req: Request, { params }: { params: Promise<{ kind: st
       ),
     );
   }
-  const { clientId, cfg } = resolved;
+  const { clientId, ...cfg } = resolved;
   const state = randomUrlSafe(24);
   const pkce = cfg.pkce ? newPkce() : null;
   const redirectUri = callbackUrlFor(kind);
@@ -46,7 +46,7 @@ export async function GET(req: Request, { params }: { params: Promise<{ kind: st
     url.searchParams.set('code_challenge', pkce.challenge);
     url.searchParams.set('code_challenge_method', 'S256');
   }
-  for (const [k, v] of Object.entries(cfg.extraAuthParams ?? {})) {
+  for (const [k, v] of Object.entries(cfg.extraAuthParams)) {
     url.searchParams.set(k, v);
   }
 

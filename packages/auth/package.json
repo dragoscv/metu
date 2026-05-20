@@ -13,14 +13,14 @@
     "test:watch": "vitest"
   },
   "dependencies": {
-    "@metu/db": "workspace:*",
     "@auth/drizzle-adapter": "catalog:",
+    "@metu/db": "workspace:*",
     "next-auth": "catalog:",
     "zod": "catalog:"
   },
   "devDependencies": {
     "@metu/config": "workspace:*",
-    "next": "catalog:",
+    "next": "^16.1.5",
     "react": "catalog:",
     "typescript": "catalog:",
     "vitest": "catalog:"

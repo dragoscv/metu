@@ -2,7 +2,7 @@
  * Dashboard cost-budget warning. Renders a banner only when today's metered
  * spend exceeds 80% of the workspace daily cap. Silent otherwise.
  */
-import { and, eq, sql } from 'drizzle-orm';
+import { and, eq, gte, sql } from 'drizzle-orm';
 import Link from 'next/link';
 import { AlertTriangle } from 'lucide-react';
 import { getDb } from '@metu/db';
@@ -34,7 +34,7 @@ export async function CostBudgetBanner({ workspaceId }: { workspaceId: string })
       cost: sql<number>`coalesce(sum(coalesce(${toolCall.actualCostUsd}, ${toolCall.estimatedCostUsd}, 0)), 0)::float8`,
     })
     .from(toolCall)
-    .where(and(eq(toolCall.workspaceId, workspaceId), sql`${toolCall.requestedAt} >= ${dayStart}`));
+    .where(and(eq(toolCall.workspaceId, workspaceId), gte(toolCall.requestedAt, dayStart)));
   const spent = Number(agg?.cost ?? 0);
   const pct = cap > 0 ? (spent / cap) * 100 : 0;
 

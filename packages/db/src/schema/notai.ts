@@ -27,7 +27,7 @@ export const notaiFolder = pgTable(
     workspaceId: uuid('workspace_id')
       .notNull()
       .references(() => workspace.id, { onDelete: 'cascade' }),
-    userId: text('user_id')
+    userId: uuid('user_id')
       .notNull()
       .references(() => user.id, { onDelete: 'cascade' }),
     name: text('name').notNull(),
@@ -50,7 +50,7 @@ export const notaiNote = pgTable(
     workspaceId: uuid('workspace_id')
       .notNull()
       .references(() => workspace.id, { onDelete: 'cascade' }),
-    userId: text('user_id')
+    userId: uuid('user_id')
       .notNull()
       .references(() => user.id, { onDelete: 'cascade' }),
     folderId: uuid('folder_id').references(() => notaiFolder.id, { onDelete: 'set null' }),

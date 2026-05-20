@@ -44,7 +44,7 @@ services:
     restart: unless-stopped
     command: ['redis-server', '--appendonly', 'yes']
     ports:
-      - '6379:6379'
+      - '24896:6379'
     volumes:
       - redis-data:/data
     healthcheck:
@@ -64,7 +64,7 @@ services:
       SRH_TOKEN: metu-local-token
       SRH_CONNECTION_STRING: redis://redis:6379
     ports:
-      - '8079:80'
+      - '24899:80'
     depends_on:
       redis:
         condition: service_healthy
@@ -78,7 +78,7 @@ services:
       MINIO_ROOT_USER: metu
       MINIO_ROOT_PASSWORD: metu-local-password
     ports:
-      - '9000:9000' # S3 API (kept on conventional port)
+      - '24897:9000' # S3 API (host: 24897, container: 9000)
       - '24895:9001' # Web console (host: 24895, container: 9001)
     volumes:
       - minio-data:/data
@@ -140,7 +140,7 @@ services:
     container_name: metu-mailpit
     restart: unless-stopped
     ports:
-      - '1025:1025' # SMTP (kept on conventional port)
+      - '24898:1025' # SMTP (host: 24898, container: 1025)
       - '24894:8025' # Web UI (host: 24894, container: 8025)
 
 volumes:

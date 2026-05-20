@@ -146,6 +146,17 @@ $('save').addEventListener('click', async () => {
   status.textContent = '';
   if (!content) return;
   const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
+  const tagsRaw = $('captureTags').value.trim();
+  const tags = tagsRaw
+    ? Array.from(
+        new Set(
+          tagsRaw
+            .split(/[,\s]+/)
+            .map((t) => t.replace(/^#/, '').toLowerCase())
+            .filter((t) => /^[a-z0-9_-]{1,40}$/.test(t)),
+        ),
+      ).slice(0, 10)
+    : [];
   const r = await chrome.runtime.sendMessage({
     type: 'metu.capture',
     payload: {
@@ -153,15 +164,24 @@ $('save').addEventListener('click', async () => {
       content,
       source: 'browser-ext',
       sourceUrl: tab?.url,
-      metadata: { url: tab?.url, title: tab?.title },
+      metadata: { url: tab?.url, title: tab?.title, ...(tags.length > 0 ? { tags } : {}) },
     },
   });
   if (r?.ok) {
     $('content').value = '';
+    $('captureTags').value = '';
     $('save').textContent = 'Captured ✓';
     setTimeout(() => ($('save').textContent = 'Capture'), 1200);
   } else {
     status.textContent = r?.error ?? 'Error';
+  }
+});
+
+// Cmd/Ctrl+Enter from textarea fires the Capture button.
+$('content').addEventListener('keydown', (e) => {
+  if (e.key === 'Enter' && (e.metaKey || e.ctrlKey)) {
+    e.preventDefault();
+    $('save').click();
   }
 });
 

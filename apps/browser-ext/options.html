@@ -117,6 +117,25 @@
           Change in <code>chrome://extensions/shortcuts</code>.
         </p>
       </section>
+
+      <section>
+        <strong>Ambient capture</strong>
+        <p style="font-size: 12px; color: #9b9ba1; margin: 8px 0">
+          Off by default. When on, the extension records every selection-copy
+          (Ctrl+C with text selected) and form submission as a privacy-safe
+          event. Field <em>names</em> only — never values, never password fields.
+        </p>
+        <div class="row">
+          <label style="display: flex; align-items: center; gap: 8px; color: #e9e9ee;">
+            <input id="ambientCapture" type="checkbox" />
+            Enable ambient capture
+          </label>
+          <div>
+            <label for="ambientBlocklist">Host blocklist (comma-separated; substring match)</label>
+            <input id="ambientBlocklist" type="text" placeholder="bank.com, healthcare.gov" />
+          </div>
+        </div>
+      </section>
     </main>
     <script src="options.js"></script>
   </body>

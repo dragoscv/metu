@@ -1,6 +1,7 @@
 /** External resources discovered/cached from integrations + their assignment to projects. */
 import { relations, sql } from 'drizzle-orm';
 import {
+  doublePrecision,
   index,
   integer,
   jsonb,
@@ -174,6 +175,15 @@ export const githubRepoStats = pgTable(
     deletionsLast30d: integer('deletions_last_30d').notNull().default(0),
     mergedPrsLast30d: integer('merged_prs_last_30d').notNull().default(0),
     closedIssuesLast30d: integer('closed_issues_last_30d').notNull().default(0),
+    /** Activity windows across ALL contributors and ALL branches. */
+    commitsAllLast7d: integer('commits_all_last_7d').notNull().default(0),
+    commitsAllLast30d: integer('commits_all_last_30d').notNull().default(0),
+    /** Distinct branches that received commits in the last 30d. */
+    branchesActiveLast30d: integer('branches_active_last_30d').notNull().default(0),
+    /** Distinct authors with ≥1 commit in last 30d (any branch). */
+    contributorsLast30d: integer('contributors_last_30d').notNull().default(0),
+    /** Total branches present on the repo at sync time. */
+    branchesTotal: integer('branches_total').notNull().default(0),
     /** Consecutive days with ≥1 commit by the user, ending today. */
     currentStreakDays: integer('current_streak_days').notNull().default(0),
     /** 52 buckets (newest last) of weekly commit counts from /stats/commit_activity. */
@@ -220,5 +230,122 @@ export const githubRepoStatsRelations = relations(githubRepoStats, ({ one }) => 
   resource: one(integrationResource, {
     fields: [githubRepoStats.resourceId],
     references: [integrationResource.id],
+  }),
+}));
+
+/**
+ * Social media post — one row per published item we observe across
+ * `tiktok | instagram | facebook | reddit | twitter | youtube | linkedin`.
+ *
+ * Populated by the per-platform sync functions; consumed by the social
+ * dashboard + Conductor (so it can answer "what did I post this week and
+ * how is it performing"). `platform` mirrors `integration.kind` for
+ * the relevant rows so we can group without joining.
+ */
+export const socialPost = pgTable(
+  'social_post',
+  {
+    id: uuid('id')
+      .primaryKey()
+      .default(sql`gen_random_uuid()`),
+    workspaceId: uuid('workspace_id')
+      .notNull()
+      .references(() => workspace.id, { onDelete: 'cascade' }),
+    integrationId: uuid('integration_id')
+      .notNull()
+      .references(() => integration.id, { onDelete: 'cascade' }),
+    platform: text('platform').notNull(),
+    /** Provider-side post id (tweet id, tiktok video id, reddit post id, ...). */
+    externalId: text('external_id').notNull(),
+    /** First-line summary or caption (≤ 500 chars). Long bodies live in metadata.body. */
+    title: text('title'),
+    url: text('url'),
+    /** When the user actually published it (provider-reported). */
+    publishedAt: timestamp('published_at', { withTimezone: true }),
+    /** Latest snapshot of impressions / likes / comments / shares / views / saves. */
+    metrics: jsonb('metrics')
+      .notNull()
+      .default(sql`'{}'::jsonb`),
+    /** Free-form provider payload for fields we don't normalize yet. */
+    metadata: jsonb('metadata')
+      .notNull()
+      .default(sql`'{}'::jsonb`),
+    lastSyncedAt: timestamp('last_synced_at', { withTimezone: true })
+      .notNull()
+      .default(sql`now()`),
+    createdAt: timestamp('created_at', { withTimezone: true })
+      .notNull()
+      .default(sql`now()`),
+  },
+  (t) => [
+    uniqueIndex('social_post_unique_idx').on(t.workspaceId, t.platform, t.externalId),
+    index('social_post_workspace_published_idx').on(t.workspaceId, t.publishedAt),
+    index('social_post_integration_idx').on(t.integrationId),
+  ],
+);
+
+export const socialPostRelations = relations(socialPost, ({ one }) => ({
+  workspace: one(workspace, { fields: [socialPost.workspaceId], references: [workspace.id] }),
+  integration: one(integration, {
+    fields: [socialPost.integrationId],
+    references: [integration.id],
+  }),
+}));
+
+/**
+ * Ad campaign — one row per ad campaign tracked across
+ * meta_ads | google_ads | tiktok_ads | linkedin_ads. Spend / metrics
+ * are snapshotted every sync so the project dashboard can show ROAS.
+ */
+export const adCampaign = pgTable(
+  'ad_campaign',
+  {
+    id: uuid('id')
+      .primaryKey()
+      .default(sql`gen_random_uuid()`),
+    workspaceId: uuid('workspace_id')
+      .notNull()
+      .references(() => workspace.id, { onDelete: 'cascade' }),
+    integrationId: uuid('integration_id')
+      .notNull()
+      .references(() => integration.id, { onDelete: 'cascade' }),
+    platform: text('platform').notNull(),
+    externalId: text('external_id').notNull(),
+    name: text('name').notNull(),
+    /** Provider status — ACTIVE | PAUSED | ARCHIVED | … (kept verbatim). */
+    status: text('status'),
+    /** Currency-unit reported by the provider (USD, EUR, RON, ...). */
+    currency: text('currency'),
+    spendTotal: doublePrecision('spend_total').notNull().default(0),
+    spendLast7d: doublePrecision('spend_last_7d').notNull().default(0),
+    spendLast30d: doublePrecision('spend_last_30d').notNull().default(0),
+    impressionsLast30d: integer('impressions_last_30d').notNull().default(0),
+    clicksLast30d: integer('clicks_last_30d').notNull().default(0),
+    conversionsLast30d: integer('conversions_last_30d').notNull().default(0),
+    startedAt: timestamp('started_at', { withTimezone: true }),
+    endedAt: timestamp('ended_at', { withTimezone: true }),
+    /** Latest provider snapshot for fields we don't normalize. */
+    metadata: jsonb('metadata')
+      .notNull()
+      .default(sql`'{}'::jsonb`),
+    lastSyncedAt: timestamp('last_synced_at', { withTimezone: true })
+      .notNull()
+      .default(sql`now()`),
+    createdAt: timestamp('created_at', { withTimezone: true })
+      .notNull()
+      .default(sql`now()`),
+  },
+  (t) => [
+    uniqueIndex('ad_campaign_unique_idx').on(t.workspaceId, t.platform, t.externalId),
+    index('ad_campaign_workspace_status_idx').on(t.workspaceId, t.status),
+    index('ad_campaign_integration_idx').on(t.integrationId),
+  ],
+);
+
+export const adCampaignRelations = relations(adCampaign, ({ one }) => ({
+  workspace: one(workspace, { fields: [adCampaign.workspaceId], references: [workspace.id] }),
+  integration: one(integration, {
+    fields: [adCampaign.integrationId],
+    references: [integration.id],
   }),
 }));

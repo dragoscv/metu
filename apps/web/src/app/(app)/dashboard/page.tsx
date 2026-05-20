@@ -1,6 +1,5 @@
 import { auth } from '@metu/auth';
 import { redirect } from 'next/navigation';
-import { focus } from '@metu/core';
 import {
   listProjects,
   listOpenTasks,
@@ -8,11 +7,11 @@ import {
   listRecentCaptures,
 } from '@metu/db/queries';
 import { Badge, Card, CardTitle, MomentumBar, Page, PageHeader } from '@metu/ui';
-import { ArrowRight, AlertTriangle, Compass, EyeOff } from 'lucide-react';
+import { ArrowRight } from 'lucide-react';
 import Link from 'next/link';
-import { and, desc, eq, isNull } from 'drizzle-orm';
+import { and, desc, eq, gte, isNull } from 'drizzle-orm';
 import { getDb } from '@metu/db';
-import { agentPolicy, goal, target } from '@metu/db/schema';
+import { agentPolicy, goal, target, timelineEvent } from '@metu/db/schema';
 import { BrainDump } from '@/components/brain-dump';
 import { RecomputeFocusButton } from '@/components/recompute-focus';
 import { PauseAutonomyToggle } from '@/components/pause-autonomy-toggle';
@@ -23,6 +22,10 @@ import { PlanTabClient } from '@/components/dashboard/plan-tab-client';
 import { OnboardingChecklist } from '@/components/dashboard/onboarding-checklist';
 import { ProposedActionsStrip } from '@/components/dashboard/proposed-actions-strip';
 import { CostBudgetBanner } from '@/components/dashboard/cost-budget-banner';
+import { getConductorActivityLevel } from '@/app/actions/workspace-preferences';
+import { getDashboardPrefsAction } from '@/app/actions/dashboard-prefs';
+import { aggregateStreams } from '@/lib/dashboard/streams';
+import { DashboardScene } from '@/components/dashboard/observatory/dashboard-scene';
 
 export default async function Dashboard({
   searchParams,
@@ -35,24 +38,23 @@ export default async function Dashboard({
   const sp = await searchParams;
   const tab = (sp.tab ?? 'now') as 'now' | 'inbox' | 'plan' | 'widgets';
 
-  const [latestFocus, projects, openTasks, blocked, policyRow] = await Promise.all([
-    focus.getLatestFocus(workspaceId, session.user.id),
-    listProjects(workspaceId),
-    listOpenTasks(workspaceId),
-    listBlockedTasks(workspaceId),
-    getDb()
-      .select({ enabled: agentPolicy.enabled })
-      .from(agentPolicy)
-      .where(eq(agentPolicy.workspaceId, workspaceId))
-      .limit(1),
-  ]);
+  const [projects, openTasks, blocked, policyRow, activityLevel, dashboardPrefs] =
+    await Promise.all([
+      listProjects(workspaceId),
+      listOpenTasks(workspaceId),
+      listBlockedTasks(workspaceId),
+      getDb()
+        .select({ enabled: agentPolicy.enabled })
+        .from(agentPolicy)
+        .where(eq(agentPolicy.workspaceId, workspaceId))
+        .limit(1),
+      getConductorActivityLevel(workspaceId),
+      getDashboardPrefsAction(),
+    ]);
+  const streams = tab === 'now' ? await aggregateStreams(workspaceId, dashboardPrefs) : [];
   const autonomyEnabled = policyRow[0]?.enabled ?? true;
 
-  const ignoredIds = (latestFocus?.ignoredProjectIds as string[]) ?? [];
-  const nowTask = openTasks.find((t) => t.id === latestFocus?.nowTaskId) ?? null;
-  const nextIds = (latestFocus?.nextTaskIds as string[]) ?? [];
-  const nextTasks = nextIds.map((id) => openTasks.find((t) => t.id === id)).filter(Boolean);
-  const ignoredProjects = projects.filter((p) => ignoredIds.includes(p.id));
+  const ignoredIds: string[] = [];
   const momentumProjects = projects.filter((p) => !ignoredIds.includes(p.id)).slice(0, 6);
 
   return (
@@ -66,201 +68,39 @@ export default async function Dashboard({
         title={`${greeting()}, ${session.user.name?.split(' ')[0] ?? 'there'}.`}
         actions={
           <div className="flex items-center gap-2">
+            <Link
+              href="/settings/autonomy"
+              title="Conductor reactivity — click to change"
+              className="inline-flex items-center gap-1 rounded-full border border-[var(--color-border)] px-2 py-0.5 text-[10px] uppercase tracking-wider text-[var(--color-fg-muted)] hover:border-[var(--color-fg-muted)] hover:text-[var(--color-fg)]"
+            >
+              <span className="h-1.5 w-1.5 rounded-full bg-[var(--color-brand)]" />
+              {activityLevel}
+            </Link>
             <PauseAutonomyToggle initialEnabled={autonomyEnabled} />
             <RecomputeFocusButton />
           </div>
         }
       />
-
       <DashboardTabs active={tab} />
-
       {tab === 'now' && (
-        <NowTab
-          latestFocus={latestFocus}
-          nowTask={nowTask}
-          nextTasks={nextTasks}
-          ignoredProjects={ignoredProjects}
-          momentumProjects={momentumProjects}
-          blocked={blocked}
+        <DashboardScene
+          prefs={dashboardPrefs}
+          streams={streams}
+          greetingName={session.user.name?.split(' ')[0]}
         />
       )}
       {tab === 'now' && <CostBudgetBanner workspaceId={workspaceId} />}
       {tab === 'now' && <ProposedActionsStrip workspaceId={workspaceId} />}
       {tab === 'now' && <OnboardingChecklist workspaceId={workspaceId} />}
       {tab === 'now' && <ContinuityStrip workspaceId={workspaceId} />}
-      {tab === 'now' && <ConductorBacklog workspaceId={workspaceId} />}
+      {tab === 'now' && <ConductorBacklog workspaceId={workspaceId} />}{' '}
       {tab === 'inbox' && <InboxTab workspaceId={workspaceId} />}
       {tab === 'plan' && <PlanTabClient openTasks={openTasks} blocked={blocked} />}
       {tab === 'widgets' && (
         <WidgetsTab workspaceId={workspaceId} momentumProjects={momentumProjects} />
       )}
-
       <BrainDump />
     </Page>
-  );
-}
-
-function NowTab({
-  latestFocus,
-  nowTask,
-  nextTasks,
-  ignoredProjects,
-  momentumProjects,
-  blocked,
-}: {
-  latestFocus: Awaited<ReturnType<typeof focus.getLatestFocus>>;
-  nowTask: {
-    id: string;
-    title: string;
-    body: string | null;
-    projectId: string | null;
-    kind: string;
-  } | null;
-  nextTasks: ({ id: string; title: string; kind: string } | undefined)[];
-  ignoredProjects: { id: string; name: string }[];
-  momentumProjects: {
-    id: string;
-    name: string;
-    momentumScore: number | null;
-    lastMeaningfulActivityAt: Date | null;
-  }[];
-  blocked: { id: string; title: string; blockedReason: string | null }[];
-}) {
-  return (
-    <div className="space-y-8">
-      {/* The single now */}
-      <Card className="overflow-hidden !p-0">
-        <div className="flex items-center gap-3 border-b border-[var(--color-border)] bg-[var(--color-bg-elevated)] px-5 py-3">
-          <Compass className="h-4 w-4 text-[var(--color-brand)]" />
-          <CardTitle className="!mt-0">Your single focus</CardTitle>
-        </div>
-        <div className="p-5">
-          {nowTask ? (
-            <>
-              <h2 className="text-2xl font-semibold tracking-tight">{nowTask.title}</h2>
-              {nowTask.body && (
-                <p className="mt-2 text-sm text-[var(--color-fg-muted)]">{nowTask.body}</p>
-              )}
-              <Link
-                href={`/projects/${nowTask.projectId}`}
-                className="mt-4 inline-flex items-center gap-1 text-sm text-[var(--color-brand)] hover:underline"
-              >
-                Continue <ArrowRight className="h-3 w-3" />
-              </Link>
-            </>
-          ) : (
-            <p className="text-sm text-[var(--color-fg-muted)]">
-              Press{' '}
-              <kbd className="rounded bg-[var(--color-bg-elevated)] px-1.5 py-0.5 text-xs">
-                Recompute
-              </kbd>{' '}
-              to ask the Focus Engine for your single next move.
-            </p>
-          )}
-          {latestFocus?.rationale && (
-            <p className="mt-4 text-pretty text-xs text-[var(--color-fg-subtle)]">
-              {latestFocus.rationale}
-            </p>
-          )}
-        </div>
-      </Card>
-
-      <div className="grid gap-4 md:grid-cols-2">
-        {/* Next */}
-        <Card>
-          <CardTitle>Next (≤3)</CardTitle>
-          <ul className="mt-3 space-y-2">
-            {nextTasks.length === 0 && <li className="text-sm text-[var(--color-fg-subtle)]">—</li>}
-            {nextTasks.map(
-              (t) =>
-                t && (
-                  <li
-                    key={t.id}
-                    className="flex items-center justify-between gap-2 rounded-md border border-[var(--color-border)] px-3 py-2 text-sm"
-                  >
-                    <span className="truncate">{t.title}</span>
-                    <span className="text-xs uppercase tracking-wide text-[var(--color-fg-subtle)]">
-                      {t.kind}
-                    </span>
-                  </li>
-                ),
-            )}
-          </ul>
-        </Card>
-
-        {/* Ignore this week */}
-        <Card>
-          <div className="flex items-center gap-2">
-            <EyeOff className="h-4 w-4 text-[var(--color-fg-muted)]" />
-            <CardTitle>Ignore this week</CardTitle>
-          </div>
-          <ul className="mt-3 space-y-1.5 text-sm">
-            {ignoredProjects.length === 0 && <li className="text-[var(--color-fg-subtle)]">—</li>}
-            {ignoredProjects.map((p) => (
-              <li key={p.id} className="flex items-center gap-2">
-                <span className="h-1.5 w-1.5 rounded-full bg-[var(--color-fg-subtle)]" />
-                <span className="decoration-[var(--color-fg-subtle)]/40 text-[var(--color-fg-muted)] line-through">
-                  {p.name}
-                </span>
-              </li>
-            ))}
-          </ul>
-        </Card>
-      </div>
-
-      {/* Momentum */}
-      <Card>
-        <CardTitle>Momentum</CardTitle>
-        <div className="mt-4 space-y-3">
-          {momentumProjects.map((p) => (
-            <Link
-              href={`/projects/${p.id}`}
-              key={p.id}
-              className="block rounded-md p-2 transition-colors hover:bg-[var(--color-bg-elevated)]"
-            >
-              <div className="mb-1 flex items-center justify-between text-sm">
-                <span className="font-medium">{p.name}</span>
-                <span className="text-xs text-[var(--color-fg-subtle)]">
-                  {p.lastMeaningfulActivityAt
-                    ? `last ${formatRelative(p.lastMeaningfulActivityAt)}`
-                    : 'no activity'}
-                </span>
-              </div>
-              <MomentumBar value={p.momentumScore ?? 0} />
-            </Link>
-          ))}
-          {momentumProjects.length === 0 && (
-            <p className="text-sm text-[var(--color-fg-subtle)]">
-              No projects yet.{' '}
-              <Link href="/projects" className="underline">
-                Create one
-              </Link>
-              .
-            </p>
-          )}
-        </div>
-      </Card>
-
-      {/* Blockers */}
-      {blocked.length > 0 && (
-        <Card>
-          <div className="flex items-center gap-2">
-            <AlertTriangle className="h-4 w-4 text-[var(--color-warning)]" />
-            <CardTitle>Blockers</CardTitle>
-          </div>
-          <ul className="mt-3 space-y-2 text-sm">
-            {blocked.map((t) => (
-              <li key={t.id} className="rounded-md border border-[var(--color-border)] p-3">
-                <div className="font-medium">{t.title}</div>
-                {t.blockedReason && (
-                  <div className="mt-1 text-xs text-[var(--color-fg-muted)]">{t.blockedReason}</div>
-                )}
-              </li>
-            ))}
-          </ul>
-        </Card>
-      )}
-    </div>
   );
 }
 
@@ -376,6 +216,37 @@ async function WidgetsTab({
     .orderBy(desc(target.updatedAt))
     .limit(8);
 
+  const since24h = new Date(Date.now() - 24 * 60 * 60_000);
+  const intelligence = await db
+    .select({
+      id: timelineEvent.id,
+      kind: timelineEvent.kind,
+      title: timelineEvent.title,
+      importance: timelineEvent.importance,
+      occurredAt: timelineEvent.occurredAt,
+    })
+    .from(timelineEvent)
+    .where(and(eq(timelineEvent.workspaceId, workspaceId), gte(timelineEvent.occurredAt, since24h)))
+    .orderBy(desc(timelineEvent.importance), desc(timelineEvent.occurredAt))
+    .limit(5);
+
+  const recentCaptures = await listRecentCaptures(workspaceId, 6);
+  const captureSampleForTags = await listRecentCaptures(workspaceId, 200);
+  const tagCounts = new Map<string, number>();
+  for (const c of captureSampleForTags) {
+    const tags = (c.metadata as { tags?: unknown } | null)?.tags;
+    if (!Array.isArray(tags)) continue;
+    for (const t of tags) {
+      if (typeof t !== 'string') continue;
+      const norm = t.toLowerCase().trim();
+      if (!norm) continue;
+      tagCounts.set(norm, (tagCounts.get(norm) ?? 0) + 1);
+    }
+  }
+  const topTags = Array.from(tagCounts, ([tag, count]) => ({ tag, count }))
+    .sort((a, b) => b.count - a.count)
+    .slice(0, 12);
+
   return (
     <div className="grid gap-4 md:grid-cols-2">
       <Card>
@@ -437,6 +308,42 @@ async function WidgetsTab({
         </ul>
       </Card>
       <Card className="md:col-span-2">
+        <div className="flex items-center justify-between">
+          <CardTitle>Today’s intelligence</CardTitle>
+          <Link href="/insights" className="text-xs text-[var(--color-brand)] hover:underline">
+            All signals →
+          </Link>
+        </div>
+        <ul className="mt-3 space-y-2 text-sm">
+          {intelligence.length === 0 && (
+            <li className="text-[var(--color-fg-subtle)]">Nothing notable in the last 24 hours.</li>
+          )}
+          {intelligence.map((e) => (
+            <li key={e.id} className="flex items-start gap-2">
+              <span
+                className="mt-1.5 h-1.5 w-1.5 shrink-0 rounded-full"
+                style={{
+                  background:
+                    (e.importance ?? 0) >= 0.7
+                      ? 'var(--color-danger, #ef4444)'
+                      : (e.importance ?? 0) >= 0.5
+                        ? 'var(--color-brand)'
+                        : 'var(--color-fg-subtle)',
+                }}
+              />
+              <div className="min-w-0 flex-1">
+                <div className="truncate">{e.title}</div>
+                <div className="text-[11px] text-[var(--color-fg-subtle)]">
+                  <span className="font-mono">{e.kind}</span>
+                  {' · '}
+                  {formatRelative(e.occurredAt)}
+                </div>
+              </div>
+            </li>
+          ))}
+        </ul>
+      </Card>
+      <Card className="md:col-span-2">
         <CardTitle>Momentum</CardTitle>
         <div className="mt-3 space-y-3">
           {momentumProjects.map((p) => (
@@ -451,6 +358,67 @@ async function WidgetsTab({
             </div>
           ))}
         </div>
+      </Card>
+      <Card className="md:col-span-2">
+        <div className="flex items-center justify-between">
+          <CardTitle>Top tags</CardTitle>
+          <Link href="/captures" className="text-xs text-[var(--color-brand)] hover:underline">
+            All →
+          </Link>
+        </div>
+        {topTags.length === 0 ? (
+          <p className="mt-3 text-sm text-[var(--color-fg-subtle)]">
+            No tagged captures yet. Tag captures with #hashtags or via the browser extension.
+          </p>
+        ) : (
+          <div className="mt-3 flex flex-wrap gap-1.5">
+            {topTags.map((t) => {
+              const size = Math.max(11, Math.min(18, 11 + t.count));
+              return (
+                <Link
+                  key={t.tag}
+                  href={`/captures?tag=${encodeURIComponent(t.tag)}`}
+                  className="rounded-full border border-[var(--color-border)] px-2 py-0.5 text-[var(--color-fg-muted)] transition-colors hover:border-[var(--color-brand)] hover:text-[var(--color-brand)]"
+                  style={{ fontSize: `${size}px` }}
+                  title={`${t.count} ${t.count === 1 ? 'capture' : 'captures'}`}
+                >
+                  #{t.tag}
+                </Link>
+              );
+            })}
+          </div>
+        )}
+      </Card>
+      <Card className="md:col-span-2">
+        <div className="flex items-center justify-between">
+          <CardTitle>Latest captures</CardTitle>
+          <Link href="/timeline" className="text-xs text-[var(--color-brand)] hover:underline">
+            All →
+          </Link>
+        </div>
+        <ul className="mt-3 space-y-2 text-sm">
+          {recentCaptures.length === 0 ? (
+            <li className="text-[var(--color-fg-subtle)]">
+              No captures yet — drop a thought in the inbox to start.
+            </li>
+          ) : (
+            recentCaptures.map((c) => (
+              <li key={c.id} className="flex items-start gap-2">
+                <Badge variant="neutral">{c.kind}</Badge>
+                <div className="min-w-0 flex-1">
+                  <div className="truncate text-[var(--color-fg)]">
+                    {c.content?.slice(0, 120) ?? (
+                      <span className="italic text-[var(--color-fg-subtle)]">(no text)</span>
+                    )}
+                  </div>
+                  <div className="text-[11px] text-[var(--color-fg-subtle)]">
+                    {c.source ?? 'unknown source'} · {formatRelative(c.createdAt)}
+                  </div>
+                </div>
+              </li>
+            ))
+          )}
+        </ul>
       </Card>
     </div>
   );

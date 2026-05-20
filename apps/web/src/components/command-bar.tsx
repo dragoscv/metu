@@ -48,6 +48,7 @@ const SLASH_HELP: { cmd: string; hint: string; icon: typeof Search }[] = [
 
 const NAV_ITEMS = [
   { label: 'Now (focus)', href: '/dashboard', icon: Compass },
+  { label: 'Customize dashboard', href: '/settings/dashboard', icon: Palette },
   { label: 'METU (agent dashboard)', href: '/metu', icon: Sparkles },
   { label: 'Chat', href: '/chat', icon: MessageSquare },
   { label: 'Agents', href: '/agents', icon: Bot },

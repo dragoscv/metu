@@ -20,6 +20,7 @@ import { project, task, timelineEvent } from '@metu/db/schema';
 import { listRecentBriefings } from '@metu/db/queries';
 import { RegenerateBriefingButton } from './regenerate-button';
 import { PresencePill } from '@/components/presence-pill';
+import { GenerateBriefingButton } from '@/components/generate-briefing-button';
 
 export const dynamic = 'force-dynamic';
 
@@ -198,6 +199,24 @@ export default async function ResumePage({ searchParams }: PageProps) {
             Open timeline
             <ArrowRight className="h-3 w-3" />
           </Link>
+        </div>
+      </Card>
+
+      <Card className="relative overflow-hidden">
+        <div
+          aria-hidden="true"
+          className="from-[var(--color-brand)]/8 pointer-events-none absolute inset-0 bg-gradient-to-br via-transparent to-transparent"
+        />
+        <div className="relative">
+          <p className="text-xs uppercase tracking-wide text-[var(--color-fg-subtle)]">
+            <Sparkles className="-mt-0.5 mr-1 inline h-3 w-3 text-[var(--color-brand)]" />
+            Conductor narrative
+          </p>
+          <p className="mt-2 text-sm text-[var(--color-fg-muted)]">
+            One paragraph across all your active projects, ending in the single smallest next step.
+            Read-only — costs a small AI call.
+          </p>
+          <GenerateBriefingButton className="mt-3" variant="ghost" />
         </div>
       </Card>
 

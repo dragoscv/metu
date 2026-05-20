@@ -1,4 +1,17 @@
-import { and, desc, eq, ilike, inArray, isNull, lt, or, sql, type SQL } from 'drizzle-orm';
+import {
+  and,
+  desc,
+  eq,
+  gte,
+  ilike,
+  inArray,
+  isNull,
+  lt,
+  lte,
+  or,
+  sql,
+  type SQL,
+} from 'drizzle-orm';
 import { getDb } from '../client';
 import { capture, memoryChunk, project, timelineEvent } from '../schema';
 
@@ -250,6 +263,8 @@ export interface ListTimelineFilteredParams {
   since?: Date | null;
   until?: Date | null;
   search?: string | null;
+  /** Filter to events whose payload.tags JSONB array contains this tag (case-insensitive lower-cased match). */
+  tag?: string | null;
   cursor?: { occurredAt: Date; id: string } | null;
   limit?: number;
 }
@@ -261,6 +276,7 @@ export async function listTimelineFiltered({
   since,
   until,
   search,
+  tag,
   cursor,
   limit = 40,
 }: ListTimelineFilteredParams) {
@@ -268,8 +284,12 @@ export async function listTimelineFiltered({
   const conditions: SQL[] = [eq(timelineEvent.workspaceId, workspaceId)];
   if (kinds && kinds.length > 0) conditions.push(inArray(timelineEvent.kind, kinds));
   if (projectId) conditions.push(eq(timelineEvent.projectId, projectId));
-  if (since) conditions.push(sql`${timelineEvent.occurredAt} >= ${since}`);
-  if (until) conditions.push(sql`${timelineEvent.occurredAt} <= ${until}`);
+  if (since) conditions.push(gte(timelineEvent.occurredAt, since));
+  if (until) conditions.push(lte(timelineEvent.occurredAt, until));
+  if (tag && tag.trim()) {
+    const t = tag.trim().toLowerCase();
+    conditions.push(sql`${timelineEvent.payload} -> 'tags' ? ${t}`);
+  }
   if (search && search.trim()) {
     const q = `%${search.trim()}%`;
     const orClause = or(ilike(timelineEvent.title, q), ilike(timelineEvent.body, q));
@@ -299,7 +319,7 @@ export async function listTimelineFiltered({
 export async function timelineKindFacets(workspaceId: string, since?: Date | null) {
   const db = getDb();
   const conds: SQL[] = [eq(timelineEvent.workspaceId, workspaceId)];
-  if (since) conds.push(sql`${timelineEvent.occurredAt} >= ${since}`);
+  if (since) conds.push(gte(timelineEvent.occurredAt, since));
   const rows = await db
     .select({
       kind: timelineEvent.kind,
@@ -341,8 +361,6 @@ export async function recentTimelineEventCount(workspaceId: string, since: Date)
   const [row] = await db
     .select({ n: sql<number>`count(*)::int` })
     .from(timelineEvent)
-    .where(
-      and(eq(timelineEvent.workspaceId, workspaceId), sql`${timelineEvent.occurredAt} >= ${since}`),
-    );
+    .where(and(eq(timelineEvent.workspaceId, workspaceId), gte(timelineEvent.occurredAt, since)));
   return row?.n ?? 0;
 }

@@ -1,5 +1,10 @@
 import { defineConfig } from 'vite';
 import react from '@vitejs/plugin-react';
+import { readFileSync } from 'node:fs';
+
+const pkg = JSON.parse(readFileSync(new URL('./package.json', import.meta.url), 'utf8')) as {
+  version: string;
+};
 
 // Optional runtime peers loaded via dynamic `import()` from
 // `src/ui/Live2DAvatar.tsx` and `src/ui/VrmAvatar.tsx`. They are *not*
@@ -19,6 +24,9 @@ const OPTIONAL_AVATAR_PATTERNS: (string | RegExp)[] = [
 export default defineConfig({
   plugins: [react()],
   clearScreen: false,
+  define: {
+    __APP_VERSION__: JSON.stringify(pkg.version),
+  },
   server: {
     port: 5173,
     strictPort: true,

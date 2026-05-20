@@ -74,3 +74,101 @@ document.addEventListener('mousedown', (e) => {
   hide();
 });
 document.addEventListener('scroll', hide, { passive: true });
+
+/* ── Privacy-gated ambient capture ──────────────────────────────────────────
+ * Only fires when chrome.storage.local.ambientCapture === true. Two streams:
+ *   - Selection-copy: detect Ctrl/Cmd+C while a selection ≥ 12 chars exists,
+ *     ship as a 'copy' event so the Conductor can correlate later pastes.
+ *   - Form submit: capture a privacy-safe descriptor (form action URL,
+ *     method, field-name list) on submit. Never sends field VALUES.
+ * Both auto-skip on <input type=password>, on inputs marked autocomplete=off,
+ * and on hosts on the user's blocklist (chrome.storage.local.ambientBlocklist).
+ */
+let ambientEnabled = false;
+let ambientBlocklist = [];
+function loadAmbient() {
+  try {
+    chrome.storage.local.get(['ambientCapture', 'ambientBlocklist'], (out) => {
+      ambientEnabled = out?.ambientCapture === true;
+      ambientBlocklist = Array.isArray(out?.ambientBlocklist) ? out.ambientBlocklist : [];
+    });
+  } catch {
+    /* extension reload */
+  }
+}
+loadAmbient();
+try {
+  chrome.storage.onChanged?.addListener(loadAmbient);
+} catch {
+  /* */
+}
+
+function hostBlocked() {
+  const h = location.hostname;
+  return ambientBlocklist.some((b) => typeof b === 'string' && b && h.includes(b));
+}
+
+document.addEventListener(
+  'keydown',
+  (e) => {
+    if (!ambientEnabled || hostBlocked()) return;
+    const isCopy = (e.ctrlKey || e.metaKey) && (e.key === 'c' || e.key === 'C');
+    if (!isCopy) return;
+    const text = window.getSelection()?.toString().trim();
+    if (!text || text.length < 12) return;
+    chrome.runtime
+      .sendMessage({
+        type: 'metu.capture',
+        payload: {
+          kind: 'event',
+          content: text.slice(0, 500),
+          source: 'browser-ext.copy',
+          sourceUrl: location.href,
+          metadata: { url: location.href, title: document.title, len: text.length },
+        },
+      })
+      .catch(() => {});
+  },
+  { passive: true },
+);
+
+document.addEventListener(
+  'submit',
+  (e) => {
+    if (!ambientEnabled || hostBlocked()) return;
+    const form = e.target;
+    if (!(form instanceof HTMLFormElement)) return;
+    // Skip forms with any password field.
+    const fields = Array.from(form.elements).filter(
+      (el) =>
+        el instanceof HTMLInputElement ||
+        el instanceof HTMLTextAreaElement ||
+        el instanceof HTMLSelectElement,
+    );
+    if (fields.some((f) => f.type === 'password')) return;
+    const fieldNames = fields
+      .map((f) => f.name || f.id || null)
+      .filter((n) => typeof n === 'string' && n.length > 0)
+      .slice(0, 30);
+    const action = form.getAttribute('action') || location.pathname;
+    chrome.runtime
+      .sendMessage({
+        type: 'metu.capture',
+        payload: {
+          kind: 'event',
+          content: `Submitted form ${action}`,
+          source: 'browser-ext.form-submit',
+          sourceUrl: location.href,
+          metadata: {
+            url: location.href,
+            title: document.title,
+            method: (form.method || 'get').toLowerCase(),
+            action,
+            fieldNames,
+          },
+        },
+      })
+      .catch(() => {});
+  },
+  { passive: true, capture: true },
+);

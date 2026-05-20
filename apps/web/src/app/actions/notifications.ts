@@ -7,7 +7,7 @@
  */
 'use server';
 import { z } from 'zod';
-import { eq, and, isNull, desc, like } from 'drizzle-orm';
+import { eq, and, isNull, desc, like, sql } from 'drizzle-orm';
 import { revalidatePath } from 'next/cache';
 import { getDb } from '@metu/db';
 import { notification, notificationSubscription } from '@metu/db/schema';
@@ -177,6 +177,41 @@ export async function ackNotificationAction(id: string): Promise<{ ok: boolean }
       ),
     );
   revalidatePath('/');
+  return { ok: true };
+}
+
+/**
+ * Snooze a notification for `minutes` minutes. Sets `metadata.snoozedUntil`
+ * (ISO string) AND marks the row read so it disappears from the unread
+ * count. The /notifications query filters out any row whose snoozedUntil
+ * is still in the future, so the notification reappears once the snooze
+ * elapses (it's never really lost — just hidden).
+ */
+export async function snoozeNotificationAction(
+  id: string,
+  minutes: number,
+): Promise<{ ok: boolean }> {
+  const session = await auth();
+  if (!session?.user?.id) return { ok: false };
+  if (!Number.isFinite(minutes) || minutes <= 0 || minutes > 60 * 24 * 7) {
+    return { ok: false };
+  }
+  const until = new Date(Date.now() + minutes * 60_000).toISOString();
+  const db = getDb();
+  await db
+    .update(notification)
+    .set({
+      readAt: new Date(),
+      metadata: sql`jsonb_set(coalesce(${notification.metadata}, '{}'::jsonb), '{snoozedUntil}', to_jsonb(${until}::text))`,
+    })
+    .where(
+      and(
+        eq(notification.id, id),
+        eq(notification.userId, session.user.id),
+        eq(notification.workspaceId, session.user.workspaceId),
+      ),
+    );
+  revalidatePath('/notifications');
   return { ok: true };
 }
 

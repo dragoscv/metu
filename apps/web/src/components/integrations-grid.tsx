@@ -20,6 +20,7 @@ import {
   connectIntegrationAction,
   disconnectIntegrationAction,
   setDefaultIntegrationAction,
+  requestIntegrationSyncAction,
 } from '@/app/actions/integrations';
 import {
   startIntegrationDeviceFlowAction,
@@ -176,6 +177,29 @@ function AccountRow({
     });
   }
 
+  function syncNow() {
+    start(async () => {
+      const r = await requestIntegrationSyncAction({ id: integration.id });
+      if (!r.ok) toast.error(r.error);
+      else toast.success('Sync queued');
+    });
+  }
+
+  const SYNCABLE = new Set([
+    'slack',
+    'gcal',
+    'linear',
+    'reddit',
+    'twitter',
+    'youtube',
+    'spotify',
+    'instagram',
+    'notion',
+    'stripe',
+    'vercel',
+  ]);
+  const canSync = SYNCABLE.has(integration.kind);
+
   return (
     <li className="rounded-[var(--radius)] border border-[var(--color-border)] bg-[var(--color-bg-elevated)] px-3 py-2 text-xs">
       <div className="flex items-center gap-2">
@@ -207,6 +231,16 @@ function AccountRow({
             className="text-[11px] text-[var(--color-fg-muted)] hover:text-[var(--color-fg)] hover:underline disabled:opacity-50"
           >
             Make default
+          </button>
+        ) : null}
+        {canSync ? (
+          <button
+            type="button"
+            onClick={syncNow}
+            disabled={pending}
+            className="text-[11px] text-[var(--color-fg-muted)] hover:text-[var(--color-fg)] hover:underline disabled:opacity-50"
+          >
+            Sync now
           </button>
         ) : null}
         <button
@@ -488,6 +522,40 @@ function DeviceFlow({ entry, onDone }: { entry: IntegrationCatalogEntry; onDone:
 
   useEffect(() => {
     let cancelled = false;
+    async function poll(deviceCode: string, intervalSec: number) {
+      let interval = intervalSec;
+      stoppedRef.current = false;
+      while (!stoppedRef.current) {
+        await new Promise((r) => setTimeout(r, interval * 1000));
+        if (stoppedRef.current) return;
+        const r = await pollIntegrationDeviceFlowAction(entry.kind, deviceCode);
+        if (!r.ok) {
+          toast.error(r.error);
+          setBusy(false);
+          return;
+        }
+        const s = r.data.status;
+        if (s === 'ok') {
+          toast.success(`Connected as ${r.data.label ?? entry.name}`);
+          setBusy(false);
+          window.location.reload();
+          return;
+        }
+        if (s === 'denied') {
+          toast.error('Authorization denied.');
+          setBusy(false);
+          onDone();
+          return;
+        }
+        if (s === 'expired') {
+          toast.error('Code expired. Try again.');
+          setBusy(false);
+          onDone();
+          return;
+        }
+        if (s === 'slow_down') interval += 5;
+      }
+    }
     void (async () => {
       const r = await startIntegrationDeviceFlowAction(entry.kind);
       if (cancelled) return;
@@ -503,48 +571,15 @@ function DeviceFlow({ entry, onDone }: { entry: IntegrationCatalogEntry; onDone:
         deviceCode: r.data.deviceCode,
         interval: r.data.interval,
       });
-      void poll(r.data.deviceCode, r.data.interval);
+      poll(r.data.deviceCode, r.data.interval);
     })();
     return () => {
       cancelled = true;
       stoppedRef.current = true;
     };
-  }, []);
+  }, [entry.kind, entry.name, onDone]);
 
-  async function poll(deviceCode: string, intervalSec: number) {
-    let interval = intervalSec;
-    stoppedRef.current = false;
-    while (!stoppedRef.current) {
-      await new Promise((r) => setTimeout(r, interval * 1000));
-      if (stoppedRef.current) return;
-      const r = await pollIntegrationDeviceFlowAction(entry.kind, deviceCode);
-      if (!r.ok) {
-        toast.error(r.error);
-        setBusy(false);
-        return;
-      }
-      const s = r.data.status;
-      if (s === 'ok') {
-        toast.success(`Connected as ${r.data.label ?? entry.name}`);
-        setBusy(false);
-        window.location.reload();
-        return;
-      }
-      if (s === 'denied') {
-        toast.error('Authorization denied.');
-        setBusy(false);
-        onDone();
-        return;
-      }
-      if (s === 'expired') {
-        toast.error('Code expired. Try again.');
-        setBusy(false);
-        onDone();
-        return;
-      }
-      if (s === 'slow_down') interval += 5;
-    }
-  }
+  // (removed duplicate poll function)
 
   function copyCode() {
     if (!flow) return;

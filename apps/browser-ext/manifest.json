@@ -25,7 +25,9 @@
     "activeTab",
     "scripting",
     "clipboardWrite",
-    "notifications"
+    "notifications",
+    "downloads",
+    "tabGroups"
   ],
   "host_permissions": ["https://app.metu.ro/*", "http://localhost/*"],
   "background": { "service_worker": "background.js", "type": "module" },

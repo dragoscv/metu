@@ -1,3 +1,5 @@
+// TypeScript: declare window for isomorphic guards
+declare const window: any;
 /**
  * OAuth helpers for the SDK.
  *
@@ -7,7 +9,64 @@
  *   - `requestDeviceCode` + `pollDeviceToken` for the device-authorization flow
  *     (CLIs, headless companion processes, anything without a browser redirect).
  */
-import { createHash, randomBytes } from 'node:crypto';
+
+// Isomorphic randomBytes and sha256
+function getRandomBytes(length: number): Uint8Array {
+  if (typeof window !== 'undefined' && window.crypto?.getRandomValues) {
+    const arr = new Uint8Array(length);
+    window.crypto.getRandomValues(arr);
+    return arr;
+  } else {
+    // Node.js
+    // eslint-disable-next-line @typescript-eslint/no-var-requires
+    return require('node:crypto').randomBytes(length);
+  }
+}
+
+async function sha256(input: Uint8Array): Promise<Uint8Array> {
+  if (typeof window !== 'undefined' && window.crypto?.subtle) {
+    // Always copy to a plain Uint8Array backed by ArrayBuffer
+    let len = 0;
+    if (typeof input.length === 'number' && !isNaN(input.length)) {
+      len = input.length;
+    } else if (typeof input.byteLength === 'number' && !isNaN(input.byteLength)) {
+      len = input.byteLength;
+    }
+    const arr = new Uint8Array(len);
+    for (let i = 0; i < arr.length; ++i) arr[i] = Number(input[i] ?? 0);
+    const hash = await window.crypto.subtle.digest('SHA-256', arr);
+    return new Uint8Array(hash);
+  } else {
+    // Node.js
+    // eslint-disable-next-line @typescript-eslint/no-var-requires
+    return require('node:crypto').createHash('sha256').update(input).digest();
+  }
+}
+
+// Polyfill TextEncoder for Node.js
+let _TextEncoder: typeof TextEncoder;
+if (typeof TextEncoder !== 'undefined') {
+  _TextEncoder = TextEncoder;
+} else {
+  // eslint-disable-next-line @typescript-eslint/no-var-requires
+  _TextEncoder = require('util').TextEncoder;
+}
+
+function base64url(buf: Uint8Array): string {
+  // Browser and Node: base64 encode, then replace URL-unsafe chars
+  let str = '';
+  if (typeof Buffer !== 'undefined') {
+    // Node.js
+    str = Buffer.from(buf).toString('base64');
+  } else if (typeof btoa !== 'undefined') {
+    // Browser
+    str = btoa(String.fromCharCode(...buf));
+  } else {
+    // Fallback (should not happen)
+    throw new Error('No base64 encoder available');
+  }
+  return str.replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
+}
 
 export interface OAuthEndpoints {
   /** Base URL of the METU instance, e.g. https://app.metu.ro. */
@@ -21,14 +80,12 @@ export interface PkceChallenge {
 }
 
 /** RFC 7636 §4.1: 43–128 char URL-safe random string. */
-export function createPkceChallenge(): PkceChallenge {
-  const verifier = base64url(randomBytes(64)).slice(0, 96);
-  const challenge = base64url(createHash('sha256').update(verifier).digest());
+export async function createPkceChallenge(): Promise<PkceChallenge> {
+  const verifierBytes = getRandomBytes(64);
+  const verifier = base64url(verifierBytes).slice(0, 96);
+  const challengeBytes = await sha256(new _TextEncoder().encode(verifier));
+  const challenge = base64url(challengeBytes);
   return { verifier, challenge, method: 'S256' };
-}
-
-function base64url(buf: Buffer): string {
-  return buf.toString('base64url');
 }
 
 export interface BuildAuthorizationUrlInput {

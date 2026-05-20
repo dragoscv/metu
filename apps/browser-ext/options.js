@@ -5,21 +5,42 @@
 const $ = (id) => document.getElementById(id);
 
 async function load() {
-  const cfg = await chrome.storage.local.get(['apiUrl', 'token', 'defaultKind']);
+  const cfg = await chrome.storage.local.get([
+    'apiUrl',
+    'token',
+    'defaultKind',
+    'ambientCapture',
+    'ambientBlocklist',
+  ]);
   $('apiUrl').value = cfg.apiUrl ?? 'https://app.metu.ro';
   $('token').value = cfg.token ?? '';
   $('defaultKind').value = cfg.defaultKind ?? 'note';
+  $('ambientCapture').checked = cfg.ambientCapture === true;
+  $('ambientBlocklist').value = Array.isArray(cfg.ambientBlocklist)
+    ? cfg.ambientBlocklist.join(', ')
+    : '';
 }
 
 async function save() {
   const apiUrl = $('apiUrl').value.trim();
   const token = $('token').value.trim();
   const defaultKind = $('defaultKind').value;
+  const ambientCapture = $('ambientCapture').checked;
+  const ambientBlocklist = $('ambientBlocklist')
+    .value.split(',')
+    .map((s) => s.trim())
+    .filter(Boolean);
   if (!apiUrl) {
     $('status').textContent = 'API URL is required';
     return;
   }
-  await chrome.storage.local.set({ apiUrl, token, defaultKind });
+  await chrome.storage.local.set({
+    apiUrl,
+    token,
+    defaultKind,
+    ambientCapture,
+    ambientBlocklist,
+  });
   $('status').textContent = 'Saved.';
   setTimeout(() => ($('status').textContent = ''), 1500);
 }

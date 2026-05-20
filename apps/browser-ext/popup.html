@@ -15,6 +15,19 @@
       --ok: oklch(0.72 0.16 150);
     }
 
+    @media (prefers-color-scheme: light) {
+      :root {
+        --brand: oklch(0.55 0.18 290);
+        --bg: oklch(0.99 0.01 280);
+        --bg-elev: oklch(0.96 0.01 280);
+        --fg: oklch(0.18 0.02 280);
+        --muted: oklch(0.45 0.02 280);
+        --border: oklch(0.88 0.01 280);
+        --danger: oklch(0.55 0.18 25);
+        --ok: oklch(0.55 0.16 150);
+      }
+    }
+
     body {
       font: 13px/1.4 system-ui, -apple-system, Segoe UI, sans-serif;
       margin: 0;
@@ -189,6 +202,7 @@
 
   <section id="pane-capture" class="pane active">
     <textarea id="content" placeholder="What's on your mind?"></textarea>
+    <input id="captureTags" placeholder="tags: design, weekly (optional)" style="margin-top:6px;" />
     <p class="muted" id="prefillHint" style="display:none;margin:0 0 6px;font-size:11px;">
       Pre-filled from selection.
       <button type="button" id="prefillClear" style="background:none;border:0;color:inherit;text-decoration:underline;cursor:pointer;padding:0;font:inherit;">clear</button>

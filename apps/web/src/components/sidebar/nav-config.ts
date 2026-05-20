@@ -5,12 +5,14 @@ import {
   Bot,
   Brain,
   CalendarDays,
+  Coffee,
   Compass,
   Cpu,
   CreditCard,
   Database,
   DollarSign,
   Eye,
+  Flame,
   FolderKanban,
   Gauge,
   Inbox,
@@ -36,6 +38,8 @@ export interface NavLeaf {
   kind: 'leaf';
   href: string;
   label: string;
+  /** Optional translation key under `messages.nav` for the sidebar label. */
+  i18nKey?: string;
   icon: LucideIcon;
   /** When true, only an exact pathname match counts as active. */
   exact?: boolean;
@@ -45,6 +49,8 @@ export interface NavGroup {
   kind: 'group';
   id: string;
   label: string;
+  /** Optional translation key under `messages.nav` for the sidebar label. */
+  i18nKey?: string;
   icon: LucideIcon;
   /** Override for the parent click target (defaults to first child). */
   href?: string;
@@ -59,25 +65,36 @@ export interface NavGroup {
 export type NavNode = NavLeaf | NavGroup;
 
 export const NAV: NavNode[] = [
-  { kind: 'leaf', href: '/onboarding', label: 'Get started', icon: Rocket },
-  { kind: 'leaf', href: '/resume', label: 'Resume', icon: RotateCcw },
-  { kind: 'leaf', href: '/dashboard', label: 'Now', icon: Compass },
-  { kind: 'leaf', href: '/notifications', label: 'Notifications', icon: Bell },
-  { kind: 'leaf', href: '/metu', label: 'METU', icon: Sparkles },
+  { kind: 'leaf', href: '/onboarding', label: 'Get started', i18nKey: 'getStarted', icon: Rocket },
+  { kind: 'leaf', href: '/resume', label: 'Resume', i18nKey: 'resume', icon: RotateCcw },
+  { kind: 'leaf', href: '/restore', label: 'Restore', i18nKey: 'restore', icon: Coffee },
+  { kind: 'leaf', href: '/dashboard', label: 'Now', i18nKey: 'now', icon: Compass },
+  { kind: 'leaf', href: '/focus', label: 'Focus', i18nKey: 'focus', icon: Target },
+  { kind: 'leaf', href: '/streaks', label: 'Streaks', i18nKey: 'streaks', icon: Flame },
+  {
+    kind: 'leaf',
+    href: '/notifications',
+    label: 'Notifications',
+    i18nKey: 'notifications',
+    icon: Bell,
+  },
+  { kind: 'leaf', href: '/metu', label: 'METU', i18nKey: 'metu', icon: Sparkles },
   {
     kind: 'group',
     id: 'chat',
     label: 'Chat',
+    i18nKey: 'chat',
     icon: MessageSquare,
     href: '/chat',
     dynamic: true,
     children: [],
   },
-  { kind: 'leaf', href: '/agents', label: 'Agents', icon: Bot },
+  { kind: 'leaf', href: '/agents', label: 'Agents', i18nKey: 'agents', icon: Bot },
   {
     kind: 'group',
     id: 'projects',
     label: 'Projects',
+    i18nKey: 'projects',
     icon: Layers,
     children: [
       { kind: 'leaf', href: '/projects', label: 'Projects', icon: FolderKanban },
@@ -89,11 +106,15 @@ export const NAV: NavNode[] = [
     kind: 'group',
     id: 'knowledge',
     label: 'Knowledge',
+    i18nKey: 'knowledge',
     icon: Library,
     children: [
       { kind: 'leaf', href: '/about-me', label: 'About you', icon: Sparkles },
       { kind: 'leaf', href: '/memory', label: 'Memory', icon: Brain },
       { kind: 'leaf', href: '/timeline', label: 'Timeline', icon: BarChart3 },
+      { kind: 'leaf', href: '/journal', label: 'Journal', icon: CalendarDays },
+      { kind: 'leaf', href: '/decisions', label: 'Decisions', icon: ScrollText },
+      { kind: 'leaf', href: '/people', label: 'People', icon: Users },
       { kind: 'leaf', href: '/review', label: 'Review', icon: CalendarDays },
       { kind: 'leaf', href: '/audit', label: 'Audit', icon: ScrollText },
     ],
@@ -102,6 +123,7 @@ export const NAV: NavNode[] = [
     kind: 'group',
     id: 'connect',
     label: 'Connect',
+    i18nKey: 'connect',
     icon: Plug,
     children: [
       { kind: 'leaf', href: '/devices', label: 'Devices', icon: Laptop },
@@ -113,6 +135,7 @@ export const NAV: NavNode[] = [
     kind: 'group',
     id: 'settings',
     label: 'Settings',
+    i18nKey: 'settings',
     icon: SettingsIcon,
     href: '/settings/profile',
     children: [
@@ -121,6 +144,7 @@ export const NAV: NavNode[] = [
       { kind: 'leaf', href: '/settings/autonomy', label: 'Autonomy', icon: Gauge },
       { kind: 'leaf', href: '/settings/presence', label: 'Presence', icon: Eye },
       { kind: 'leaf', href: '/settings/notifications', label: 'Notifications', icon: Bell },
+      { kind: 'leaf', href: '/settings/dashboard', label: 'Dashboard', icon: Compass },
       { kind: 'leaf', href: '/settings/team', label: 'Team', icon: Users },
       { kind: 'leaf', href: '/settings/billing', label: 'Billing', icon: CreditCard },
       { kind: 'leaf', href: '/settings/usage', label: 'Usage', icon: DollarSign },

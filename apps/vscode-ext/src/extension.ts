@@ -324,11 +324,23 @@ class ConductorBacklogProvider implements vscode.TreeDataProvider<BacklogItem> {
     const when = new Date(e.occurredAt);
     item.description = `${e.kind.split('.').pop()} · ${when.toLocaleString()}`;
     item.tooltip = e.body ?? e.title;
+    item.contextValue = 'backlogItem';
+    item.id = e.id;
     return item;
   }
 
   getChildren(): BacklogItem[] {
     return this.items;
+  }
+
+  count(): number {
+    return this.items.length;
+  }
+
+  dismiss(id: string): void {
+    const before = this.items.length;
+    this.items = this.items.filter((i) => i.id !== id);
+    if (this.items.length !== before) this._onDidChangeTreeData.fire();
   }
 }
 
@@ -339,14 +351,18 @@ export async function activate(ctx: vscode.ExtensionContext): Promise<void> {
   const hub = new HubBridge(auth);
   ctx.subscriptions.push(hub);
 
+  let backlog: ConductorBacklogProvider | undefined;
+
   const status = vscode.window.createStatusBarItem(vscode.StatusBarAlignment.Right, 100);
   ctx.subscriptions.push(status);
   function renderStatus(): void {
     if (auth.token) {
       const dot = hub.statusDot();
       const last = lastCapturedAt ? ` · last capture ${relativeTime(lastCapturedAt)}` : '';
-      status.text = `$(brain) metu ${dot}`;
-      status.tooltip = `metu — signed in. Hub: ${hub.statusLabel()}${last}. Click to capture.`;
+      const backlogCount = backlog?.count() ?? 0;
+      const backlogChip = backlogCount > 0 ? ` $(inbox) ${backlogCount}` : '';
+      status.text = `$(brain) metu ${dot}${backlogChip}`;
+      status.tooltip = `metu — signed in. Hub: ${hub.statusLabel()}${last}${backlogCount > 0 ? `\nBacklog: ${backlogCount} item${backlogCount === 1 ? '' : 's'}` : ''}. Click to capture.`;
       status.command = 'metu.capture';
     } else {
       status.text = '$(brain) metu: sign in';
@@ -375,6 +391,8 @@ export async function activate(ctx: vscode.ExtensionContext): Promise<void> {
 
   ctx.subscriptions.push(
     vscode.commands.registerCommand('metu.capture', () => captureCmd(client)),
+    vscode.commands.registerCommand('metu.captureFile', () => captureFileCmd(client)),
+    vscode.commands.registerCommand('metu.captureClipboard', () => captureClipboardCmd(client)),
     vscode.commands.registerCommand('metu.recall', () => recallCmd(client)),
     vscode.commands.registerCommand('metu.recallPanel', () => recallPanelCmd(ctx, client)),
     vscode.commands.registerCommand('metu.resume', () => resumeCmd(client)),
@@ -383,18 +401,64 @@ export async function activate(ctx: vscode.ExtensionContext): Promise<void> {
     vscode.commands.registerCommand('metu.companionTurn', () => companionTurnCmd(client)),
     vscode.commands.registerCommand('metu.signIn', () => signInCmd(auth)),
     vscode.commands.registerCommand('metu.signOut', () => signOutCmd(auth)),
+    vscode.commands.registerCommand('metu.openWeb', async () => {
+      const apiUrl = vscode.workspace
+        .getConfiguration('metu')
+        .get<string>('apiUrl', 'https://app.metu.ro');
+      await vscode.env.openExternal(vscode.Uri.parse(apiUrl));
+    }),
+    vscode.commands.registerCommand('metu.openTimeline', async () => {
+      const apiUrl = vscode.workspace
+        .getConfiguration('metu')
+        .get<string>('apiUrl', 'https://app.metu.ro');
+      await vscode.env.openExternal(vscode.Uri.parse(`${apiUrl.replace(/\/$/, '')}/timeline`));
+    }),
+    vscode.commands.registerCommand('metu.openAudit', async () => {
+      const apiUrl = vscode.workspace
+        .getConfiguration('metu')
+        .get<string>('apiUrl', 'https://app.metu.ro');
+      await vscode.env.openExternal(vscode.Uri.parse(`${apiUrl.replace(/\/$/, '')}/audit`));
+    }),
+    vscode.commands.registerCommand('metu.openCapturesForWorkspace', async () => {
+      const apiUrl = vscode.workspace
+        .getConfiguration('metu')
+        .get<string>('apiUrl', 'https://app.metu.ro');
+      const folder = vscode.workspace.workspaceFolders?.[0];
+      const tag = folder?.name
+        ?.toLowerCase()
+        .replace(/[^a-z0-9_-]/g, '-')
+        .slice(0, 40);
+      const base = apiUrl.replace(/\/$/, '');
+      const target = tag ? `${base}/captures?tag=${encodeURIComponent(tag)}` : `${base}/captures`;
+      await vscode.env.openExternal(vscode.Uri.parse(target));
+    }),
   );
 
   // Conductor backlog tree view (slice 15 RR).
-  const backlog = new ConductorBacklogProvider(client, auth);
+  backlog = new ConductorBacklogProvider(client, auth);
+  const backlogRef = backlog;
   ctx.subscriptions.push(
-    vscode.window.registerTreeDataProvider('metu.conductorBacklog', backlog),
-    vscode.commands.registerCommand('metu.refreshBacklog', () => backlog.refresh()),
-    auth.onChange(() => backlog.refresh()),
+    vscode.window.registerTreeDataProvider('metu.conductorBacklog', backlogRef),
+    vscode.commands.registerCommand('metu.refreshBacklog', () => backlogRef.refresh()),
+    vscode.commands.registerCommand('metu.dismissBacklogItem', (arg: unknown) => {
+      // Invoked from the inline action: VS Code passes the TreeItem.
+      // Invoked from the command palette: nothing — pick from a quick-pick.
+      const id =
+        arg &&
+        typeof arg === 'object' &&
+        'id' in arg &&
+        typeof (arg as { id: unknown }).id === 'string'
+          ? (arg as { id: string }).id
+          : undefined;
+      if (id) backlogRef.dismiss(id);
+    }),
+    auth.onChange(() => backlogRef.refresh()),
   );
-  backlog.refresh();
+  // Re-render the status bar whenever the backlog refreshes so the chip stays in sync.
+  backlogRef.onDidChangeTreeData(() => renderStatus());
+  backlogRef.refresh();
   // Auto-refresh every 60s while the view exists.
-  const refreshTimer = setInterval(() => backlog.refresh(), 60_000);
+  const refreshTimer = setInterval(() => backlogRef.refresh(), 60_000);
   ctx.subscriptions.push({ dispose: () => clearInterval(refreshTimer) });
 
   // Resume status bar — top "where to start" briefing, refreshed every 5min.
@@ -460,6 +524,135 @@ export async function activate(ctx: vscode.ExtensionContext): Promise<void> {
       }
     }),
   );
+
+  // Terminal lifecycle events (open/close) — non-content. Help
+  // Conductor know when the user is shelling out vs. editing.
+  ctx.subscriptions.push(
+    vscode.window.onDidOpenTerminal((t) => {
+      const opts = t.creationOptions as { hideFromUser?: boolean };
+      hub.sendDeviceEvent('vscode.terminal.opened', {
+        name: t.name,
+        creationOptions: { hideFromUser: opts.hideFromUser ?? false },
+      });
+    }),
+    vscode.window.onDidCloseTerminal((t) => {
+      hub.sendDeviceEvent('vscode.terminal.closed', { name: t.name, exitCode: t.exitStatus?.code });
+    }),
+  );
+
+  // Editor typing pulse — coarse "user is actively editing X" signal,
+  // debounced + batched so a 2k-char rename storm becomes one event.
+  // No content ever leaves the editor; we send file path + line counts.
+  // Sent at most once per 30s per file when there are pending changes.
+  interface PendingChange {
+    file: string;
+    languageId: string;
+    linesAdded: number;
+    linesRemoved: number;
+    charsAdded: number;
+    charsRemoved: number;
+  }
+  const pending = new Map<string, PendingChange>();
+  const TYPING_FLUSH_MS = 30_000;
+  let typingTimer: NodeJS.Timeout | null = null;
+
+  function flushTyping() {
+    typingTimer = null;
+    if (pending.size === 0 || !auth.token) return;
+    for (const [, p] of pending) {
+      hub.sendDeviceEvent('vscode.editor.text.changed', { ...p });
+    }
+    pending.clear();
+  }
+
+  ctx.subscriptions.push(
+    vscode.workspace.onDidChangeTextDocument((ev) => {
+      if (ev.document.uri.scheme !== 'file') return;
+      if (!vscode.workspace.getWorkspaceFolder(ev.document.uri)) return;
+      const key = ev.document.uri.fsPath;
+      const acc = pending.get(key) ?? {
+        file: ev.document.fileName,
+        languageId: ev.document.languageId,
+        linesAdded: 0,
+        linesRemoved: 0,
+        charsAdded: 0,
+        charsRemoved: 0,
+      };
+      for (const change of ev.contentChanges) {
+        const removedLines = change.range.end.line - change.range.start.line;
+        const addedLines = (change.text.match(/\n/g) ?? []).length;
+        acc.charsRemoved += change.rangeLength;
+        acc.charsAdded += change.text.length;
+        acc.linesRemoved += removedLines;
+        acc.linesAdded += addedLines;
+      }
+      pending.set(key, acc);
+      if (typingTimer) return;
+      typingTimer = setTimeout(flushTyping, TYPING_FLUSH_MS);
+    }),
+    { dispose: () => typingTimer && clearTimeout(typingTimer) },
+  );
+
+  // Git extension — branch + dirty-state changes per repo. We never
+  // send diff content, only branch name + ahead/behind + dirty flag.
+  // Use the documented API (cf. microsoft/vscode docs/extensionAPI).
+  void wireGitListeners(ctx, hub).catch(() => {
+    /* git extension might not be installed (e.g. Codespaces minimal) */
+  });
+}
+
+interface GitRepoState {
+  HEAD?: { name?: string; commit?: string; ahead?: number; behind?: number };
+  workingTreeChanges?: ReadonlyArray<unknown>;
+  indexChanges?: ReadonlyArray<unknown>;
+}
+interface GitRepository {
+  rootUri: vscode.Uri;
+  state: GitRepoState & { onDidChange: vscode.Event<void> };
+}
+interface GitAPI {
+  repositories: ReadonlyArray<GitRepository>;
+  onDidOpenRepository: vscode.Event<GitRepository>;
+}
+interface GitExtensionExports {
+  getAPI(version: 1): GitAPI;
+}
+
+async function wireGitListeners(ctx: vscode.ExtensionContext, hub: HubBridge): Promise<void> {
+  const ext = vscode.extensions.getExtension<GitExtensionExports>('vscode.git');
+  if (!ext) return;
+  const exports = ext.isActive ? ext.exports : await ext.activate();
+  const api = exports.getAPI(1);
+  const lastByRepo = new Map<string, string>();
+  const subscribe = (repo: GitRepository): void => {
+    const fire = (): void => {
+      const head = repo.state.HEAD;
+      const branch = head?.name ?? null;
+      const dirty =
+        (repo.state.workingTreeChanges?.length ?? 0) + (repo.state.indexChanges?.length ?? 0) > 0;
+      const sig = `${branch}|${dirty}|${head?.commit ?? ''}|${head?.ahead ?? 0}|${head?.behind ?? 0}`;
+      const key = repo.rootUri.fsPath;
+      if (lastByRepo.get(key) === sig) return;
+      const prevSig = lastByRepo.get(key);
+      lastByRepo.set(key, sig);
+      const baseName = key.replace(/\\/g, '/').split('/').pop();
+      hub.sendDeviceEvent('vscode.git.state', {
+        repo: baseName,
+        branch,
+        dirty,
+        ahead: head?.ahead ?? 0,
+        behind: head?.behind ?? 0,
+        commit: head?.commit ?? null,
+        // Branch-changed signal (Conductor finds this useful for
+        // attributing work to the right project/feature).
+        branchChanged: prevSig ? !prevSig.startsWith(`${branch}|`) : true,
+      });
+    };
+    fire(); // initial
+    ctx.subscriptions.push(repo.state.onDidChange(fire));
+  };
+  for (const r of api.repositories) subscribe(r);
+  ctx.subscriptions.push(api.onDidOpenRepository(subscribe));
 }
 
 export function deactivate(): void {
@@ -498,6 +691,65 @@ async function captureCmd(client: MetuClient): Promise<void> {
     lastCapturedAt = Date.now();
     onLastCaptureChange.forEach((fn) => fn());
     vscode.window.setStatusBarMessage('$(check) metu captured', 2000);
+  } catch (e) {
+    vscode.window.showErrorMessage(`metu capture failed: ${(e as Error).message}`);
+  }
+}
+
+async function captureFileCmd(client: MetuClient): Promise<void> {
+  const editor = vscode.window.activeTextEditor;
+  if (!editor) {
+    vscode.window.showWarningMessage('metu: no active editor to capture.');
+    return;
+  }
+  const text = editor.document.getText();
+  if (!text.trim()) {
+    vscode.window.showWarningMessage('metu: file is empty.');
+    return;
+  }
+  // Cap at 50k chars to avoid pushing huge files into the inbox.
+  const MAX = 50_000;
+  const truncated = text.length > MAX;
+  const content = truncated
+    ? `${text.slice(0, MAX)}\n\n…[truncated ${text.length - MAX} chars]`
+    : text;
+  try {
+    await client.capture({
+      kind: 'code',
+      content,
+      source: 'vscode-ext',
+      metadata: {
+        file: editor.document.fileName,
+        languageId: editor.document.languageId,
+        lineCount: editor.document.lineCount,
+        wholeFile: true,
+        ...(truncated ? { truncated: true, originalLength: text.length } : {}),
+      },
+    });
+    lastCapturedAt = Date.now();
+    onLastCaptureChange.forEach((fn) => fn());
+    vscode.window.setStatusBarMessage('$(check) metu captured file', 2000);
+  } catch (e) {
+    vscode.window.showErrorMessage(`metu capture failed: ${(e as Error).message}`);
+  }
+}
+
+async function captureClipboardCmd(client: MetuClient): Promise<void> {
+  const text = (await vscode.env.clipboard.readText()).trim();
+  if (!text) {
+    vscode.window.showWarningMessage('metu: clipboard is empty.');
+    return;
+  }
+  try {
+    await client.capture({
+      kind: 'text',
+      content: text.length > 50_000 ? `${text.slice(0, 50_000)}\n\n…[truncated]` : text,
+      source: 'vscode-ext',
+      metadata: { fromClipboard: true, length: text.length },
+    });
+    lastCapturedAt = Date.now();
+    onLastCaptureChange.forEach((fn) => fn());
+    vscode.window.setStatusBarMessage('$(check) metu captured clipboard', 2000);
   } catch (e) {
     vscode.window.showErrorMessage(`metu capture failed: ${(e as Error).message}`);
   }
@@ -1032,6 +1284,7 @@ class HubBridge {
   private retry = 0;
   private cancelled = false;
   private reconnectTimer: ReturnType<typeof setTimeout> | null = null;
+  private heartbeatTimer: ReturnType<typeof setInterval> | null = null;
   private status: HubStatus = 'idle';
   private listeners = new Set<(s: HubStatus) => void>();
 
@@ -1081,6 +1334,10 @@ class HubBridge {
     if (this.reconnectTimer) {
       clearTimeout(this.reconnectTimer);
       this.reconnectTimer = null;
+    }
+    if (this.heartbeatTimer) {
+      clearInterval(this.heartbeatTimer);
+      this.heartbeatTimer = null;
     }
     if (this.ws) {
       const ws = this.ws;
@@ -1154,6 +1411,7 @@ class HubBridge {
       const msg = parsed as { type?: string; [k: string]: unknown };
       if (msg.type === 'hello_ack') {
         this.setStatus('open');
+        this.startHeartbeat();
         return;
       }
       if (msg.type === 'ping') {
@@ -1169,6 +1427,10 @@ class HubBridge {
     ws.addEventListener('close', () => {
       this.ws = null;
       this.setStatus('closed');
+      if (this.heartbeatTimer) {
+        clearInterval(this.heartbeatTimer);
+        this.heartbeatTimer = null;
+      }
       if (!this.cancelled) this.scheduleReconnect();
     });
     ws.addEventListener('error', () => {
@@ -1184,6 +1446,96 @@ class HubBridge {
       this.reconnectTimer = null;
       this.openSocket();
     }, delay);
+  }
+
+  /**
+   * Periodic activity heartbeat. Sends an `event.device` envelope every
+   * 5 minutes carrying a non-content snapshot of the current editor +
+   * workspace. The hub persists it to `device_event` and forwards to
+   * `/api/internal/hub/device-event` which mirrors into `timeline_event`
+   * for the focus/Conductor systems. We never send file content or
+   * selection text — only language id, file extension, basename, and
+   * workspace folder name. The user can mute via setting `metu.activity.enabled=false`.
+   */
+  private startHeartbeat(): void {
+    if (this.heartbeatTimer) clearInterval(this.heartbeatTimer);
+    const send = () => this.sendHeartbeat();
+    // First beat immediately, then every 5 minutes.
+    void send();
+    this.heartbeatTimer = setInterval(send, 5 * 60_000);
+  }
+
+  /**
+   * Send a one-off device event over the hub WS. Returns silently when
+   * the socket is not open or `metu.activity.enabled` is false. Used by
+   * terminal + git listeners in `activate()`.
+   */
+  sendDeviceEvent(kind: string, payload: Record<string, unknown>): void {
+    const ws = this.ws;
+    if (!ws) return;
+    const enabled = vscode.workspace
+      .getConfiguration('metu')
+      .get<boolean>('activity.enabled', true);
+    if (!enabled) return;
+    try {
+      ws.send(
+        JSON.stringify({
+          v: 1,
+          type: 'event.device',
+          kind,
+          payload,
+          occurredAt: new Date().toISOString(),
+        }),
+      );
+    } catch {
+      /* socket may have closed */
+    }
+  }
+
+  private sendHeartbeat(): void {
+    const ws = this.ws;
+    if (!ws) return;
+    const enabled = vscode.workspace
+      .getConfiguration('metu')
+      .get<boolean>('activity.enabled', true);
+    if (!enabled) return;
+    const editor = vscode.window.activeTextEditor;
+    const folder = vscode.workspace.workspaceFolders?.[0];
+    const payload: Record<string, unknown> = {
+      idleSec: 0,
+      window: {
+        focused: vscode.window.state.focused,
+      },
+    };
+    if (folder) {
+      payload.workspace = { name: folder.name };
+    }
+    if (editor) {
+      const doc = editor.document;
+      const fsPath = doc.uri.fsPath;
+      const baseName = fsPath ? fsPath.replace(/\\/g, '/').split('/').pop() : undefined;
+      const ext = baseName?.includes('.') ? baseName.split('.').pop() : undefined;
+      payload.editor = {
+        languageId: doc.languageId,
+        ext,
+        baseName,
+        lineCount: doc.lineCount,
+        scheme: doc.uri.scheme,
+      };
+    }
+    try {
+      ws.send(
+        JSON.stringify({
+          v: 1,
+          type: 'event.device',
+          kind: 'vscode.activity.heartbeat',
+          payload,
+          occurredAt: new Date().toISOString(),
+        }),
+      );
+    } catch {
+      /* socket may have closed between checks */
+    }
   }
 
   private fingerprint(): string {

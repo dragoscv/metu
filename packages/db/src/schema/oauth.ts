@@ -12,6 +12,7 @@ import {
 } from 'drizzle-orm/pg-core';
 import { user } from './auth';
 import { workspace } from './workspace';
+import { integrationKind } from './integrations';
 
 export const oauthApp = pgTable(
   'oauth_app',
@@ -40,6 +41,14 @@ export const oauthApp = pgTable(
     /** Space-delimited default scopes. */
     scopes: text('scopes').notNull().default(''),
     pkce: boolean('pkce').notNull().default(true),
+    /** Tag this app as the workspace's OAuth client for a given integration kind. */
+    kind: integrationKind('kind'),
+    /** Extra query params for the authorize step (access_type=offline, duration=permanent, ...). */
+    extraAuthParams: jsonb('extra_auth_params')
+      .notNull()
+      .default(sql`'{}'::jsonb`),
+    /** 'client_secret_post' (default) or 'client_secret_basic' for providers that demand HTTP Basic. */
+    tokenAuthMethod: text('token_auth_method').notNull().default('client_secret_post'),
     /** Capabilities discovered from /.well-known/openid-configuration. */
     discovered: jsonb('discovered')
       .notNull()
@@ -54,6 +63,9 @@ export const oauthApp = pgTable(
   },
   (t) => [
     uniqueIndex('oauth_app_slug_idx').on(t.workspaceId, t.slug),
+    uniqueIndex('oauth_app_kind_unique_idx')
+      .on(t.workspaceId, t.kind)
+      .where(sql`${t.kind} IS NOT NULL`),
     index('oauth_app_workspace_idx').on(t.workspaceId),
   ],
 );

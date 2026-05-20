@@ -30,10 +30,26 @@ export const integrationKind = pgEnum('integration_kind', [
   'slack',
   'notion',
   'linear',
+  'jira',
   'browser',
   'vscode',
   'webhook',
   'external_mcp',
+  // Social platforms (content + insights ingestion).
+  'tiktok',
+  'instagram',
+  'facebook',
+  'reddit',
+  'twitter',
+  'youtube',
+  'linkedin',
+  // Ad platforms (campaign + spend ingestion).
+  'meta_ads',
+  'google_ads',
+  'tiktok_ads',
+  'linkedin_ads',
+  // Deploy hosts (status webhooks).
+  'cloudflare',
 ]);
 
 export const integrationStatus = pgEnum('integration_status', [

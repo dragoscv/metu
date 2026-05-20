@@ -65,7 +65,7 @@ export function VoiceUsageChart({ initial, refetch }: Props) {
               formatter={(v) => `$${Number(v).toFixed(4)}`}
             />
             <Legend wrapperStyle={{ fontSize: 11 }} />
-            <Bar dataKey="realtimeUsd" name="Realtime" stackId="a" fill="#7c3aed" />
+            <Bar dataKey="realtimeUsd" name="Realtime" stackId="a" fill="#0e7490" />
             <Bar dataKey="sttUsd" name="STT" stackId="a" fill="#0ea5e9" />
             <Bar dataKey="ttsUsd" name="TTS" stackId="a" fill="#10b981" />
           </BarChart>

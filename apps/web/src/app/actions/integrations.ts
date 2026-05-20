@@ -2,7 +2,12 @@
 import { revalidatePath } from 'next/cache';
 import { auth } from '@metu/auth';
 import { seal } from '@metu/ai';
-import { upsertIntegration, deleteIntegrationById, setDefaultIntegration } from '@metu/db/queries';
+import {
+  upsertIntegration,
+  deleteIntegrationById,
+  setDefaultIntegration,
+  getIntegrationById,
+} from '@metu/db/queries';
 import {
   connectIntegrationSchema,
   disconnectIntegrationSchema,
@@ -111,6 +116,63 @@ export async function setDefaultIntegrationAction(
     return {
       ok: false,
       error: err instanceof Error ? err.message : 'Failed to set default',
+    };
+  }
+}
+
+const SYNCABLE_KINDS = [
+  'slack',
+  'gcal',
+  'linear',
+  'reddit',
+  'twitter',
+  'youtube',
+  'spotify',
+  'instagram',
+  'notion',
+  'stripe',
+  'vercel',
+] as const;
+type SyncableKind = (typeof SYNCABLE_KINDS)[number];
+
+const requestSyncSchema = z.object({ id: z.string().uuid() });
+export type RequestIntegrationSyncInput = z.infer<typeof requestSyncSchema>;
+
+/**
+ * Manually trigger a per-platform sync for one integration row. The
+ * matching Inngest function (`<kind>/sync.requested`) takes over from
+ * there. Bumps `lastSyncAt` only on success — Inngest's
+ * `sync-failure-recorder` will write `lastError` if all retries fail.
+ */
+export async function requestIntegrationSyncAction(
+  input: RequestIntegrationSyncInput,
+): Promise<ActionResult> {
+  const session = await auth();
+  if (!session) return { ok: false, error: 'Unauthenticated' };
+  const parsed = requestSyncSchema.safeParse(input);
+  if (!parsed.success) return { ok: false, error: 'Invalid id' };
+
+  const row = await getIntegrationById(session.user.workspaceId, parsed.data.id);
+  if (!row) return { ok: false, error: 'Integration not found' };
+  if (!(SYNCABLE_KINDS as readonly string[]).includes(row.kind)) {
+    return { ok: false, error: `Sync is not supported for ${row.kind}` };
+  }
+  const kind = row.kind as SyncableKind;
+  try {
+    await inngest.send({
+      name: `${kind}/sync.requested` as `${SyncableKind}/sync.requested`,
+      data: {
+        workspaceId: session.user.workspaceId,
+        integrationId: row.id,
+        reason: 'manual',
+      },
+    });
+    revalidatePath('/integrations');
+    return { ok: true };
+  } catch (err) {
+    return {
+      ok: false,
+      error: err instanceof Error ? err.message : 'Failed to enqueue sync',
     };
   }
 }

@@ -24,11 +24,11 @@
   --color-fg-muted: oklch(0.78 0.02 280);
   --color-fg-subtle: oklch(0.6 0.025 280);
 
-  --color-brand: oklch(0.74 0.21 305);
+  --color-brand: oklch(0.74 0.16 215);
   --color-brand-fg: oklch(0.99 0 0);
-  --color-brand-soft: oklch(0.74 0.21 305 / 16%);
-  --color-accent: oklch(0.82 0.18 200);
-  --color-accent-fg: oklch(0.12 0.02 280);
+  --color-brand-soft: oklch(0.74 0.16 215 / 16%);
+  --color-accent: oklch(0.82 0.16 195);
+  --color-accent-fg: oklch(0.12 0.02 220);
 
   --color-success: oklch(0.78 0.18 155);
   --color-success-fg: oklch(0.95 0.05 155);
@@ -72,6 +72,46 @@
   --shadow-glow:
     0 0 0 1px color-mix(in oklch, var(--color-brand) 30%, transparent),
     0 8px 32px -8px color-mix(in oklch, var(--color-brand) 40%, transparent);
+
+  /* ─── Dashboard observatory tokens (used by /dashboard skins) ────────── */
+  --color-night-deep: oklch(0.13 0.03 220);
+  --color-night-elev: oklch(0.17 0.035 220);
+  --color-pulse: oklch(0.78 0.18 215);
+  --color-streak-jade: oklch(0.78 0.14 158);
+  --color-drift-amber: oklch(0.8 0.14 75);
+  --color-rim-cyan: oklch(0.82 0.13 220);
+  --color-ivory: oklch(0.95 0.02 80);
+  --color-mist: oklch(0.72 0.025 220);
+  --shadow-glow-pulse: 0 0 24px oklch(0.78 0.18 215 / 0.35);
+  --shadow-glow-streak: 0 0 32px oklch(0.78 0.14 158 / 0.3);
+  --shadow-glow-drift: 0 0 20px oklch(0.8 0.14 75 / 0.28);
+}
+
+/* ─────────────────────────────────────────────────────────────────────────
+ * Dashboard observatory keyframes — used by heartbeat skins.
+ * Honor prefers-reduced-motion at the component level (motionMode: 'calm').
+ * ───────────────────────────────────────────────────────────────────────── */
+@keyframes metu-breathe {
+  0%, 100% { transform: scale(1); opacity: 0.92; }
+  50%      { transform: scale(1.04); opacity: 1; }
+}
+@keyframes metu-drift-orbit {
+  0%   { transform: translate(0, 0); }
+  50%  { transform: translate(6px, -4px); }
+  100% { transform: translate(0, 0); }
+}
+@keyframes metu-streak-rise {
+  0%   { transform: translateY(2px); opacity: 0.85; }
+  50%  { transform: translateY(-2px); opacity: 1; }
+  100% { transform: translateY(2px); opacity: 0.85; }
+}
+@keyframes metu-twinkle {
+  0%, 100% { opacity: 0.25; }
+  50%      { opacity: 0.55; }
+}
+@keyframes metu-skin-fade {
+  0%   { opacity: 0; transform: scale(0.985); filter: blur(6px); }
+  100% { opacity: 1; transform: scale(1);     filter: blur(0); }
 }
 
 /* ─────────────────────────────────────────────────────────────────────────
@@ -89,11 +129,11 @@
   --color-fg-muted: oklch(0.82 0.03 285);
   --color-fg-subtle: oklch(0.62 0.04 285);
 
-  --color-brand: oklch(0.76 0.23 308);
+  --color-brand: oklch(0.76 0.17 215);
   --color-brand-fg: oklch(0.99 0 0);
-  --color-brand-soft: oklch(0.76 0.23 308 / 18%);
-  --color-accent: oklch(0.84 0.18 195);
-  --color-accent-fg: oklch(0.14 0.02 290);
+  --color-brand-soft: oklch(0.76 0.17 215 / 18%);
+  --color-accent: oklch(0.84 0.16 175);
+  --color-accent-fg: oklch(0.14 0.02 220);
 
   --radius-sm: 0.625rem;
   --radius: 0.875rem;
@@ -105,7 +145,7 @@
   background:
     radial-gradient(ellipse 80% 60% at 10% 0%, color-mix(in oklch, var(--color-brand) 22%, transparent), transparent 60%),
     radial-gradient(ellipse 60% 80% at 100% 100%, color-mix(in oklch, var(--color-accent) 18%, transparent), transparent 60%),
-    radial-gradient(ellipse 50% 50% at 50% 100%, color-mix(in oklch, oklch(0.5 0.2 320) 12%, transparent), transparent 70%),
+    radial-gradient(ellipse 50% 50% at 50% 100%, color-mix(in oklch, oklch(0.55 0.14 200) 12%, transparent), transparent 70%),
     var(--color-bg);
   background-attachment: fixed;
 }
@@ -294,4 +334,78 @@
   .text-pretty {
     text-wrap: pretty;
   }
+}
+
+/* ─────────────────────────────────────────────────────────────────────────
+ * Dashboard MOOD overrides. 5 moods × 5 skins = 25 looks.
+ * Each `[data-mood='…']` selector swaps the observatory tokens; the heartbeat
+ * skins read those vars so all five skins re-style automatically. Keep the
+ * variable surface small so a mood is just a palette + character shift.
+ * ───────────────────────────────────────────────────────────────────────── */
+
+[data-mood='mystical'] {
+  /* Default look — deep cyan night, soft pulse. */
+  --color-night-deep: oklch(0.13 0.03 220);
+  --color-night-elev: oklch(0.17 0.035 220);
+  --color-pulse:       oklch(0.78 0.18 215);
+  --color-streak-jade: oklch(0.78 0.14 158);
+  --color-drift-amber: oklch(0.80 0.14 75);
+  --color-rim-cyan:    oklch(0.82 0.13 220);
+  --color-mist:        oklch(0.72 0.025 220);
+}
+
+[data-mood='brutalist'] {
+  /* High-contrast paper-on-ink. Almost no chroma. */
+  --color-night-deep: oklch(0.08 0.005 240);
+  --color-night-elev: oklch(0.13 0.005 240);
+  --color-pulse:       oklch(0.96 0    0);
+  --color-streak-jade: oklch(0.86 0.18 145);
+  --color-drift-amber: oklch(0.84 0.21 28);
+  --color-rim-cyan:    oklch(0.95 0    0);
+  --color-mist:        oklch(0.62 0    0);
+  --shadow-glow-pulse: 0 0 0 1px oklch(0.96 0 0 / 0.6);
+  --shadow-glow-streak: 0 0 0 1px oklch(0.86 0.18 145 / 0.55);
+  --shadow-glow-drift:  0 0 0 1px oklch(0.84 0.21 28 / 0.55);
+}
+
+[data-mood='journal'] {
+  /* Warm parchment with sepia ink. */
+  --color-night-deep: oklch(0.94 0.025 85);
+  --color-night-elev: oklch(0.97 0.018 85);
+  --color-pulse:       oklch(0.55 0.12 35);
+  --color-streak-jade: oklch(0.46 0.10 145);
+  --color-drift-amber: oklch(0.55 0.13 60);
+  --color-rim-cyan:    oklch(0.40 0.05 240);
+  --color-mist:        oklch(0.45 0.02 60);
+  --shadow-glow-pulse: 0 1px 0 oklch(0.55 0.12 35 / 0.4);
+  --shadow-glow-streak: 0 1px 0 oklch(0.46 0.10 145 / 0.4);
+  --shadow-glow-drift:  0 1px 0 oklch(0.55 0.13 60 / 0.4);
+}
+
+[data-mood='cyberpunk'] {
+  /* Neon magenta + acid green on near-black. */
+  --color-night-deep: oklch(0.10 0.02 300);
+  --color-night-elev: oklch(0.16 0.06 300);
+  --color-pulse:       oklch(0.72 0.30 330);
+  --color-streak-jade: oklch(0.85 0.27 142);
+  --color-drift-amber: oklch(0.78 0.22 80);
+  --color-rim-cyan:    oklch(0.84 0.20 200);
+  --color-mist:        oklch(0.65 0.10 320);
+  --shadow-glow-pulse: 0 0 32px oklch(0.72 0.30 330 / 0.55);
+  --shadow-glow-streak: 0 0 32px oklch(0.85 0.27 142 / 0.5);
+  --shadow-glow-drift:  0 0 24px oklch(0.78 0.22 80 / 0.45);
+}
+
+[data-mood='forest'] {
+  /* Mossy greens with amber glow. */
+  --color-night-deep: oklch(0.15 0.04 145);
+  --color-night-elev: oklch(0.20 0.05 145);
+  --color-pulse:       oklch(0.78 0.16 145);
+  --color-streak-jade: oklch(0.80 0.18 138);
+  --color-drift-amber: oklch(0.78 0.16 60);
+  --color-rim-cyan:    oklch(0.74 0.12 175);
+  --color-mist:        oklch(0.66 0.03 145);
+  --shadow-glow-pulse: 0 0 22px oklch(0.78 0.16 145 / 0.4);
+  --shadow-glow-streak: 0 0 28px oklch(0.80 0.18 138 / 0.35);
+  --shadow-glow-drift:  0 0 20px oklch(0.78 0.16 60 / 0.3);
 }

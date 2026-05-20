@@ -101,7 +101,7 @@ export const onConductorTick = inngest.createFunction(
     id: 'conductor-tick',
     name: 'Conductor: tick',
     concurrency: { key: 'event.data.workspaceId', limit: 1 },
-    debounce: { period: '15s', key: 'event.data.workspaceId' },
+    debounce: { period: '5s', key: 'event.data.workspaceId' },
   },
   { event: 'conductor/tick' },
   async ({ event, step }) => {

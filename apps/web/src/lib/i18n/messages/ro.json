@@ -1,0 +1,33 @@
+{
+  "nav": {
+    "getStarted": "Începe",
+    "resume": "Reia",
+    "restore": "Restabilește",
+    "now": "Acum",
+    "focus": "Focus",
+    "streaks": "Serii",
+    "notifications": "Notificări",
+    "metu": "METU",
+    "chat": "Chat",
+    "agents": "Agenți",
+    "projects": "Proiecte",
+    "knowledge": "Cunoștințe",
+    "connect": "Conectează",
+    "settings": "Setări"
+  },
+  "userMenu": {
+    "account": "Cont",
+    "profile": "Profil",
+    "settings": "Setări",
+    "autonomy": "Autonomie",
+    "billing": "Facturare",
+    "appearance": "Aspect",
+    "theme": "Temă",
+    "language": "Limbă",
+    "signOut": "Deconectare",
+    "system": "Sistem",
+    "light": "Luminos",
+    "dark": "Întunecat",
+    "matchOs": "Urmează SO"
+  }
+}

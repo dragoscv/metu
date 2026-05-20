@@ -40,6 +40,9 @@ const WORKSPACE_EXEMPT = new Set<string>([
   'billing.ts',
   // profile-wizard writes to user table (auth-owned, single-row by user id)
   'profile-wizard.ts',
+  // profile.ts deleteAccount: cascades from user row (auth-owned); workspaceMember
+  // deletion is keyed by userId, the global user identity primitive.
+  'profile.ts',
   // copilot-models / copilot store per-user prefs not per-workspace data
   'copilot-models.ts',
   'copilot.ts',

@@ -10,10 +10,18 @@
  * Skipped silently if `RESEND_API_KEY` is not configured. Each delivery
  * also writes a `digest.email.sent` timeline event for audit.
  */
-import { and, desc, eq, gte } from 'drizzle-orm';
+import { and, desc, eq, gte, isNull, sql } from 'drizzle-orm';
 import { inngest } from '../client';
 import { getDb } from '@metu/db';
-import { agentPolicy, timelineEvent, user, workspace, workspaceMember } from '@metu/db/schema';
+import {
+  agentPolicy,
+  notification,
+  project,
+  timelineEvent,
+  user,
+  workspace,
+  workspaceMember,
+} from '@metu/db/schema';
 
 const RESEND_FROM = process.env.RESEND_FROM ?? 'metu <hello@metu.app>';
 
@@ -65,7 +73,15 @@ export const dailyDigestEmailCron = inngest.createFunction(
         .innerJoin(workspaceMember, eq(workspaceMember.workspaceId, workspace.id))
         .innerJoin(user, eq(user.id, workspaceMember.userId))
         .innerJoin(agentPolicy, eq(agentPolicy.workspaceId, workspace.id))
-        .where(and(eq(workspaceMember.role, 'owner'), eq(agentPolicy.enabled, true)));
+        .where(
+          and(
+            eq(workspaceMember.role, 'owner'),
+            eq(agentPolicy.enabled, true),
+            // Default-on: include rows where digestEmail key is missing
+            // (NULL) OR explicitly true. Skip only when explicitly false.
+            sql`coalesce((${agentPolicy.metadata} ->> 'digestEmail')::boolean, true) = true`,
+          ),
+        );
       return rows;
     });
 
@@ -89,22 +105,72 @@ export const dailyDigestEmailCron = inngest.createFunction(
 
       if (events.length === 0) continue;
 
+      // Pending proposals — notifications carrying a toolProposal that
+      // the user has not yet acknowledged. We surface them in the digest
+      // so they aren't forgotten in the inbox.
+      const proposals = await db
+        .select({
+          title: notification.title,
+          source: notification.source,
+        })
+        .from(notification)
+        .where(
+          and(
+            eq(notification.workspaceId, o.workspaceId),
+            isNull(notification.acknowledgedAt),
+            sql`${notification.metadata} ? 'toolProposal'`,
+          ),
+        )
+        .orderBy(desc(notification.createdAt))
+        .limit(10);
+
+      // Today's active projects — by recent meaningful activity.
+      const projects = await db
+        .select({
+          name: project.name,
+          lastActivity: project.lastMeaningfulActivityAt,
+        })
+        .from(project)
+        .where(and(eq(project.workspaceId, o.workspaceId), eq(project.status, 'active')))
+        .orderBy(desc(project.lastMeaningfulActivityAt))
+        .limit(5);
+
       const lines = events.map(
         (e) =>
           `• [${e.kind}] ${e.title}  (${new Date(e.occurredAt).toISOString().slice(11, 16)} UTC)`,
       );
-      const text = [
-        `Yesterday in ${o.workspaceName}`,
-        '',
-        ...lines,
-        '',
-        `Open metu → ${process.env.NEXT_PUBLIC_APP_URL ?? 'https://metu.ro'}/timeline`,
-      ].join('\n');
+      const baseUrl = process.env.NEXT_PUBLIC_APP_URL ?? 'https://metu.ro';
+      const sections: string[] = [`Yesterday in ${o.workspaceName}`, '', ...lines];
+
+      if (proposals.length > 0) {
+        sections.push(
+          '',
+          `Open proposals (${proposals.length}) — ${baseUrl}/proposals`,
+          ...proposals.map((p) => `• ${p.title}${p.source ? `  (${p.source})` : ''}`),
+        );
+      }
+      if (projects.length > 0) {
+        sections.push(
+          '',
+          `Active projects`,
+          ...projects.map(
+            (p) =>
+              `• ${p.name}${p.lastActivity ? `  (${new Date(p.lastActivity).toISOString().slice(0, 10)})` : ''}`,
+          ),
+        );
+      }
+      sections.push('', `Open metu → ${baseUrl}/timeline`);
+      const text = sections.join('\n');
+
+      const subject =
+        proposals.length > 0
+          ? `metu — ${proposals.length} open proposal${proposals.length === 1 ? '' : 's'} · ${events.length} updates`
+          : `metu — ${events.length} updates from yesterday`;
 
       const ok = await step.run(`send-${o.workspaceId}`, () =>
         sendEmail({
           to: o.email,
-          subject: `metu — ${events.length} updates from yesterday`,
+          subject,
           text,
         }),
       );
@@ -115,8 +181,12 @@ export const dailyDigestEmailCron = inngest.createFunction(
           userId: o.userId,
           kind: 'digest.email.sent',
           title: 'Daily digest email sent',
-          body: `${events.length} updates summarized`,
-          payload: { events: events.length },
+          body: `${events.length} updates · ${proposals.length} proposals · ${projects.length} projects`,
+          payload: {
+            events: events.length,
+            proposals: proposals.length,
+            projects: projects.length,
+          },
           importance: 0.2,
         });
       }

@@ -13,20 +13,23 @@ export const metadata: Metadata = {
 };
 
 export const viewport: Viewport = {
-  themeColor: '#7c3aed',
+  themeColor: '#0e7490',
   width: 'device-width',
   initialScale: 1,
   maximumScale: 1,
 };
 
-export default function RootLayout({ children }: { children: React.ReactNode }) {
+import { getLocale } from '@/lib/i18n/server';
+
+export default async function RootLayout({ children }: { children: React.ReactNode }) {
+  const locale = await getLocale();
   return (
-    <html lang="en" suppressHydrationWarning>
+    <html lang={locale} suppressHydrationWarning>
       <head>
         <ThemeScript />
       </head>
       <body className="min-h-screen bg-[var(--color-bg)] text-[var(--color-fg)] antialiased">
-        <Providers>
+        <Providers locale={locale}>
           <NuqsAdapter>{children}</NuqsAdapter>
           <ErrorCatcher />
           <Toaster

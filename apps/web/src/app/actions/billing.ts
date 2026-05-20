@@ -77,12 +77,19 @@ export type CurrentSubscription = {
   status: string;
   capUsd: number;
   hasStripeCustomer: boolean;
+  currentPeriodEnd: Date | null;
 };
 
 export async function getCurrentSubscription(): Promise<CurrentSubscription> {
   const session = await auth();
   if (!session) {
-    return { tier: 'free', status: 'active', capUsd: 0, hasStripeCustomer: false };
+    return {
+      tier: 'free',
+      status: 'active',
+      capUsd: 0,
+      hasStripeCustomer: false,
+      currentPeriodEnd: null,
+    };
   }
   const db = getDb();
   const [row] = await db
@@ -91,13 +98,20 @@ export async function getCurrentSubscription(): Promise<CurrentSubscription> {
     .where(eq(workspaceSubscription.workspaceId, session.user.workspaceId))
     .limit(1);
   if (!row) {
-    return { tier: 'free', status: 'active', capUsd: 0, hasStripeCustomer: false };
+    return {
+      tier: 'free',
+      status: 'active',
+      capUsd: 0,
+      hasStripeCustomer: false,
+      currentPeriodEnd: null,
+    };
   }
   return {
     tier: row.tier,
     status: row.status,
     capUsd: Number(row.monthlyVoiceUsdCap),
     hasStripeCustomer: !!row.stripeCustomerId,
+    currentPeriodEnd: row.currentPeriodEnd,
   };
 }
 

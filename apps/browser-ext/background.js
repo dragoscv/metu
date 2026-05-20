@@ -274,6 +274,52 @@ function flashBadge(text, color) {
   setTimeout(() => chrome.action.setBadgeText({ text: '' }), 1500);
 }
 
+// ─── Passive observers: downloads + tab groups ────────────────────────────
+// Soft-fail when permissions are missing (some browsers, MV3 shims, or
+// when the user declines optional perms). Each listener is wrapped so a
+// single API throw never crashes the whole service worker.
+
+if (chrome.downloads?.onCreated) {
+  chrome.downloads.onCreated.addListener((dl) => {
+    if (!dl?.url || dl.url.startsWith('blob:') || dl.url.startsWith('data:')) return;
+    sdk
+      .capture({
+        kind: 'link',
+        content: dl.url,
+        source: 'browser-ext.download',
+        sourceUrl: dl.referrer || dl.url,
+        metadata: {
+          filename: dl.filename,
+          mime: dl.mime,
+          totalBytes: dl.totalBytes,
+          finalUrl: dl.finalUrl,
+        },
+      })
+      .catch((e) => console.warn('[metu] download capture failed', e));
+  });
+}
+
+if (chrome.tabGroups?.onUpdated) {
+  // Coarse "user reorganized their work" pulse. We only fire when title
+  // or color changes (not every tab move) to keep volume low.
+  const lastSeen = new Map();
+  chrome.tabGroups.onUpdated.addListener((g) => {
+    const prev = lastSeen.get(g.id);
+    const sig = `${g.title ?? ''}|${g.color ?? ''}|${g.collapsed ?? false}`;
+    if (prev === sig) return;
+    lastSeen.set(g.id, sig);
+    sdk
+      .notify({
+        title: `Tab group: ${g.title || '(untitled)'}`,
+        body: `${g.color ?? ''}${g.collapsed ? ' · collapsed' : ''}`.trim(),
+        urgency: 'low',
+        source: 'browser-ext.tab-group',
+        metadata: { groupId: g.id, color: g.color, collapsed: g.collapsed },
+      })
+      .catch((e) => console.warn('[metu] tab-group notify failed', e));
+  });
+}
+
 // ─── Message bridge from popup + content script ───────────────────────────
 
 chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
@@ -301,4 +347,92 @@ chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
     }
   })();
   return true; // async
+});
+
+// ─── Ambient page-visit capture ───────────────────────────────────────────
+//
+// On every tab navigation that completes loading, record a capture so the
+// Conductor + projects + focus subsystems see what the user is browsing.
+// We never send page content — only URL, title, favicon, hostname.
+//
+// Privacy posture:
+//   - User can disable via `chrome.storage.local.activityEnabled = false`.
+//   - URLs matching schemes other than http/https are skipped (chrome://, file://, etc.).
+//   - A small in-memory + storage.session dedupe window (30 min per URL)
+//     prevents spamming the inbox when the user switches between tabs.
+//   - Hosts on PRIVATE_HOSTS (localhost, *.lan, IPv4 RFC1918) are skipped.
+
+const VISIT_DEDUP_MS = 30 * 60_000;
+const PRIVATE_HOST_RE =
+  /^(localhost|127\.|10\.|192\.168\.|172\.(1[6-9]|2\d|3[01])\.|.*\.lan|.*\.local)$/i;
+
+async function isActivityEnabled() {
+  const { activityEnabled } = await chrome.storage.local.get('activityEnabled');
+  // Default ON: the user installed metu to be observed.
+  return activityEnabled !== false;
+}
+
+function isCapturableUrl(url) {
+  if (!url) return false;
+  let u;
+  try {
+    u = new URL(url);
+  } catch {
+    return false;
+  }
+  if (u.protocol !== 'http:' && u.protocol !== 'https:') return false;
+  if (PRIVATE_HOST_RE.test(u.hostname)) return false;
+  return true;
+}
+
+async function shouldRecordVisit(url) {
+  const { recentVisits = {} } = await chrome.storage.session.get('recentVisits');
+  const now = Date.now();
+  const last = recentVisits[url];
+  if (last && now - last < VISIT_DEDUP_MS) return false;
+  // Trim entries older than the dedup window.
+  for (const k of Object.keys(recentVisits)) {
+    if (now - recentVisits[k] > VISIT_DEDUP_MS) delete recentVisits[k];
+  }
+  recentVisits[url] = now;
+  await chrome.storage.session.set({ recentVisits });
+  return true;
+}
+
+async function recordPageVisit(tab) {
+  if (!tab?.url || !isCapturableUrl(tab.url)) return;
+  if (!(await isActivityEnabled())) return;
+  if (!(await shouldRecordVisit(tab.url))) return;
+  const { token } = await getCfg();
+  if (!token) return; // not signed in — skip silently
+  let host = '';
+  try {
+    host = new URL(tab.url).hostname;
+  } catch {
+    /* ignore */
+  }
+  try {
+    await sdk.capture({
+      kind: 'link',
+      content: tab.title || tab.url,
+      source: 'browser-ext',
+      sourceUrl: tab.url,
+      metadata: {
+        kind: 'browser.page.visit',
+        url: tab.url,
+        title: tab.title,
+        host,
+        favicon: tab.favIconUrl,
+      },
+    });
+  } catch (e) {
+    // Ambient — never surface to the user.
+    console.warn('[metu] page-visit capture failed', e?.message ?? e);
+  }
+}
+
+chrome.tabs.onUpdated.addListener((_tabId, changeInfo, tab) => {
+  if (changeInfo.status === 'complete') {
+    void recordPageVisit(tab);
+  }
 });

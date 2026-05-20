@@ -14,3 +14,4 @@ export * from './billing';
 export * from './telegram';
 export * from './digest';
 export * from './notai';
+export * from './streaks';

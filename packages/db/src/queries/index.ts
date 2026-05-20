@@ -11,3 +11,4 @@ export * from './presence';
 export * from './notai';
 export * from './notifications';
 export * from './weekly';
+export * from './streaks';

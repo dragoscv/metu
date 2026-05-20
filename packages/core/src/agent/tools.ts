@@ -11,10 +11,11 @@
  * `runTool()` in policy.ts which enforces the per-workspace ACL, records the
  * tool_call audit row, and writes a timeline event.
  */
-import { and, desc, eq, isNull, sql } from 'drizzle-orm';
+import { and, desc, eq, gte, isNull, lt, sql } from 'drizzle-orm';
 import { z } from 'zod';
 import { getDb } from '@metu/db';
 import {
+  agentPolicy,
   capture,
   continuityBriefing,
   decision,
@@ -31,7 +32,8 @@ import {
 import { callRemoteTool, type ExternalMcpConfig } from '@metu/integrations/mcp';
 import { sendTextMessage as sendTelegramText } from '@metu/integrations/telegram';
 import { octokitForToken } from '@metu/integrations/github';
-import { open as openSealed } from '@metu/ai';
+import { open as openSealed, getModel, buildConductorSystem } from '@metu/ai';
+import { generateObject, generateText } from 'ai';
 import { listRecentBriefings } from '@metu/db/queries';
 import * as memoryEngine from '../memory';
 import { restoreProjectContext } from '../continuity';
@@ -605,7 +607,7 @@ const metuResumeTool: ToolDefinition<typeof metuResumeArgs> = {
             eq(project.workspaceId, ctx.workspaceId),
             isNull(project.deletedAt),
             sql`${project.status} in ('active', 'paused')`,
-            sql`${project.lastMeaningfulActivityAt} >= ${cutoff}`,
+            gte(project.lastMeaningfulActivityAt, cutoff),
           ),
         )
         .orderBy(desc(project.momentumScore), desc(project.lastMeaningfulActivityAt))
@@ -634,7 +636,7 @@ const metuResumeTool: ToolDefinition<typeof metuResumeArgs> = {
         .where(
           and(
             eq(timelineEvent.workspaceId, ctx.workspaceId),
-            sql`${timelineEvent.occurredAt} >= ${cutoff}`,
+            gte(timelineEvent.occurredAt, cutoff),
           ),
         ),
     ]);
@@ -1249,6 +1251,2527 @@ const commitFileTool: ToolDefinition<typeof commitFileArgs> = {
   },
 };
 
+// ─── github_draft_pr ───────────────────────────────────────────────────────
+
+const githubDraftPrArgs = z.object({
+  integrationId: z.string().uuid(),
+  repoFullName: z.string().regex(/^[^/]+\/[^/]+$/, 'expected "owner/repo"'),
+  title: z.string().min(2).max(200),
+  body: z.string().max(8000).optional(),
+  head: z.string().min(1).max(200).describe('Source branch (e.g. "feat/foo").'),
+  base: z.string().min(1).max(200).default('main').describe('Target branch.'),
+});
+
+const githubDraftPrTool: ToolDefinition<typeof githubDraftPrArgs> = {
+  name: 'github_draft_pr',
+  description:
+    'Open a draft pull request on GitHub. Useful when the user wraps up work on a branch — Conductor proposes the title/body and the user approves. Default ACL is `ask`.',
+  kind: 'high_risk',
+  args: githubDraftPrArgs,
+  async execute(args, ctx) {
+    const token = await resolveGithubToken(ctx.workspaceId, args.integrationId);
+    const [owner, repo] = args.repoFullName.split('/') as [string, string];
+    const o = octokitForToken(token);
+    const res = await o.rest.pulls.create({
+      owner,
+      repo,
+      title: args.title,
+      body: args.body,
+      head: args.head,
+      base: args.base,
+      draft: true,
+    });
+    return {
+      result: {
+        number: res.data.number,
+        url: res.data.html_url,
+        state: res.data.state,
+      },
+    };
+  },
+};
+
+// ─── linear_add_comment ────────────────────────────────────────────────────
+
+const linearAddCommentArgs = z.object({
+  integrationId: z.string().uuid(),
+  issueId: z.string().min(1).describe('Linear issue id (UUID) or identifier (e.g. "ENG-123").'),
+  body: z.string().min(1).max(8000),
+});
+
+async function resolveLinearToken(workspaceId: string, integrationId: string): Promise<string> {
+  return resolveIntegrationToken(workspaceId, integrationId, 'linear');
+}
+
+async function resolveIntegrationToken(
+  workspaceId: string,
+  integrationId: string,
+  kind: 'slack' | 'linear' | 'gcal' | 'github' | 'notion',
+): Promise<string> {
+  const db = getDb();
+  const [row] = await db
+    .select()
+    .from(integration)
+    .where(
+      and(
+        eq(integration.id, integrationId),
+        eq(integration.workspaceId, workspaceId),
+        eq(integration.kind, kind),
+      ),
+    )
+    .limit(1);
+  if (!row) throw new Error('integration_not_found');
+  if (row.status !== 'active') throw new Error(`integration_${row.status}`);
+  if (!row.tokenCiphertext || !row.tokenIv) throw new Error('no_token');
+  const tokenTag = (row.config as { tokenTag?: string })?.tokenTag;
+  if (!tokenTag) throw new Error('token_tag_missing');
+  return openSealed({
+    ciphertext: row.tokenCiphertext,
+    iv: row.tokenIv,
+    tag: tokenTag,
+  });
+}
+
+const linearAddCommentTool: ToolDefinition<typeof linearAddCommentArgs> = {
+  name: 'linear_add_comment',
+  description:
+    'Add a comment to a Linear issue via GraphQL. Body is plain markdown. Default ACL is `ask`.',
+  kind: 'high_risk',
+  args: linearAddCommentArgs,
+  async execute(args, ctx) {
+    const token = await resolveLinearToken(ctx.workspaceId, args.integrationId);
+    const res = await fetch('https://api.linear.app/graphql', {
+      method: 'POST',
+      headers: {
+        'content-type': 'application/json',
+        authorization: token,
+      },
+      body: JSON.stringify({
+        query: `mutation($issueId: String!, $body: String!) {
+          commentCreate(input: { issueId: $issueId, body: $body }) {
+            success
+            comment { id url }
+          }
+        }`,
+        variables: { issueId: args.issueId, body: args.body },
+      }),
+    });
+    if (!res.ok) throw new Error(`linear_http_${res.status}`);
+    const json = (await res.json()) as {
+      data?: { commentCreate?: { success: boolean; comment?: { id: string; url: string } } };
+      errors?: Array<{ message: string }>;
+    };
+    if (json.errors?.length) throw new Error(json.errors[0]!.message);
+    const cc = json.data?.commentCreate;
+    if (!cc?.success || !cc.comment) throw new Error('linear_comment_failed');
+    return { result: { commentId: cc.comment.id, url: cc.comment.url } };
+  },
+};
+
+// ─── slack_send_message ────────────────────────────────────────────────────
+
+const slackSendMessageArgs = z.object({
+  integrationId: z.string().uuid(),
+  channel: z
+    .string()
+    .min(1)
+    .max(120)
+    .describe('Slack channel id (e.g. "C0123456") or DM user id ("U0123…").'),
+  text: z.string().min(1).max(4000),
+  threadTs: z.string().optional().describe('If set, posts as a threaded reply to this parent ts.'),
+});
+
+const slackSendMessageTool: ToolDefinition<typeof slackSendMessageArgs> = {
+  name: 'slack_send_message',
+  description:
+    'Post a message to a Slack channel or DM as the connected user. Default ACL is `ask`.',
+  kind: 'high_risk',
+  args: slackSendMessageArgs,
+  async execute(args, ctx) {
+    const token = await resolveIntegrationToken(ctx.workspaceId, args.integrationId, 'slack');
+    const res = await fetch('https://slack.com/api/chat.postMessage', {
+      method: 'POST',
+      headers: {
+        authorization: `Bearer ${token}`,
+        'content-type': 'application/json; charset=utf-8',
+      },
+      body: JSON.stringify({
+        channel: args.channel,
+        text: args.text,
+        ...(args.threadTs ? { thread_ts: args.threadTs } : {}),
+      }),
+    });
+    const json = (await res.json()) as { ok?: boolean; ts?: string; error?: string };
+    if (!json.ok) throw new Error(json.error ?? `slack_http_${res.status}`);
+    return { result: { ts: json.ts ?? null, channel: args.channel } };
+  },
+};
+
+// ─── gcal_create_event ─────────────────────────────────────────────────────
+
+const gcalCreateEventArgs = z.object({
+  integrationId: z.string().uuid(),
+  calendarId: z.string().default('primary'),
+  summary: z.string().min(1).max(200),
+  description: z.string().max(8000).optional(),
+  startIso: z.string().describe('ISO 8601 datetime, e.g. "2026-05-08T14:00:00+02:00".'),
+  endIso: z.string().describe('ISO 8601 datetime — must be after startIso.'),
+  attendees: z.array(z.string().email()).max(50).optional(),
+  location: z.string().max(200).optional(),
+});
+
+const gcalCreateEventTool: ToolDefinition<typeof gcalCreateEventArgs> = {
+  name: 'gcal_create_event',
+  description:
+    "Create a Google Calendar event on the user's calendar. Default ACL is `ask`. The token must have the calendar.events scope.",
+  kind: 'high_risk',
+  args: gcalCreateEventArgs,
+  async execute(args, ctx) {
+    const token = await resolveIntegrationToken(ctx.workspaceId, args.integrationId, 'gcal');
+    const url = `https://www.googleapis.com/calendar/v3/calendars/${encodeURIComponent(args.calendarId)}/events`;
+    const res = await fetch(url, {
+      method: 'POST',
+      headers: {
+        authorization: `Bearer ${token}`,
+        'content-type': 'application/json',
+      },
+      body: JSON.stringify({
+        summary: args.summary,
+        description: args.description,
+        location: args.location,
+        start: { dateTime: args.startIso },
+        end: { dateTime: args.endIso },
+        attendees: args.attendees?.map((email) => ({ email })),
+      }),
+    });
+    const json = (await res.json()) as {
+      id?: string;
+      htmlLink?: string;
+      error?: { message?: string };
+    };
+    if (!res.ok) throw new Error(json.error?.message ?? `gcal_http_${res.status}`);
+    return { result: { id: json.id ?? null, url: json.htmlLink ?? null } };
+  },
+};
+
+// ─── github_add_comment ────────────────────────────────────────────────────
+
+const githubAddCommentArgs = z.object({
+  integrationId: z.string().uuid(),
+  repoFullName: z.string().regex(/^[^/]+\/[^/]+$/, 'expected "owner/repo"'),
+  issueNumber: z.number().int().positive().describe('Issue OR pull-request number.'),
+  body: z.string().min(1).max(60_000),
+});
+
+const githubAddCommentTool: ToolDefinition<typeof githubAddCommentArgs> = {
+  name: 'github_add_comment',
+  description:
+    'Post a comment on a GitHub issue or pull request as the connected user. Default ACL is `ask`.',
+  kind: 'high_risk',
+  args: githubAddCommentArgs,
+  async execute(args, ctx) {
+    const token = await resolveGithubToken(ctx.workspaceId, args.integrationId);
+    const [owner, repo] = args.repoFullName.split('/') as [string, string];
+    const o = octokitForToken(token);
+    const res = await o.rest.issues.createComment({
+      owner,
+      repo,
+      issue_number: args.issueNumber,
+      body: args.body,
+    });
+    return {
+      result: { id: res.data.id, url: res.data.html_url },
+    };
+  },
+};
+
+// ─── github_pr_review_comment ──────────────────────────────────────────────
+
+const githubPrReviewCommentArgs = z.object({
+  integrationId: z.string().uuid(),
+  repoFullName: z.string().regex(/^[^/]+\/[^/]+$/, 'expected "owner/repo"'),
+  pullNumber: z.number().int().positive(),
+  body: z.string().min(1).max(60_000),
+  event: z
+    .enum(['COMMENT', 'APPROVE', 'REQUEST_CHANGES'])
+    .default('COMMENT')
+    .describe('GitHub review event — APPROVE/REQUEST_CHANGES require non-empty body.'),
+});
+
+const githubPrReviewCommentTool: ToolDefinition<typeof githubPrReviewCommentArgs> = {
+  name: 'github_pr_review_comment',
+  description:
+    'Submit a PR-level review on a GitHub pull request. Use COMMENT for plain remarks, APPROVE/REQUEST_CHANGES for blocking decisions. Default ACL is `ask`.',
+  kind: 'high_risk',
+  args: githubPrReviewCommentArgs,
+  async execute(args, ctx) {
+    const token = await resolveGithubToken(ctx.workspaceId, args.integrationId);
+    const [owner, repo] = args.repoFullName.split('/') as [string, string];
+    const o = octokitForToken(token);
+    const res = await o.rest.pulls.createReview({
+      owner,
+      repo,
+      pull_number: args.pullNumber,
+      body: args.body,
+      event: args.event,
+    });
+    return { result: { id: res.data.id, url: res.data.html_url } };
+  },
+};
+
+// ─── notion_append_block ───────────────────────────────────────────────────
+
+const notionAppendBlockArgs = z.object({
+  integrationId: z.string().uuid(),
+  pageId: z.string().min(20).describe('Notion page id (32-char hyphenated UUID or compact form).'),
+  text: z.string().min(1).max(2000),
+  blockType: z.enum(['paragraph', 'bulleted_list_item', 'to_do', 'heading_3']).default('paragraph'),
+});
+
+const notionAppendBlockTool: ToolDefinition<typeof notionAppendBlockArgs> = {
+  name: 'notion_append_block',
+  description:
+    'Append a single block of text to a Notion page. Default ACL is `ask`. The token must have edit access to the page.',
+  kind: 'high_risk',
+  args: notionAppendBlockArgs,
+  async execute(args, ctx) {
+    const token = await resolveIntegrationToken(ctx.workspaceId, args.integrationId, 'notion');
+    const richText = [{ type: 'text', text: { content: args.text } }];
+    const block: Record<string, unknown> =
+      args.blockType === 'to_do'
+        ? { object: 'block', type: 'to_do', to_do: { rich_text: richText, checked: false } }
+        : { object: 'block', type: args.blockType, [args.blockType]: { rich_text: richText } };
+    const res = await fetch(
+      `https://api.notion.com/v1/blocks/${encodeURIComponent(args.pageId)}/children`,
+      {
+        method: 'PATCH',
+        headers: {
+          authorization: `Bearer ${token}`,
+          'notion-version': '2022-06-28',
+          'content-type': 'application/json',
+        },
+        body: JSON.stringify({ children: [block] }),
+      },
+    );
+    const json = (await res.json()) as {
+      results?: Array<{ id?: string }>;
+      message?: string;
+    };
+    if (!res.ok) throw new Error(json.message ?? `notion_http_${res.status}`);
+    return {
+      result: { blockId: json.results?.[0]?.id ?? null, pageId: args.pageId },
+    };
+  },
+};
+
+// ─── linear_move_issue ─────────────────────────────────────────────────────
+
+const linearMoveIssueArgs = z.object({
+  integrationId: z.string().uuid(),
+  issueId: z.string().min(1),
+  stateId: z
+    .string()
+    .min(1)
+    .describe('Linear workflow-state id to move the issue into (e.g. "Done", "In Review").'),
+});
+
+const linearMoveIssueTool: ToolDefinition<typeof linearMoveIssueArgs> = {
+  name: 'linear_move_issue',
+  description:
+    'Move a Linear issue to a different workflow state by stateId. Default ACL is `ask`.',
+  kind: 'high_risk',
+  args: linearMoveIssueArgs,
+  async execute(args, ctx) {
+    const token = await resolveLinearToken(ctx.workspaceId, args.integrationId);
+    const res = await fetch('https://api.linear.app/graphql', {
+      method: 'POST',
+      headers: {
+        'content-type': 'application/json',
+        authorization: token,
+      },
+      body: JSON.stringify({
+        query: `mutation($id: String!, $stateId: String!) {
+          issueUpdate(id: $id, input: { stateId: $stateId }) {
+            success
+            issue { id identifier state { id name } }
+          }
+        }`,
+        variables: { id: args.issueId, stateId: args.stateId },
+      }),
+    });
+    if (!res.ok) throw new Error(`linear_http_${res.status}`);
+    const json = (await res.json()) as {
+      data?: {
+        issueUpdate?: {
+          success: boolean;
+          issue?: { id: string; identifier: string; state?: { id: string; name: string } };
+        };
+      };
+      errors?: Array<{ message: string }>;
+    };
+    if (json.errors?.length) throw new Error(json.errors[0]!.message);
+    const iu = json.data?.issueUpdate;
+    if (!iu?.success || !iu.issue) throw new Error('linear_move_failed');
+    return {
+      result: {
+        issueId: iu.issue.id,
+        identifier: iu.issue.identifier,
+        state: iu.issue.state?.name ?? null,
+      },
+    };
+  },
+};
+
+// ─── github_merge_pr ───────────────────────────────────────────────────────
+
+const githubMergePrArgs = z.object({
+  integrationId: z.string().uuid(),
+  repoFullName: z.string().regex(/^[^/]+\/[^/]+$/, 'expected "owner/repo"'),
+  pullNumber: z.number().int().positive(),
+  mergeMethod: z.enum(['merge', 'squash', 'rebase']).default('squash'),
+  commitTitle: z.string().max(256).optional(),
+  commitMessage: z.string().max(4000).optional(),
+});
+
+const githubMergePrTool: ToolDefinition<typeof githubMergePrArgs> = {
+  name: 'github_merge_pr',
+  description:
+    'Merge a GitHub pull request. Refuses if the PR is not mergeable. Default ACL is `ask`.',
+  kind: 'high_risk',
+  args: githubMergePrArgs,
+  async execute(args, ctx) {
+    const token = await resolveGithubToken(ctx.workspaceId, args.integrationId);
+    const [owner, repo] = args.repoFullName.split('/') as [string, string];
+    const o = octokitForToken(token);
+    const res = await o.rest.pulls.merge({
+      owner,
+      repo,
+      pull_number: args.pullNumber,
+      merge_method: args.mergeMethod,
+      ...(args.commitTitle ? { commit_title: args.commitTitle } : {}),
+      ...(args.commitMessage ? { commit_message: args.commitMessage } : {}),
+    });
+    return {
+      result: { sha: res.data.sha, merged: res.data.merged, message: res.data.message },
+    };
+  },
+};
+
+// ─── slack_add_reaction ────────────────────────────────────────────────────
+
+const slackAddReactionArgs = z.object({
+  integrationId: z.string().uuid(),
+  channel: z.string().min(1).max(120),
+  timestamp: z.string().describe('Slack message ts (e.g. "1715123456.000200").'),
+  name: z
+    .string()
+    .min(1)
+    .max(60)
+    .regex(/^[a-z0-9_+-]+$/, 'lowercase letters, digits, _, +, - only')
+    .describe('Emoji name without colons (e.g. "thumbsup", "white_check_mark").'),
+});
+
+const slackAddReactionTool: ToolDefinition<typeof slackAddReactionArgs> = {
+  name: 'slack_add_reaction',
+  description:
+    'React to a Slack message with an emoji. Default ACL is `ask`. Idempotent server-side (Slack returns already_reacted).',
+  kind: 'high_risk',
+  args: slackAddReactionArgs,
+  async execute(args, ctx) {
+    const token = await resolveIntegrationToken(ctx.workspaceId, args.integrationId, 'slack');
+    const res = await fetch('https://slack.com/api/reactions.add', {
+      method: 'POST',
+      headers: {
+        authorization: `Bearer ${token}`,
+        'content-type': 'application/json; charset=utf-8',
+      },
+      body: JSON.stringify({
+        channel: args.channel,
+        timestamp: args.timestamp,
+        name: args.name,
+      }),
+    });
+    const json = (await res.json()) as { ok?: boolean; error?: string };
+    if (!json.ok && json.error !== 'already_reacted') {
+      throw new Error(json.error ?? `slack_http_${res.status}`);
+    }
+    return { result: { ok: true, alreadyReacted: json.error === 'already_reacted' } };
+  },
+};
+
+// ─── slack_pin_message ────────────────────────────────────────────────────
+
+const slackPinMessageArgs = z.object({
+  integrationId: z.string().uuid(),
+  channel: z.string().min(1).max(120),
+  timestamp: z.string().describe('Slack message ts (e.g. "1715123456.000200").'),
+});
+
+const slackPinMessageTool: ToolDefinition<typeof slackPinMessageArgs> = {
+  name: 'slack_pin_message',
+  description:
+    'Pin a Slack message to its channel. Default ACL is `ask`. Idempotent (already_pinned is treated as success).',
+  kind: 'high_risk',
+  args: slackPinMessageArgs,
+  async execute(args, ctx) {
+    const token = await resolveIntegrationToken(ctx.workspaceId, args.integrationId, 'slack');
+    const res = await fetch('https://slack.com/api/pins.add', {
+      method: 'POST',
+      headers: {
+        authorization: `Bearer ${token}`,
+        'content-type': 'application/json; charset=utf-8',
+      },
+      body: JSON.stringify({ channel: args.channel, timestamp: args.timestamp }),
+    });
+    const json = (await res.json()) as { ok?: boolean; error?: string };
+    if (!json.ok && json.error !== 'already_pinned') {
+      throw new Error(json.error ?? `slack_http_${res.status}`);
+    }
+    return { result: { ok: true, alreadyPinned: json.error === 'already_pinned' } };
+  },
+};
+
+// ─── notion_create_page ────────────────────────────────────────────────────
+
+const notionCreatePageArgs = z.object({
+  integrationId: z.string().uuid(),
+  parentPageId: z.string().min(1).describe('Parent page id (UUID-like, with or without dashes).'),
+  title: z.string().min(1).max(2000),
+  bodyMarkdown: z
+    .string()
+    .max(20000)
+    .optional()
+    .describe('Optional plain text body added as a single paragraph block.'),
+});
+
+const notionCreatePageTool: ToolDefinition<typeof notionCreatePageArgs> = {
+  name: 'notion_create_page',
+  description: 'Create a new Notion child page under a parent page. Default ACL is `ask`.',
+  kind: 'high_risk',
+  args: notionCreatePageArgs,
+  async execute(args, ctx) {
+    const token = await resolveIntegrationToken(ctx.workspaceId, args.integrationId, 'notion');
+    const children = args.bodyMarkdown
+      ? [
+          {
+            object: 'block',
+            type: 'paragraph',
+            paragraph: { rich_text: [{ type: 'text', text: { content: args.bodyMarkdown } }] },
+          },
+        ]
+      : [];
+    const res = await fetch('https://api.notion.com/v1/pages', {
+      method: 'POST',
+      headers: {
+        authorization: `Bearer ${token}`,
+        'content-type': 'application/json',
+        'notion-version': '2022-06-28',
+      },
+      body: JSON.stringify({
+        parent: { page_id: args.parentPageId },
+        properties: {
+          title: { title: [{ type: 'text', text: { content: args.title } }] },
+        },
+        children,
+      }),
+    });
+    if (!res.ok) {
+      const text = await res.text();
+      throw new Error(`notion_http_${res.status}: ${text.slice(0, 200)}`);
+    }
+    const json = (await res.json()) as { id?: string; url?: string };
+    return { result: { pageId: json.id, url: json.url } };
+  },
+};
+
+// ─── github_close_issue ───────────────────────────────────────────────────
+
+const githubCloseIssueArgs = z.object({
+  integrationId: z.string().uuid(),
+  repoFullName: z.string().regex(/^[^/]+\/[^/]+$/, 'expected "owner/repo"'),
+  issueNumber: z.number().int().positive(),
+  reason: z.enum(['completed', 'not_planned']).default('completed'),
+});
+
+const githubCloseIssueTool: ToolDefinition<typeof githubCloseIssueArgs> = {
+  name: 'github_close_issue',
+  description: 'Close a GitHub issue. Default ACL is `ask`.',
+  kind: 'high_risk',
+  args: githubCloseIssueArgs,
+  async execute(args, ctx) {
+    const token = await resolveGithubToken(ctx.workspaceId, args.integrationId);
+    const [owner, repo] = args.repoFullName.split('/') as [string, string];
+    const o = octokitForToken(token);
+    const res = await o.rest.issues.update({
+      owner,
+      repo,
+      issue_number: args.issueNumber,
+      state: 'closed',
+      state_reason: args.reason,
+    });
+    return { result: { number: res.data.number, state: res.data.state, url: res.data.html_url } };
+  },
+};
+
+// ─── github_create_issue ──────────────────────────────────────────────────
+
+const githubCreateIssueArgs = z.object({
+  integrationId: z.string().uuid(),
+  repoFullName: z.string().regex(/^[^/]+\/[^/]+$/, 'expected "owner/repo"'),
+  title: z.string().min(1).max(256),
+  body: z.string().max(64000).optional(),
+  labels: z.array(z.string().min(1).max(50)).max(20).optional(),
+});
+
+const githubCreateIssueTool: ToolDefinition<typeof githubCreateIssueArgs> = {
+  name: 'github_create_issue',
+  description: 'Open a new GitHub issue. Default ACL is `ask`.',
+  kind: 'high_risk',
+  args: githubCreateIssueArgs,
+  async execute(args, ctx) {
+    const token = await resolveGithubToken(ctx.workspaceId, args.integrationId);
+    const [owner, repo] = args.repoFullName.split('/') as [string, string];
+    const o = octokitForToken(token);
+    const res = await o.rest.issues.create({
+      owner,
+      repo,
+      title: args.title,
+      ...(args.body ? { body: args.body } : {}),
+      ...(args.labels ? { labels: args.labels } : {}),
+    });
+    return {
+      result: { number: res.data.number, url: res.data.html_url, state: res.data.state },
+    };
+  },
+};
+
+// ─── linear_create_issue ──────────────────────────────────────────────────
+
+const linearCreateIssueArgs = z.object({
+  integrationId: z.string().uuid(),
+  teamId: z.string().min(1).describe('Linear team id (UUID).'),
+  title: z.string().min(1).max(255),
+  description: z.string().max(60_000).optional(),
+  priority: z
+    .number()
+    .int()
+    .min(0)
+    .max(4)
+    .optional()
+    .describe('0=none, 1=urgent, 2=high, 3=normal, 4=low.'),
+  assigneeId: z.string().min(1).optional(),
+});
+
+const linearCreateIssueTool: ToolDefinition<typeof linearCreateIssueArgs> = {
+  name: 'linear_create_issue',
+  description: 'Create a new Linear issue in a team. Default ACL is `ask`.',
+  kind: 'high_risk',
+  args: linearCreateIssueArgs,
+  async execute(args, ctx) {
+    const token = await resolveLinearToken(ctx.workspaceId, args.integrationId);
+    const res = await fetch('https://api.linear.app/graphql', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json', authorization: token },
+      body: JSON.stringify({
+        query: `mutation($input: IssueCreateInput!) {
+          issueCreate(input: $input) {
+            success
+            issue { id identifier url title }
+          }
+        }`,
+        variables: {
+          input: {
+            teamId: args.teamId,
+            title: args.title,
+            ...(args.description ? { description: args.description } : {}),
+            ...(args.priority !== undefined ? { priority: args.priority } : {}),
+            ...(args.assigneeId ? { assigneeId: args.assigneeId } : {}),
+          },
+        },
+      }),
+    });
+    if (!res.ok) throw new Error(`linear_http_${res.status}`);
+    const json = (await res.json()) as {
+      data?: {
+        issueCreate?: {
+          success: boolean;
+          issue?: { id: string; identifier: string; url: string; title: string };
+        };
+      };
+      errors?: Array<{ message: string }>;
+    };
+    if (json.errors?.length) throw new Error(json.errors[0]!.message);
+    const ic = json.data?.issueCreate;
+    if (!ic?.success || !ic.issue) throw new Error('linear_create_failed');
+    return {
+      result: { issueId: ic.issue.id, identifier: ic.issue.identifier, url: ic.issue.url },
+    };
+  },
+};
+
+// ─── gcal_update_event ────────────────────────────────────────────────────
+
+const gcalUpdateEventArgs = z.object({
+  integrationId: z.string().uuid(),
+  calendarId: z.string().default('primary'),
+  eventId: z.string().min(1),
+  summary: z.string().min(1).max(200).optional(),
+  description: z.string().max(8000).optional(),
+  startIso: z.string().optional(),
+  endIso: z.string().optional(),
+  location: z.string().max(200).optional(),
+});
+
+const gcalUpdateEventTool: ToolDefinition<typeof gcalUpdateEventArgs> = {
+  name: 'gcal_update_event',
+  description:
+    'Patch a Google Calendar event. Only the provided fields are changed. Default ACL is `ask`.',
+  kind: 'high_risk',
+  args: gcalUpdateEventArgs,
+  async execute(args, ctx) {
+    const token = await resolveIntegrationToken(ctx.workspaceId, args.integrationId, 'gcal');
+    const url = `https://www.googleapis.com/calendar/v3/calendars/${encodeURIComponent(args.calendarId)}/events/${encodeURIComponent(args.eventId)}`;
+    const patch: Record<string, unknown> = {};
+    if (args.summary !== undefined) patch.summary = args.summary;
+    if (args.description !== undefined) patch.description = args.description;
+    if (args.location !== undefined) patch.location = args.location;
+    if (args.startIso) patch.start = { dateTime: args.startIso };
+    if (args.endIso) patch.end = { dateTime: args.endIso };
+    const res = await fetch(url, {
+      method: 'PATCH',
+      headers: { authorization: `Bearer ${token}`, 'content-type': 'application/json' },
+      body: JSON.stringify(patch),
+    });
+    const json = (await res.json()) as {
+      id?: string;
+      htmlLink?: string;
+      error?: { message?: string };
+    };
+    if (!res.ok) throw new Error(json.error?.message ?? `gcal_http_${res.status}`);
+    return { result: { id: json.id ?? null, url: json.htmlLink ?? null } };
+  },
+};
+
+// ─── github_request_review ────────────────────────────────────────────────
+
+const githubRequestReviewArgs = z.object({
+  integrationId: z.string().uuid(),
+  repoFullName: z.string().regex(/^[^/]+\/[^/]+$/, 'expected "owner/repo"'),
+  pullNumber: z.number().int().positive(),
+  reviewers: z.array(z.string().min(1).max(100)).max(15).optional(),
+  teamReviewers: z.array(z.string().min(1).max(100)).max(15).optional(),
+});
+
+const githubRequestReviewTool: ToolDefinition<typeof githubRequestReviewArgs> = {
+  name: 'github_request_review',
+  description:
+    'Request reviewers (users and/or teams) on a GitHub pull request. Default ACL is `ask`.',
+  kind: 'high_risk',
+  args: githubRequestReviewArgs,
+  async execute(args, ctx) {
+    if (!args.reviewers?.length && !args.teamReviewers?.length) {
+      throw new Error('reviewers or teamReviewers must include at least one entry');
+    }
+    const token = await resolveGithubToken(ctx.workspaceId, args.integrationId);
+    const [owner, repo] = args.repoFullName.split('/') as [string, string];
+    const o = octokitForToken(token);
+    const res = await o.rest.pulls.requestReviewers({
+      owner,
+      repo,
+      pull_number: args.pullNumber,
+      ...(args.reviewers ? { reviewers: args.reviewers } : {}),
+      ...(args.teamReviewers ? { team_reviewers: args.teamReviewers } : {}),
+    });
+    return { result: { number: res.data.number, url: res.data.html_url } };
+  },
+};
+
+// ─── slack_update_message ─────────────────────────────────────────────────
+
+const slackUpdateMessageArgs = z.object({
+  integrationId: z.string().uuid(),
+  channel: z.string().min(1).max(120),
+  ts: z.string().min(1).describe('Timestamp ("ts") of the message to edit.'),
+  text: z.string().min(1).max(4000),
+});
+
+const slackUpdateMessageTool: ToolDefinition<typeof slackUpdateMessageArgs> = {
+  name: 'slack_update_message',
+  description:
+    'Edit the text of a Slack message previously posted by the connected user. Default ACL is `ask`.',
+  kind: 'high_risk',
+  args: slackUpdateMessageArgs,
+  async execute(args, ctx) {
+    const token = await resolveIntegrationToken(ctx.workspaceId, args.integrationId, 'slack');
+    const res = await fetch('https://slack.com/api/chat.update', {
+      method: 'POST',
+      headers: {
+        authorization: `Bearer ${token}`,
+        'content-type': 'application/json; charset=utf-8',
+      },
+      body: JSON.stringify({ channel: args.channel, ts: args.ts, text: args.text }),
+    });
+    const json = (await res.json()) as { ok?: boolean; ts?: string; error?: string };
+    if (!json.ok) throw new Error(json.error ?? `slack_http_${res.status}`);
+    return { result: { ts: json.ts ?? args.ts, channel: args.channel } };
+  },
+};
+
+// ─── notion_append_block_children ─────────────────────────────────────────
+
+const notionAppendArgs = z.object({
+  integrationId: z.string().uuid(),
+  parentBlockId: z.string().min(1).describe('Notion page or block id to append under.'),
+  paragraphs: z.array(z.string().min(1).max(2000)).min(1).max(20),
+});
+
+const notionAppendBlockChildrenTool: ToolDefinition<typeof notionAppendArgs> = {
+  name: 'notion_append_block_children',
+  description: 'Append paragraph blocks to a Notion page or block. Default ACL is `ask`.',
+  kind: 'high_risk',
+  args: notionAppendArgs,
+  async execute(args, ctx) {
+    const token = await resolveIntegrationToken(ctx.workspaceId, args.integrationId, 'notion');
+    const url = `https://api.notion.com/v1/blocks/${encodeURIComponent(args.parentBlockId)}/children`;
+    const children = args.paragraphs.map((text) => ({
+      object: 'block',
+      type: 'paragraph',
+      paragraph: { rich_text: [{ type: 'text', text: { content: text } }] },
+    }));
+    const res = await fetch(url, {
+      method: 'PATCH',
+      headers: {
+        authorization: `Bearer ${token}`,
+        'notion-version': '2022-06-28',
+        'content-type': 'application/json',
+      },
+      body: JSON.stringify({ children }),
+    });
+    const json = (await res.json()) as {
+      results?: { id: string }[];
+      message?: string;
+      code?: string;
+    };
+    if (!res.ok) throw new Error(json.message ?? json.code ?? `notion_http_${res.status}`);
+    return { result: { appended: json.results?.length ?? 0, parentBlockId: args.parentBlockId } };
+  },
+};
+
+// ─── gcal_delete_event ────────────────────────────────────────────────────
+
+const gcalDeleteEventArgs = z.object({
+  integrationId: z.string().uuid(),
+  calendarId: z.string().default('primary'),
+  eventId: z.string().min(1),
+});
+
+const gcalDeleteEventTool: ToolDefinition<typeof gcalDeleteEventArgs> = {
+  name: 'gcal_delete_event',
+  description: 'Delete a Google Calendar event. Default ACL is `ask`.',
+  kind: 'high_risk',
+  args: gcalDeleteEventArgs,
+  async execute(args, ctx) {
+    const token = await resolveIntegrationToken(ctx.workspaceId, args.integrationId, 'gcal');
+    const url = `https://www.googleapis.com/calendar/v3/calendars/${encodeURIComponent(args.calendarId)}/events/${encodeURIComponent(args.eventId)}`;
+    const res = await fetch(url, {
+      method: 'DELETE',
+      headers: { authorization: `Bearer ${token}` },
+    });
+    if (!res.ok && res.status !== 410) {
+      const text = await res.text();
+      throw new Error(`gcal_http_${res.status}: ${text.slice(0, 200)}`);
+    }
+    return { result: { deleted: true, eventId: args.eventId } };
+  },
+};
+
+// ─── github_add_label ─────────────────────────────────────────────────────
+
+const githubAddLabelArgs = z.object({
+  integrationId: z.string().uuid(),
+  repoFullName: z.string().regex(/^[^/]+\/[^/]+$/, 'expected "owner/repo"'),
+  issueNumber: z.number().int().positive(),
+  labels: z.array(z.string().min(1).max(50)).min(1).max(20),
+});
+
+const githubAddLabelTool: ToolDefinition<typeof githubAddLabelArgs> = {
+  name: 'github_add_label',
+  description: 'Add one or more labels to a GitHub issue or pull request. Default ACL is `ask`.',
+  kind: 'high_risk',
+  args: githubAddLabelArgs,
+  async execute(args, ctx) {
+    const token = await resolveGithubToken(ctx.workspaceId, args.integrationId);
+    const [owner, repo] = args.repoFullName.split('/') as [string, string];
+    const o = octokitForToken(token);
+    const res = await o.rest.issues.addLabels({
+      owner,
+      repo,
+      issue_number: args.issueNumber,
+      labels: args.labels,
+    });
+    return {
+      result: {
+        number: args.issueNumber,
+        labels: res.data.map((l) => (typeof l === 'string' ? l : (l.name ?? ''))),
+      },
+    };
+  },
+};
+
+// ─── github_assign ────────────────────────────────────────────────────────
+
+const githubAssignArgs = z.object({
+  integrationId: z.string().uuid(),
+  repoFullName: z.string().regex(/^[^/]+\/[^/]+$/, 'expected "owner/repo"'),
+  issueNumber: z.number().int().positive(),
+  assignees: z.array(z.string().min(1).max(50)).min(1).max(10),
+});
+
+const githubAssignTool: ToolDefinition<typeof githubAssignArgs> = {
+  name: 'github_assign',
+  description: 'Assign one or more users to a GitHub issue or pull request. Default ACL is `ask`.',
+  kind: 'high_risk',
+  args: githubAssignArgs,
+  async execute(args, ctx) {
+    const token = await resolveGithubToken(ctx.workspaceId, args.integrationId);
+    const [owner, repo] = args.repoFullName.split('/') as [string, string];
+    const o = octokitForToken(token);
+    const res = await o.rest.issues.addAssignees({
+      owner,
+      repo,
+      issue_number: args.issueNumber,
+      assignees: args.assignees,
+    });
+    return {
+      result: {
+        number: args.issueNumber,
+        assignees: res.data.assignees?.map((a) => a.login) ?? [],
+      },
+    };
+  },
+};
+
+// ─── linear_set_priority ──────────────────────────────────────────────────
+
+const linearSetPriorityArgs = z.object({
+  integrationId: z.string().uuid(),
+  issueId: z.string().min(1).describe('Linear issue UUID (NOT ENG-123 identifier).'),
+  priority: z
+    .number()
+    .int()
+    .min(0)
+    .max(4)
+    .describe('0=No priority, 1=Urgent, 2=High, 3=Medium, 4=Low.'),
+});
+
+const linearSetPriorityTool: ToolDefinition<typeof linearSetPriorityArgs> = {
+  name: 'linear_set_priority',
+  description: 'Set the priority of a Linear issue. Default ACL is `ask`.',
+  kind: 'high_risk',
+  args: linearSetPriorityArgs,
+  async execute(args, ctx) {
+    const token = await resolveLinearToken(ctx.workspaceId, args.integrationId);
+    const res = await fetch('https://api.linear.app/graphql', {
+      method: 'POST',
+      headers: { authorization: token, 'content-type': 'application/json' },
+      body: JSON.stringify({
+        query: `mutation($id: String!, $input: IssueUpdateInput!) { issueUpdate(id: $id, input: $input) { success issue { id identifier priority url } } }`,
+        variables: { id: args.issueId, input: { priority: args.priority } },
+      }),
+    });
+    const json = (await res.json()) as {
+      data?: {
+        issueUpdate?: {
+          success?: boolean;
+          issue?: { id: string; identifier: string; priority: number; url: string };
+        };
+      };
+      errors?: { message: string }[];
+    };
+    if (json.errors?.length) throw new Error(json.errors[0]!.message);
+    if (!json.data?.issueUpdate?.success || !json.data.issueUpdate.issue) {
+      throw new Error('linear_set_priority_failed');
+    }
+    const issue = json.data.issueUpdate.issue;
+    return {
+      result: {
+        issueId: issue.id,
+        identifier: issue.identifier,
+        priority: issue.priority,
+        url: issue.url,
+      },
+    };
+  },
+};
+
+// ─── gcal_add_attendees ───────────────────────────────────────────────────
+
+const gcalAddAttendeesArgs = z.object({
+  integrationId: z.string().uuid(),
+  calendarId: z.string().default('primary'),
+  eventId: z.string().min(1),
+  emails: z.array(z.string().email()).min(1).max(50),
+});
+
+const gcalAddAttendeesTool: ToolDefinition<typeof gcalAddAttendeesArgs> = {
+  name: 'gcal_add_attendees',
+  description:
+    'Append attendees to an existing Google Calendar event. Existing attendees are preserved. Default ACL is `ask`.',
+  kind: 'high_risk',
+  args: gcalAddAttendeesArgs,
+  async execute(args, ctx) {
+    const token = await resolveIntegrationToken(ctx.workspaceId, args.integrationId, 'gcal');
+    const baseUrl = `https://www.googleapis.com/calendar/v3/calendars/${encodeURIComponent(args.calendarId)}/events/${encodeURIComponent(args.eventId)}`;
+    const getRes = await fetch(baseUrl, { headers: { authorization: `Bearer ${token}` } });
+    const getJson = (await getRes.json()) as {
+      attendees?: { email: string }[];
+      error?: { message?: string };
+    };
+    if (!getRes.ok) throw new Error(getJson.error?.message ?? `gcal_http_${getRes.status}`);
+    const existing = new Set((getJson.attendees ?? []).map((a) => a.email.toLowerCase()));
+    const merged = [
+      ...(getJson.attendees ?? []),
+      ...args.emails.filter((e) => !existing.has(e.toLowerCase())).map((email) => ({ email })),
+    ];
+    const patchRes = await fetch(baseUrl, {
+      method: 'PATCH',
+      headers: { authorization: `Bearer ${token}`, 'content-type': 'application/json' },
+      body: JSON.stringify({ attendees: merged }),
+    });
+    const patchJson = (await patchRes.json()) as {
+      id?: string;
+      htmlLink?: string;
+      attendees?: { email: string }[];
+      error?: { message?: string };
+    };
+    if (!patchRes.ok) throw new Error(patchJson.error?.message ?? `gcal_http_${patchRes.status}`);
+    return {
+      result: {
+        id: patchJson.id ?? args.eventId,
+        url: patchJson.htmlLink ?? null,
+        attendeeCount: patchJson.attendees?.length ?? merged.length,
+      },
+    };
+  },
+};
+
+// ─── notion_search ────────────────────────────────────────────────────────
+
+const notionSearchArgs = z.object({
+  integrationId: z.string().uuid(),
+  query: z.string().min(1).max(200),
+  limit: z.number().int().min(1).max(20).default(5),
+});
+
+const notionSearchTool: ToolDefinition<typeof notionSearchArgs> = {
+  name: 'notion_search',
+  description: 'Search Notion pages and databases the integration can see. Read-only.',
+  kind: 'read',
+  args: notionSearchArgs,
+  async execute(args, ctx) {
+    const token = await resolveIntegrationToken(ctx.workspaceId, args.integrationId, 'notion');
+    const res = await fetch('https://api.notion.com/v1/search', {
+      method: 'POST',
+      headers: {
+        authorization: `Bearer ${token}`,
+        'notion-version': '2022-06-28',
+        'content-type': 'application/json',
+      },
+      body: JSON.stringify({ query: args.query, page_size: args.limit }),
+    });
+    const json = (await res.json()) as {
+      results?: Array<{
+        id: string;
+        object: string;
+        url?: string;
+        properties?: Record<string, { title?: Array<{ plain_text?: string }> }>;
+      }>;
+      message?: string;
+    };
+    if (!res.ok) throw new Error(json.message ?? `notion_http_${res.status}`);
+    const hits = (json.results ?? []).slice(0, args.limit).map((r) => {
+      const titleProp = r.properties
+        ? Object.values(r.properties).find((p) => Array.isArray(p.title))
+        : null;
+      const title = titleProp?.title?.map((t) => t.plain_text ?? '').join('') ?? '(untitled)';
+      return { id: r.id, object: r.object, title, url: r.url ?? null };
+    });
+    return { result: { hits } };
+  },
+};
+
+// ─── slack_search_messages ────────────────────────────────────────────────
+
+const slackSearchArgs = z.object({
+  integrationId: z.string().uuid(),
+  query: z.string().min(1).max(200),
+  limit: z.number().int().min(1).max(20).default(5),
+});
+
+const slackSearchMessagesTool: ToolDefinition<typeof slackSearchArgs> = {
+  name: 'slack_search_messages',
+  description:
+    'Search Slack messages visible to the connected user. Read-only. Requires search:read scope.',
+  kind: 'read',
+  args: slackSearchArgs,
+  async execute(args, ctx) {
+    const token = await resolveIntegrationToken(ctx.workspaceId, args.integrationId, 'slack');
+    const url = new URL('https://slack.com/api/search.messages');
+    url.searchParams.set('query', args.query);
+    url.searchParams.set('count', String(args.limit));
+    const res = await fetch(url.toString(), {
+      headers: { authorization: `Bearer ${token}` },
+    });
+    const json = (await res.json()) as {
+      ok?: boolean;
+      messages?: {
+        matches?: Array<{
+          text?: string;
+          permalink?: string;
+          user?: string;
+          ts?: string;
+          channel?: { name?: string };
+        }>;
+      };
+      error?: string;
+    };
+    if (!json.ok) throw new Error(json.error ?? `slack_http_${res.status}`);
+    const hits = (json.messages?.matches ?? []).slice(0, args.limit).map((m) => ({
+      text: m.text ?? '',
+      permalink: m.permalink ?? null,
+      channel: m.channel?.name ?? null,
+      user: m.user ?? null,
+      ts: m.ts ?? null,
+    }));
+    return { result: { hits } };
+  },
+};
+
+// ─── gcal_list_events ─────────────────────────────────────────────────────
+
+const gcalListEventsArgs = z.object({
+  integrationId: z.string().uuid(),
+  calendarId: z.string().default('primary'),
+  hoursAhead: z.number().int().min(1).max(168).default(24),
+  limit: z.number().int().min(1).max(50).default(10),
+});
+
+const gcalListEventsTool: ToolDefinition<typeof gcalListEventsArgs> = {
+  name: 'gcal_list_events',
+  description: 'List upcoming Google Calendar events in a time window. Read-only.',
+  kind: 'read',
+  args: gcalListEventsArgs,
+  async execute(args, ctx) {
+    const token = await resolveIntegrationToken(ctx.workspaceId, args.integrationId, 'gcal');
+    const timeMin = new Date().toISOString();
+    const timeMax = new Date(Date.now() + args.hoursAhead * 60 * 60_000).toISOString();
+    const url = new URL(
+      `https://www.googleapis.com/calendar/v3/calendars/${encodeURIComponent(args.calendarId)}/events`,
+    );
+    url.searchParams.set('timeMin', timeMin);
+    url.searchParams.set('timeMax', timeMax);
+    url.searchParams.set('singleEvents', 'true');
+    url.searchParams.set('orderBy', 'startTime');
+    url.searchParams.set('maxResults', String(args.limit));
+    const res = await fetch(url.toString(), { headers: { authorization: `Bearer ${token}` } });
+    const json = (await res.json()) as {
+      items?: Array<{
+        id: string;
+        summary?: string;
+        htmlLink?: string;
+        start?: { dateTime?: string; date?: string };
+        end?: { dateTime?: string; date?: string };
+        location?: string;
+      }>;
+      error?: { message?: string };
+    };
+    if (!res.ok) throw new Error(json.error?.message ?? `gcal_http_${res.status}`);
+    const events = (json.items ?? []).map((e) => ({
+      id: e.id,
+      summary: e.summary ?? '(no title)',
+      url: e.htmlLink ?? null,
+      start: e.start?.dateTime ?? e.start?.date ?? null,
+      end: e.end?.dateTime ?? e.end?.date ?? null,
+      location: e.location ?? null,
+    }));
+    return { result: { events } };
+  },
+};
+
+// ─── github_get_pr ────────────────────────────────────────────────────────
+
+const githubGetPrArgs = z.object({
+  integrationId: z.string().uuid(),
+  repoFullName: z.string().regex(/^[^/]+\/[^/]+$/, 'expected "owner/repo"'),
+  pullNumber: z.number().int().positive(),
+});
+
+const githubGetPrTool: ToolDefinition<typeof githubGetPrArgs> = {
+  name: 'github_get_pr',
+  description: 'Fetch metadata + body of a GitHub pull request. Read-only.',
+  kind: 'read',
+  args: githubGetPrArgs,
+  async execute(args, ctx) {
+    const token = await resolveGithubToken(ctx.workspaceId, args.integrationId);
+    const [owner, repo] = args.repoFullName.split('/') as [string, string];
+    const o = octokitForToken(token);
+    const res = await o.rest.pulls.get({ owner, repo, pull_number: args.pullNumber });
+    return {
+      result: {
+        number: res.data.number,
+        title: res.data.title,
+        state: res.data.state,
+        merged: res.data.merged,
+        draft: res.data.draft ?? false,
+        author: res.data.user?.login ?? null,
+        url: res.data.html_url,
+        body: (res.data.body ?? '').slice(0, 4000),
+        additions: res.data.additions,
+        deletions: res.data.deletions,
+        changedFiles: res.data.changed_files,
+      },
+    };
+  },
+};
+
+// ─── linear_get_issue ─────────────────────────────────────────────────────
+
+const linearGetIssueArgs = z.object({
+  integrationId: z.string().uuid(),
+  identifier: z
+    .string()
+    .regex(/^[A-Z]+-\d+$/, 'expected "ENG-123" form')
+    .describe('Linear issue identifier (NOT UUID).'),
+});
+
+const linearGetIssueTool: ToolDefinition<typeof linearGetIssueArgs> = {
+  name: 'linear_get_issue',
+  description: 'Fetch a Linear issue by identifier (e.g. ENG-123). Read-only.',
+  kind: 'read',
+  args: linearGetIssueArgs,
+  async execute(args, ctx) {
+    const token = await resolveLinearToken(ctx.workspaceId, args.integrationId);
+    const res = await fetch('https://api.linear.app/graphql', {
+      method: 'POST',
+      headers: { authorization: token, 'content-type': 'application/json' },
+      body: JSON.stringify({
+        query: `query($id: String!) { issue(id: $id) { id identifier title description state { name } priority url assignee { name } team { key } } }`,
+        variables: { id: args.identifier },
+      }),
+    });
+    const json = (await res.json()) as {
+      data?: {
+        issue?: {
+          id: string;
+          identifier: string;
+          title: string;
+          description?: string;
+          state?: { name: string };
+          priority: number;
+          url: string;
+          assignee?: { name: string };
+          team?: { key: string };
+        };
+      };
+      errors?: { message: string }[];
+    };
+    if (json.errors?.length) throw new Error(json.errors[0]!.message);
+    if (!json.data?.issue) throw new Error('linear_issue_not_found');
+    const i = json.data.issue;
+    return {
+      result: {
+        id: i.id,
+        identifier: i.identifier,
+        title: i.title,
+        description: (i.description ?? '').slice(0, 4000),
+        state: i.state?.name ?? null,
+        priority: i.priority,
+        assignee: i.assignee?.name ?? null,
+        team: i.team?.key ?? null,
+        url: i.url,
+      },
+    };
+  },
+};
+
+// ─── linear_assign_issue ──────────────────────────────────────────────────
+
+const linearAssignIssueArgs = z.object({
+  integrationId: z.string().uuid(),
+  issueId: z.string().min(1).describe('Linear issue UUID (NOT ENG-123 identifier).'),
+  assigneeId: z.string().min(1).describe('Linear user UUID. Use empty string to unassign.'),
+});
+
+const linearAssignIssueTool: ToolDefinition<typeof linearAssignIssueArgs> = {
+  name: 'linear_assign_issue',
+  description: 'Assign or unassign a Linear issue. Default ACL is `ask`.',
+  kind: 'high_risk',
+  args: linearAssignIssueArgs,
+  async execute(args, ctx) {
+    const token = await resolveLinearToken(ctx.workspaceId, args.integrationId);
+    const res = await fetch('https://api.linear.app/graphql', {
+      method: 'POST',
+      headers: { authorization: token, 'content-type': 'application/json' },
+      body: JSON.stringify({
+        query: `mutation($id: String!, $input: IssueUpdateInput!) { issueUpdate(id: $id, input: $input) { success issue { id identifier url assignee { name } } } }`,
+        variables: { id: args.issueId, input: { assigneeId: args.assigneeId || null } },
+      }),
+    });
+    const json = (await res.json()) as {
+      data?: {
+        issueUpdate?: {
+          success?: boolean;
+          issue?: { id: string; identifier: string; url: string; assignee?: { name: string } };
+        };
+      };
+      errors?: { message: string }[];
+    };
+    if (json.errors?.length) throw new Error(json.errors[0]!.message);
+    if (!json.data?.issueUpdate?.success || !json.data.issueUpdate.issue) {
+      throw new Error('linear_assign_failed');
+    }
+    const issue = json.data.issueUpdate.issue;
+    return {
+      result: {
+        issueId: issue.id,
+        identifier: issue.identifier,
+        url: issue.url,
+        assignee: issue.assignee?.name ?? null,
+      },
+    };
+  },
+};
+
+// ─── notion_get_page ────────────────────────────────────────────────────────
+
+const notionGetPageArgs = z.object({
+  integrationId: z.string().uuid(),
+  pageId: z.string().min(1),
+  blockLimit: z.number().int().min(1).max(50).default(20),
+});
+
+const notionGetPageTool: ToolDefinition<typeof notionGetPageArgs> = {
+  name: 'notion_get_page',
+  description:
+    'Fetch a Notion page: title + first N child blocks (paragraph/heading/bulleted text). Read-only.',
+  kind: 'read',
+  args: notionGetPageArgs,
+  async execute(args, ctx) {
+    const token = await resolveIntegrationToken(ctx.workspaceId, args.integrationId, 'notion');
+    const headers = {
+      authorization: `Bearer ${token}`,
+      'notion-version': '2022-06-28',
+      'content-type': 'application/json',
+    };
+    const pageRes = await fetch(`https://api.notion.com/v1/pages/${args.pageId}`, { headers });
+    if (!pageRes.ok) throw new Error(`notion_get_page_failed: ${pageRes.status}`);
+    const page = (await pageRes.json()) as {
+      id: string;
+      url: string;
+      properties: Record<string, { title?: { plain_text: string }[] }>;
+    };
+    const titleProp = Object.values(page.properties).find((p) => Array.isArray(p.title));
+    const title = titleProp?.title?.map((t) => t.plain_text).join('') ?? '';
+
+    const blocksRes = await fetch(
+      `https://api.notion.com/v1/blocks/${args.pageId}/children?page_size=${args.blockLimit}`,
+      { headers },
+    );
+    if (!blocksRes.ok) throw new Error(`notion_get_blocks_failed: ${blocksRes.status}`);
+    const blocksJson = (await blocksRes.json()) as {
+      results: { id: string; type: string; [k: string]: unknown }[];
+    };
+    const blocks = blocksJson.results.map((b) => {
+      const inner = (b as Record<string, unknown>)[b.type] as
+        | { rich_text?: { plain_text: string }[] }
+        | undefined;
+      const text = inner?.rich_text?.map((t) => t.plain_text).join('') ?? '';
+      return { id: b.id, type: b.type, text };
+    });
+    return { result: { id: page.id, title, url: page.url, blocks } };
+  },
+};
+
+// ─── slack_list_channels ────────────────────────────────────────────────────
+
+const slackListChannelsArgs = z.object({
+  integrationId: z.string().uuid(),
+  limit: z.number().int().min(1).max(200).default(50),
+  excludeArchived: z.boolean().default(true),
+});
+
+const slackListChannelsTool: ToolDefinition<typeof slackListChannelsArgs> = {
+  name: 'slack_list_channels',
+  description: 'List Slack channels (public + private) accessible to the workspace bot. Read-only.',
+  kind: 'read',
+  args: slackListChannelsArgs,
+  async execute(args, ctx) {
+    const token = await resolveIntegrationToken(ctx.workspaceId, args.integrationId, 'slack');
+    const url = new URL('https://slack.com/api/conversations.list');
+    url.searchParams.set('limit', String(args.limit));
+    url.searchParams.set('exclude_archived', String(args.excludeArchived));
+    url.searchParams.set('types', 'public_channel,private_channel');
+    const res = await fetch(url, { headers: { authorization: `Bearer ${token}` } });
+    const json = (await res.json()) as {
+      ok: boolean;
+      error?: string;
+      channels?: { id: string; name: string; is_private: boolean; num_members?: number }[];
+    };
+    if (!json.ok) throw new Error(`slack_list_channels_failed: ${json.error ?? 'unknown'}`);
+    return {
+      result: {
+        channels: (json.channels ?? []).map((c) => ({
+          id: c.id,
+          name: c.name,
+          isPrivate: c.is_private,
+          members: c.num_members ?? null,
+        })),
+      },
+    };
+  },
+};
+
+// ─── gcal_quick_add ─────────────────────────────────────────────────────────
+
+const gcalQuickAddArgs = z.object({
+  integrationId: z.string().uuid(),
+  calendarId: z.string().default('primary'),
+  text: z.string().min(3).max(500),
+});
+
+const gcalQuickAddTool: ToolDefinition<typeof gcalQuickAddArgs> = {
+  name: 'gcal_quick_add',
+  description:
+    'Create a Google Calendar event from a natural-language string (e.g. "Coffee with Sam Friday 4pm"). Default ACL is `ask`.',
+  kind: 'low_risk',
+  args: gcalQuickAddArgs,
+  async execute(args, ctx) {
+    const token = await resolveIntegrationToken(ctx.workspaceId, args.integrationId, 'gcal');
+    const url = new URL(
+      `https://www.googleapis.com/calendar/v3/calendars/${encodeURIComponent(args.calendarId)}/events/quickAdd`,
+    );
+    url.searchParams.set('text', args.text);
+    const res = await fetch(url, {
+      method: 'POST',
+      headers: { authorization: `Bearer ${token}` },
+    });
+    if (!res.ok) throw new Error(`gcal_quick_add_failed: ${res.status}`);
+    const json = (await res.json()) as {
+      id: string;
+      htmlLink: string;
+      summary?: string;
+      start?: { dateTime?: string; date?: string };
+      end?: { dateTime?: string; date?: string };
+    };
+    return {
+      result: {
+        id: json.id,
+        url: json.htmlLink,
+        summary: json.summary ?? args.text,
+        start: json.start?.dateTime ?? json.start?.date ?? null,
+        end: json.end?.dateTime ?? json.end?.date ?? null,
+      },
+    };
+  },
+};
+
+// ─── linear_list_teams ──────────────────────────────────────────────────────
+
+const linearListTeamsArgs = z.object({
+  integrationId: z.string().uuid(),
+});
+
+const linearListTeamsTool: ToolDefinition<typeof linearListTeamsArgs> = {
+  name: 'linear_list_teams',
+  description: 'List Linear teams (id, key, name) — useful before creating an issue. Read-only.',
+  kind: 'read',
+  args: linearListTeamsArgs,
+  async execute(args, ctx) {
+    const token = await resolveLinearToken(ctx.workspaceId, args.integrationId);
+    const res = await fetch('https://api.linear.app/graphql', {
+      method: 'POST',
+      headers: { authorization: token, 'content-type': 'application/json' },
+      body: JSON.stringify({
+        query: `query { teams(first: 50) { nodes { id key name } } }`,
+      }),
+    });
+    const json = (await res.json()) as {
+      data?: { teams?: { nodes?: { id: string; key: string; name: string }[] } };
+      errors?: { message: string }[];
+    };
+    if (json.errors?.length) throw new Error(json.errors[0]!.message);
+    return { result: { teams: json.data?.teams?.nodes ?? [] } };
+  },
+};
+
+// ─── github_search_issues ───────────────────────────────────────────────────
+
+const githubSearchIssuesArgs = z.object({
+  integrationId: z.string().uuid(),
+  /**
+   * GitHub search query. e.g. `repo:owner/name is:issue is:open author:me`.
+   * See https://docs.github.com/en/search-github/searching-on-github/searching-issues-and-pull-requests
+   */
+  query: z.string().min(1).max(500),
+  limit: z.number().int().min(1).max(20).default(10),
+});
+
+const githubSearchIssuesTool: ToolDefinition<typeof githubSearchIssuesArgs> = {
+  name: 'github_search_issues',
+  description: 'Search GitHub issues + PRs across accessible repos via the search API. Read-only.',
+  kind: 'read',
+  args: githubSearchIssuesArgs,
+  async execute(args, ctx) {
+    const token = await resolveGithubToken(ctx.workspaceId, args.integrationId);
+    const o = octokitForToken(token);
+    const res = await o.rest.search.issuesAndPullRequests({
+      q: args.query,
+      per_page: args.limit,
+    });
+    return {
+      result: {
+        total: res.data.total_count,
+        items: res.data.items.map((i) => ({
+          number: i.number,
+          title: i.title,
+          state: i.state,
+          url: i.html_url,
+          isPullRequest: !!i.pull_request,
+          author: i.user?.login ?? null,
+          repo: i.repository_url.replace('https://api.github.com/repos/', ''),
+        })),
+      },
+    };
+  },
+};
+
+// ─── github_list_releases ───────────────────────────────────────────────────
+
+const githubListReleasesArgs = z.object({
+  integrationId: z.string().uuid(),
+  repoFullName: z.string().regex(/^[^/]+\/[^/]+$/),
+  limit: z.number().int().min(1).max(20).default(5),
+});
+
+const githubListReleasesTool: ToolDefinition<typeof githubListReleasesArgs> = {
+  name: 'github_list_releases',
+  description: 'List recent GitHub releases for a repo. Read-only.',
+  kind: 'read',
+  args: githubListReleasesArgs,
+  async execute(args, ctx) {
+    const token = await resolveGithubToken(ctx.workspaceId, args.integrationId);
+    const o = octokitForToken(token);
+    const [owner, repo] = args.repoFullName.split('/') as [string, string];
+    const res = await o.rest.repos.listReleases({ owner, repo, per_page: args.limit });
+    return {
+      result: {
+        releases: res.data.map((r) => ({
+          id: r.id,
+          name: r.name ?? r.tag_name,
+          tagName: r.tag_name,
+          url: r.html_url,
+          draft: r.draft,
+          prerelease: r.prerelease,
+          publishedAt: r.published_at,
+          author: r.author?.login ?? null,
+        })),
+      },
+    };
+  },
+};
+
+// ─── notion_query_database ──────────────────────────────────────────────────
+
+const notionQueryDatabaseArgs = z.object({
+  integrationId: z.string().uuid(),
+  databaseId: z.string().min(1),
+  limit: z.number().int().min(1).max(50).default(10),
+});
+
+const notionQueryDatabaseTool: ToolDefinition<typeof notionQueryDatabaseArgs> = {
+  name: 'notion_query_database',
+  description:
+    'Query a Notion database. Returns the most recently edited rows with their title + url. Read-only.',
+  kind: 'read',
+  args: notionQueryDatabaseArgs,
+  async execute(args, ctx) {
+    const token = await resolveIntegrationToken(ctx.workspaceId, args.integrationId, 'notion');
+    const res = await fetch(`https://api.notion.com/v1/databases/${args.databaseId}/query`, {
+      method: 'POST',
+      headers: {
+        authorization: `Bearer ${token}`,
+        'notion-version': '2022-06-28',
+        'content-type': 'application/json',
+      },
+      body: JSON.stringify({
+        page_size: args.limit,
+        sorts: [{ timestamp: 'last_edited_time', direction: 'descending' }],
+      }),
+    });
+    if (!res.ok) throw new Error(`notion_query_database_failed: ${res.status}`);
+    const json = (await res.json()) as {
+      results: {
+        id: string;
+        url: string;
+        last_edited_time: string;
+        properties: Record<string, { title?: { plain_text: string }[] }>;
+      }[];
+    };
+    return {
+      result: {
+        rows: json.results.map((r) => {
+          const titleProp = Object.values(r.properties).find((p) => Array.isArray(p.title));
+          const title = titleProp?.title?.map((t) => t.plain_text).join('') ?? '';
+          return { id: r.id, title, url: r.url, lastEditedAt: r.last_edited_time };
+        }),
+      },
+    };
+  },
+};
+
+// ─── slack_list_users ───────────────────────────────────────────────────────
+
+const slackListUsersArgs = z.object({
+  integrationId: z.string().uuid(),
+  limit: z.number().int().min(1).max(200).default(50),
+});
+
+const slackListUsersTool: ToolDefinition<typeof slackListUsersArgs> = {
+  name: 'slack_list_users',
+  description: 'List Slack workspace members (active humans, no bots/deleted). Read-only.',
+  kind: 'read',
+  args: slackListUsersArgs,
+  async execute(args, ctx) {
+    const token = await resolveIntegrationToken(ctx.workspaceId, args.integrationId, 'slack');
+    const url = new URL('https://slack.com/api/users.list');
+    url.searchParams.set('limit', String(args.limit));
+    const res = await fetch(url, { headers: { authorization: `Bearer ${token}` } });
+    const json = (await res.json()) as {
+      ok: boolean;
+      error?: string;
+      members?: {
+        id: string;
+        name: string;
+        real_name?: string;
+        is_bot?: boolean;
+        deleted?: boolean;
+        profile?: { email?: string };
+      }[];
+    };
+    if (!json.ok) throw new Error(`slack_list_users_failed: ${json.error ?? 'unknown'}`);
+    return {
+      result: {
+        users: (json.members ?? [])
+          .filter((m) => !m.is_bot && !m.deleted)
+          .map((m) => ({
+            id: m.id,
+            name: m.name,
+            realName: m.real_name ?? null,
+            email: m.profile?.email ?? null,
+          })),
+      },
+    };
+  },
+};
+
+// ─── gcal_list_calendars ────────────────────────────────────────────────────
+
+const gcalListCalendarsArgs = z.object({
+  integrationId: z.string().uuid(),
+});
+
+const gcalListCalendarsTool: ToolDefinition<typeof gcalListCalendarsArgs> = {
+  name: 'gcal_list_calendars',
+  description:
+    'List Google Calendars accessible to the user (id, summary, primary, accessRole). Read-only.',
+  kind: 'read',
+  args: gcalListCalendarsArgs,
+  async execute(args, ctx) {
+    const token = await resolveIntegrationToken(ctx.workspaceId, args.integrationId, 'gcal');
+    const res = await fetch('https://www.googleapis.com/calendar/v3/users/me/calendarList', {
+      headers: { authorization: `Bearer ${token}` },
+    });
+    if (!res.ok) throw new Error(`gcal_list_calendars_failed: ${res.status}`);
+    const json = (await res.json()) as {
+      items?: { id: string; summary: string; primary?: boolean; accessRole?: string }[];
+    };
+    return {
+      result: {
+        calendars: (json.items ?? []).map((c) => ({
+          id: c.id,
+          summary: c.summary,
+          primary: !!c.primary,
+          accessRole: c.accessRole ?? null,
+        })),
+      },
+    };
+  },
+};
+
+// ─── github_list_repos ──────────────────────────────────────────────────────
+
+const githubListReposArgs = z.object({
+  integrationId: z.string().uuid(),
+  limit: z.number().int().min(1).max(50).default(20),
+  sort: z.enum(['updated', 'pushed', 'created', 'full_name']).default('updated'),
+});
+
+const githubListReposTool: ToolDefinition<typeof githubListReposArgs> = {
+  name: 'github_list_repos',
+  description: 'List GitHub repositories accessible to the authenticated user. Read-only.',
+  kind: 'read',
+  args: githubListReposArgs,
+  async execute(args, ctx) {
+    const token = await resolveGithubToken(ctx.workspaceId, args.integrationId);
+    const o = octokitForToken(token);
+    const res = await o.rest.repos.listForAuthenticatedUser({
+      per_page: args.limit,
+      sort: args.sort,
+    });
+    return {
+      result: {
+        repos: res.data.map((r) => ({
+          fullName: r.full_name,
+          private: r.private,
+          description: r.description ?? null,
+          url: r.html_url,
+          defaultBranch: r.default_branch,
+          updatedAt: r.updated_at,
+        })),
+      },
+    };
+  },
+};
+
+// ─── linear_list_projects ───────────────────────────────────────────────────
+
+const linearListProjectsArgs = z.object({
+  integrationId: z.string().uuid(),
+});
+
+const linearListProjectsTool: ToolDefinition<typeof linearListProjectsArgs> = {
+  name: 'linear_list_projects',
+  description: 'List Linear projects (id, name, state, url, slug). Read-only.',
+  kind: 'read',
+  args: linearListProjectsArgs,
+  async execute(args, ctx) {
+    const token = await resolveLinearToken(ctx.workspaceId, args.integrationId);
+    const res = await fetch('https://api.linear.app/graphql', {
+      method: 'POST',
+      headers: { authorization: token, 'content-type': 'application/json' },
+      body: JSON.stringify({
+        query: `query { projects(first: 50) { nodes { id name state url slugId } } }`,
+      }),
+    });
+    const json = (await res.json()) as {
+      data?: {
+        projects?: {
+          nodes?: { id: string; name: string; state: string; url: string; slugId: string }[];
+        };
+      };
+      errors?: { message: string }[];
+    };
+    if (json.errors?.length) throw new Error(json.errors[0]!.message);
+    return { result: { projects: json.data?.projects?.nodes ?? [] } };
+  },
+};
+
+// ─── linear_list_states ─────────────────────────────────────────────────────
+
+const linearListStatesArgs = z.object({
+  integrationId: z.string().uuid(),
+  teamId: z.string().min(1),
+});
+
+const linearListStatesTool: ToolDefinition<typeof linearListStatesArgs> = {
+  name: 'linear_list_states',
+  description:
+    'List workflow states for a Linear team (Backlog, Todo, In Progress, Done, …). Useful before linear_move_issue. Read-only.',
+  kind: 'read',
+  args: linearListStatesArgs,
+  async execute(args, ctx) {
+    const token = await resolveLinearToken(ctx.workspaceId, args.integrationId);
+    const res = await fetch('https://api.linear.app/graphql', {
+      method: 'POST',
+      headers: { authorization: token, 'content-type': 'application/json' },
+      body: JSON.stringify({
+        query: `query($teamId: String!) { team(id: $teamId) { states(first: 30) { nodes { id name type position } } } }`,
+        variables: { teamId: args.teamId },
+      }),
+    });
+    const json = (await res.json()) as {
+      data?: {
+        team?: {
+          states?: { nodes?: { id: string; name: string; type: string; position: number }[] };
+        };
+      };
+      errors?: { message: string }[];
+    };
+    if (json.errors?.length) throw new Error(json.errors[0]!.message);
+    return {
+      result: {
+        states: (json.data?.team?.states?.nodes ?? []).sort((a, b) => a.position - b.position),
+      },
+    };
+  },
+};
+
+// ─── gcal_get_event ─────────────────────────────────────────────────────────
+
+const gcalGetEventArgs = z.object({
+  integrationId: z.string().uuid(),
+  calendarId: z.string().default('primary'),
+  eventId: z.string().min(1),
+});
+
+const gcalGetEventTool: ToolDefinition<typeof gcalGetEventArgs> = {
+  name: 'gcal_get_event',
+  description:
+    'Fetch a single Google Calendar event by id (summary, start/end, attendees, location, description). Read-only.',
+  kind: 'read',
+  args: gcalGetEventArgs,
+  async execute(args, ctx) {
+    const token = await resolveIntegrationToken(ctx.workspaceId, args.integrationId, 'gcal');
+    const url = `https://www.googleapis.com/calendar/v3/calendars/${encodeURIComponent(args.calendarId)}/events/${encodeURIComponent(args.eventId)}`;
+    const res = await fetch(url, { headers: { authorization: `Bearer ${token}` } });
+    if (!res.ok) throw new Error(`gcal_get_event_failed: ${res.status}`);
+    const json = (await res.json()) as {
+      id: string;
+      htmlLink: string;
+      summary?: string;
+      description?: string;
+      location?: string;
+      start?: { dateTime?: string; date?: string };
+      end?: { dateTime?: string; date?: string };
+      attendees?: { email?: string; displayName?: string; responseStatus?: string }[];
+    };
+    return {
+      result: {
+        id: json.id,
+        url: json.htmlLink,
+        summary: json.summary ?? '',
+        description: json.description?.slice(0, 4000) ?? '',
+        location: json.location ?? null,
+        start: json.start?.dateTime ?? json.start?.date ?? null,
+        end: json.end?.dateTime ?? json.end?.date ?? null,
+        attendees: (json.attendees ?? []).map((a) => ({
+          email: a.email ?? null,
+          name: a.displayName ?? null,
+          response: a.responseStatus ?? null,
+        })),
+      },
+    };
+  },
+};
+
+// ─── slack_get_channel_history ──────────────────────────────────────────────
+
+const slackGetChannelHistoryArgs = z.object({
+  integrationId: z.string().uuid(),
+  channelId: z.string().min(1),
+  limit: z.number().int().min(1).max(50).default(20),
+});
+
+const slackGetChannelHistoryTool: ToolDefinition<typeof slackGetChannelHistoryArgs> = {
+  name: 'slack_get_channel_history',
+  description: 'Fetch recent messages from a Slack channel (most recent first). Read-only.',
+  kind: 'read',
+  args: slackGetChannelHistoryArgs,
+  async execute(args, ctx) {
+    const token = await resolveIntegrationToken(ctx.workspaceId, args.integrationId, 'slack');
+    const url = new URL('https://slack.com/api/conversations.history');
+    url.searchParams.set('channel', args.channelId);
+    url.searchParams.set('limit', String(args.limit));
+    const res = await fetch(url, { headers: { authorization: `Bearer ${token}` } });
+    const json = (await res.json()) as {
+      ok: boolean;
+      error?: string;
+      messages?: { ts: string; user?: string; text?: string; thread_ts?: string }[];
+    };
+    if (!json.ok) throw new Error(`slack_get_channel_history_failed: ${json.error ?? 'unknown'}`);
+    return {
+      result: {
+        messages: (json.messages ?? []).map((m) => ({
+          ts: m.ts,
+          user: m.user ?? null,
+          text: m.text ?? '',
+          isThreadReply: !!m.thread_ts && m.thread_ts !== m.ts,
+        })),
+      },
+    };
+  },
+};
+
+// ─── github_get_repo ────────────────────────────────────────────────────────
+
+const githubGetRepoArgs = z.object({
+  integrationId: z.string().uuid(),
+  repoFullName: z.string().regex(/^[^/]+\/[^/]+$/),
+});
+
+const githubGetRepoTool: ToolDefinition<typeof githubGetRepoArgs> = {
+  name: 'github_get_repo',
+  description:
+    'Fetch a GitHub repository: stars, forks, open issues, default branch, topics, language, description. Read-only.',
+  kind: 'read',
+  args: githubGetRepoArgs,
+  async execute(args, ctx) {
+    const token = await resolveGithubToken(ctx.workspaceId, args.integrationId);
+    const o = octokitForToken(token);
+    const [owner, repo] = args.repoFullName.split('/') as [string, string];
+    const r = await o.rest.repos.get({ owner, repo });
+    return {
+      result: {
+        fullName: r.data.full_name,
+        url: r.data.html_url,
+        description: r.data.description ?? null,
+        stars: r.data.stargazers_count,
+        forks: r.data.forks_count,
+        openIssues: r.data.open_issues_count,
+        defaultBranch: r.data.default_branch,
+        language: r.data.language ?? null,
+        topics: r.data.topics ?? [],
+        private: r.data.private,
+        archived: r.data.archived,
+        pushedAt: r.data.pushed_at,
+      },
+    };
+  },
+};
+
+// ─── github_list_workflow_runs ──────────────────────────────────────────────
+
+const githubListWorkflowRunsArgs = z.object({
+  integrationId: z.string().uuid(),
+  repoFullName: z.string().regex(/^[^/]+\/[^/]+$/),
+  limit: z.number().int().min(1).max(20).default(10),
+  branch: z.string().optional(),
+});
+
+const githubListWorkflowRunsTool: ToolDefinition<typeof githubListWorkflowRunsArgs> = {
+  name: 'github_list_workflow_runs',
+  description:
+    'List recent GitHub Actions workflow runs for a repo (status, conclusion, branch, commit, run url). Read-only.',
+  kind: 'read',
+  args: githubListWorkflowRunsArgs,
+  async execute(args, ctx) {
+    const token = await resolveGithubToken(ctx.workspaceId, args.integrationId);
+    const o = octokitForToken(token);
+    const [owner, repo] = args.repoFullName.split('/') as [string, string];
+    const r = await o.rest.actions.listWorkflowRunsForRepo({
+      owner,
+      repo,
+      per_page: args.limit,
+      ...(args.branch ? { branch: args.branch } : {}),
+    });
+    return {
+      result: {
+        total: r.data.total_count,
+        runs: r.data.workflow_runs.map((w) => ({
+          id: w.id,
+          name: w.name ?? null,
+          status: w.status,
+          conclusion: w.conclusion,
+          branch: w.head_branch,
+          sha: w.head_sha.slice(0, 7),
+          url: w.html_url,
+          actor: w.actor?.login ?? null,
+          createdAt: w.created_at,
+        })),
+      },
+    };
+  },
+};
+
+// ─── notion_get_database ────────────────────────────────────────────────────
+
+const notionGetDatabaseArgs = z.object({
+  integrationId: z.string().uuid(),
+  databaseId: z.string().min(1),
+});
+
+const notionGetDatabaseTool: ToolDefinition<typeof notionGetDatabaseArgs> = {
+  name: 'notion_get_database',
+  description:
+    'Fetch a Notion database (title, url, property schema). Use before notion_query_database to know what filters/sorts are valid. Read-only.',
+  kind: 'read',
+  args: notionGetDatabaseArgs,
+  async execute(args, ctx) {
+    const token = await resolveIntegrationToken(ctx.workspaceId, args.integrationId, 'notion');
+    const res = await fetch(
+      `https://api.notion.com/v1/databases/${encodeURIComponent(args.databaseId)}`,
+      {
+        headers: {
+          authorization: `Bearer ${token}`,
+          'notion-version': '2022-06-28',
+        },
+      },
+    );
+    if (!res.ok) throw new Error(`notion_get_database_failed: ${res.status}`);
+    const json = (await res.json()) as {
+      id: string;
+      url: string;
+      title?: { plain_text?: string }[];
+      properties?: Record<string, { type: string }>;
+    };
+    return {
+      result: {
+        id: json.id,
+        url: json.url,
+        title: (json.title ?? []).map((t) => t.plain_text ?? '').join('') || '(untitled)',
+        properties: Object.entries(json.properties ?? {}).map(([name, p]) => ({
+          name,
+          type: p.type,
+        })),
+      },
+    };
+  },
+};
+
+// ─── slack_open_dm ──────────────────────────────────────────────────────────
+
+const slackOpenDmArgs = z.object({
+  integrationId: z.string().uuid(),
+  userIds: z.array(z.string().min(1)).min(1).max(8),
+});
+
+const slackOpenDmTool: ToolDefinition<typeof slackOpenDmArgs> = {
+  name: 'slack_open_dm',
+  description:
+    'Open (or reuse) a Slack DM/group-DM with the given user ids. Returns the channel id, which you can pass to slack_send_message.',
+  kind: 'low_risk',
+  args: slackOpenDmArgs,
+  async execute(args, ctx) {
+    const token = await resolveIntegrationToken(ctx.workspaceId, args.integrationId, 'slack');
+    const res = await fetch('https://slack.com/api/conversations.open', {
+      method: 'POST',
+      headers: {
+        authorization: `Bearer ${token}`,
+        'content-type': 'application/json; charset=utf-8',
+      },
+      body: JSON.stringify({ users: args.userIds.join(',') }),
+    });
+    const json = (await res.json()) as {
+      ok: boolean;
+      error?: string;
+      channel?: { id: string; is_im?: boolean; is_mpim?: boolean };
+    };
+    if (!json.ok) throw new Error(`slack_open_dm_failed: ${json.error ?? 'unknown'}`);
+    return {
+      result: {
+        channelId: json.channel?.id ?? null,
+        isIm: !!json.channel?.is_im,
+        isMpim: !!json.channel?.is_mpim,
+      },
+    };
+  },
+};
+
+// ─── github_get_commit ──────────────────────────────────────────────────────
+
+const githubGetCommitArgs = z.object({
+  integrationId: z.string().uuid(),
+  repoFullName: z.string().regex(/^[^/]+\/[^/]+$/),
+  ref: z.string().min(1).describe('Commit SHA, branch, or tag.'),
+});
+
+const githubGetCommitTool: ToolDefinition<typeof githubGetCommitArgs> = {
+  name: 'github_get_commit',
+  description: 'Fetch a single GitHub commit (message, author, stats, changed files). Read-only.',
+  kind: 'read',
+  args: githubGetCommitArgs,
+  async execute(args, ctx) {
+    const token = await resolveGithubToken(ctx.workspaceId, args.integrationId);
+    const o = octokitForToken(token);
+    const [owner, repo] = args.repoFullName.split('/') as [string, string];
+    const r = await o.rest.repos.getCommit({ owner, repo, ref: args.ref });
+    return {
+      result: {
+        sha: r.data.sha.slice(0, 7),
+        url: r.data.html_url,
+        message: r.data.commit.message.slice(0, 4000),
+        author: r.data.commit.author?.name ?? r.data.author?.login ?? null,
+        date: r.data.commit.author?.date ?? null,
+        stats: {
+          additions: r.data.stats?.additions ?? 0,
+          deletions: r.data.stats?.deletions ?? 0,
+          total: r.data.stats?.total ?? 0,
+        },
+        files: (r.data.files ?? []).slice(0, 50).map((f) => ({
+          filename: f.filename,
+          status: f.status,
+          additions: f.additions,
+          deletions: f.deletions,
+        })),
+      },
+    };
+  },
+};
+
+// ─── linear_get_viewer ──────────────────────────────────────────────────────
+
+const linearGetViewerArgs = z.object({
+  integrationId: z.string().uuid(),
+});
+
+const linearGetViewerTool: ToolDefinition<typeof linearGetViewerArgs> = {
+  name: 'linear_get_viewer',
+  description: 'Fetch the authenticated Linear user (id, name, email, active teams). Read-only.',
+  kind: 'read',
+  args: linearGetViewerArgs,
+  async execute(args, ctx) {
+    const token = await resolveLinearToken(ctx.workspaceId, args.integrationId);
+    const res = await fetch('https://api.linear.app/graphql', {
+      method: 'POST',
+      headers: { authorization: token, 'content-type': 'application/json' },
+      body: JSON.stringify({
+        query: `query { viewer { id name email active teams(first: 20) { nodes { id name key } } } }`,
+      }),
+    });
+    const json = (await res.json()) as {
+      data?: {
+        viewer?: {
+          id: string;
+          name: string;
+          email: string;
+          active: boolean;
+          teams?: { nodes?: { id: string; name: string; key: string }[] };
+        };
+      };
+      errors?: { message: string }[];
+    };
+    if (json.errors?.length) throw new Error(json.errors[0]!.message);
+    const v = json.data?.viewer;
+    if (!v) throw new Error('linear_get_viewer_empty');
+    return {
+      result: {
+        id: v.id,
+        name: v.name,
+        email: v.email,
+        active: v.active,
+        teams: v.teams?.nodes ?? [],
+      },
+    };
+  },
+};
+
+// ─── gcal_freebusy ──────────────────────────────────────────────────────────
+
+const gcalFreebusyArgs = z.object({
+  integrationId: z.string().uuid(),
+  timeMin: z.string().datetime(),
+  timeMax: z.string().datetime(),
+  calendarIds: z.array(z.string().min(1)).min(1).max(10).default(['primary']),
+});
+
+const gcalFreebusyTool: ToolDefinition<typeof gcalFreebusyArgs> = {
+  name: 'gcal_freebusy',
+  description:
+    'Query Google Calendar free/busy windows for one or more calendars in a time range. Returns busy intervals per calendar. Read-only.',
+  kind: 'read',
+  args: gcalFreebusyArgs,
+  async execute(args, ctx) {
+    const token = await resolveIntegrationToken(ctx.workspaceId, args.integrationId, 'gcal');
+    const res = await fetch('https://www.googleapis.com/calendar/v3/freeBusy', {
+      method: 'POST',
+      headers: {
+        authorization: `Bearer ${token}`,
+        'content-type': 'application/json',
+      },
+      body: JSON.stringify({
+        timeMin: args.timeMin,
+        timeMax: args.timeMax,
+        items: args.calendarIds.map((id) => ({ id })),
+      }),
+    });
+    if (!res.ok) throw new Error(`gcal_freebusy_failed: ${res.status}`);
+    const json = (await res.json()) as {
+      calendars?: Record<
+        string,
+        { busy?: { start: string; end: string }[]; errors?: { reason: string }[] }
+      >;
+    };
+    return {
+      result: {
+        calendars: Object.entries(json.calendars ?? {}).map(([id, c]) => ({
+          calendarId: id,
+          busy: c.busy ?? [],
+          error: c.errors?.[0]?.reason ?? null,
+        })),
+      },
+    };
+  },
+};
+
+const briefingGenerateArgs = z.object({
+  /**
+   * Optional project id. When omitted, generates a workspace-wide briefing
+   * synthesizing all active projects + recent meaningful events.
+   */
+  projectId: z.string().uuid().optional(),
+});
+
+const briefingGenerateTool: ToolDefinition<typeof briefingGenerateArgs> = {
+  name: 'briefing_generate',
+  description:
+    'Generate a fresh "where was I?" briefing. With projectId: scoped to that project (same as restore_continuity). Without: a workspace-wide narrative across all active projects ending in the single smallest next step. Use eagerly when the user says they\'re back, or when the latest briefing is stale (>24h).',
+  kind: 'low_risk',
+  args: briefingGenerateArgs,
+  async execute(args, ctx) {
+    const db = getDb();
+    if (args.projectId) {
+      // Project-scoped: delegates to existing continuity flow.
+      const [proj] = await db
+        .select({ id: project.id, name: project.name })
+        .from(project)
+        .where(and(eq(project.id, args.projectId), eq(project.workspaceId, ctx.workspaceId)))
+        .limit(1);
+      if (!proj) throw new Error('project_not_found');
+      const generated = await restoreProjectContext(ctx.workspaceId, args.projectId);
+      const [inserted] = await db
+        .insert(continuityBriefing)
+        .values({
+          workspaceId: ctx.workspaceId,
+          projectId: args.projectId,
+          briefing: generated.briefing,
+          modelProvider: generated.provider,
+          modelId: generated.modelId,
+        })
+        .returning();
+      return {
+        result: {
+          scope: 'project' as const,
+          projectId: args.projectId,
+          projectName: proj.name,
+          briefing: generated.briefing,
+          briefingId: inserted?.id ?? null,
+        },
+      };
+    }
+
+    // Workspace-scoped: synthesize across active projects.
+    const since = new Date(Date.now() - 14 * 24 * 60 * 60 * 1000);
+    const [activeProjects, recentEvents, blockedTasks] = await Promise.all([
+      db
+        .select({
+          id: project.id,
+          name: project.name,
+          stateSummary: project.stateSummary,
+          momentumScore: project.momentumScore,
+        })
+        .from(project)
+        .where(
+          and(
+            eq(project.workspaceId, ctx.workspaceId),
+            isNull(project.deletedAt),
+            eq(project.status, 'active'),
+          ),
+        )
+        .orderBy(desc(project.momentumScore))
+        .limit(8),
+      db
+        .select({
+          kind: timelineEvent.kind,
+          title: timelineEvent.title,
+          body: timelineEvent.body,
+          importance: timelineEvent.importance,
+          occurredAt: timelineEvent.occurredAt,
+        })
+        .from(timelineEvent)
+        .where(
+          and(
+            eq(timelineEvent.workspaceId, ctx.workspaceId),
+            gte(timelineEvent.occurredAt, since),
+            sql`${timelineEvent.importance} >= 0.5`,
+          ),
+        )
+        .orderBy(desc(timelineEvent.occurredAt))
+        .limit(40),
+      db
+        .select({ title: task.title })
+        .from(task)
+        .where(
+          and(
+            eq(task.workspaceId, ctx.workspaceId),
+            isNull(task.deletedAt),
+            eq(task.status, 'blocked'),
+          ),
+        )
+        .limit(10),
+    ]);
+
+    const { model, provider, modelId } = await getModel({
+      workspaceId: ctx.workspaceId,
+      intent: 'reasoning',
+    });
+    const system = buildConductorSystem(`You write workspace-wide continuity briefings.
+
+Output a single markdown briefing in 3 short paragraphs:
+  1) Where the user is across their active projects (cite project names).
+  2) What's blocking momentum and where decisions are overdue.
+  3) The single smallest next step the user should take right now.
+
+Be specific, concrete, and warm. Do not list bullets. Do not output JSON.`);
+
+    const userPrompt = JSON.stringify(
+      {
+        now: new Date().toISOString(),
+        windowDays: 14,
+        activeProjects,
+        recentEvents,
+        blockedTasks,
+      },
+      null,
+      2,
+    );
+
+    const { text } = await generateText({
+      model: model as Parameters<typeof generateText>[0]['model'],
+      system,
+      prompt: userPrompt,
+    });
+
+    return {
+      result: {
+        scope: 'workspace' as const,
+        briefing: text,
+        provider,
+        modelId,
+      },
+    };
+  },
+};
+
+// ─── summarize_day ─────────────────────────────────────────────────────────
+
+const summarizeDayArgs = z.object({
+  /** ISO date (YYYY-MM-DD) of the day to summarize. Defaults to today. */
+  date: z
+    .string()
+    .regex(/^\d{4}-\d{2}-\d{2}$/)
+    .optional(),
+});
+
+const summarizeDayTool: ToolDefinition<typeof summarizeDayArgs> = {
+  name: 'summarize_day',
+  description:
+    'Produce a 1-2 sentence narrative summary of what happened on a given day, drawing from the timeline. Useful for filling the Journal page with prose instead of bullets.',
+  kind: 'read',
+  args: summarizeDayArgs,
+  async execute(args, ctx) {
+    const db = getDb();
+    const dayStr = args.date ?? new Date().toISOString().slice(0, 10);
+    const start = new Date(`${dayStr}T00:00:00.000Z`);
+    if (Number.isNaN(start.getTime())) throw new Error('invalid_date');
+    const end = new Date(start.getTime() + 24 * 60 * 60 * 1000);
+
+    const events = await db
+      .select({
+        kind: timelineEvent.kind,
+        title: timelineEvent.title,
+        body: timelineEvent.body,
+        importance: timelineEvent.importance,
+      })
+      .from(timelineEvent)
+      .where(
+        and(
+          eq(timelineEvent.workspaceId, ctx.workspaceId),
+          gte(timelineEvent.occurredAt, start),
+          lt(timelineEvent.occurredAt, end),
+        ),
+      )
+      .orderBy(desc(timelineEvent.importance))
+      .limit(80);
+
+    if (events.length === 0) {
+      return {
+        result: { date: dayStr, summary: 'Nothing notable.', eventCount: 0 },
+      };
+    }
+
+    const { model, provider, modelId } = await getModel({
+      workspaceId: ctx.workspaceId,
+      intent: 'fast',
+    });
+    const { text } = await generateText({
+      model: model as Parameters<typeof generateText>[0]['model'],
+      system:
+        "You write one-paragraph narrative summaries of a day, in the user's voice. Be factual, concrete, ≤ 3 sentences. Do not list bullets.",
+      prompt: JSON.stringify({ date: dayStr, events }, null, 2),
+    });
+    return {
+      result: {
+        date: dayStr,
+        summary: text.trim(),
+        eventCount: events.length,
+        provider,
+        modelId,
+      },
+    };
+  },
+};
+
+// ─── identify_people ───────────────────────────────────────────────────────
+
+const identifyPeopleArgs = z.object({
+  /** How many days back to scan. */
+  days: z.number().int().min(1).max(180).default(60),
+  /** Minimum mentions before a person is included. */
+  minMentions: z.number().int().min(1).max(20).default(2),
+});
+
+const identifyPeopleTool: ToolDefinition<typeof identifyPeopleArgs> = {
+  name: 'identify_people',
+  description:
+    "Extract people who keep showing up in the user's captures and timeline over the last N days. Returns canonical names, alias clusters, and mention counts. Read-only; the user can pin results later via the People page.",
+  kind: 'read',
+  args: identifyPeopleArgs,
+  async execute(args, ctx) {
+    const since = new Date(Date.now() - args.days * 24 * 60 * 60 * 1000);
+    const db = getDb();
+    const [captures, events] = await Promise.all([
+      db
+        .select({ content: capture.content })
+        .from(capture)
+        .where(
+          and(
+            eq(capture.workspaceId, ctx.workspaceId),
+            isNull(capture.deletedAt),
+            gte(capture.capturedAt, since),
+            sql`${capture.content} is not null`,
+          ),
+        )
+        .limit(400),
+      db
+        .select({ title: timelineEvent.title, body: timelineEvent.body })
+        .from(timelineEvent)
+        .where(
+          and(eq(timelineEvent.workspaceId, ctx.workspaceId), gte(timelineEvent.occurredAt, since)),
+        )
+        .limit(400),
+    ]);
+
+    // Crude pass first (same heuristic as /people).
+    const rough = new Map<string, number>();
+    function bump(s: string) {
+      for (const m of s.matchAll(/@([a-zA-Z][\w.-]{1,30})/g)) {
+        const key = '@' + m[1]!.toLowerCase();
+        rough.set(key, (rough.get(key) ?? 0) + 1);
+      }
+      for (const m of s.matchAll(/\b([A-Z][a-z]{1,20})\s+([A-Z][a-z]{1,20})\b/g)) {
+        const key = `${m[1]} ${m[2]}`;
+        rough.set(key, (rough.get(key) ?? 0) + 1);
+      }
+    }
+    for (const c of captures) if (c.content) bump(c.content);
+    for (const e of events) bump(`${e.title}\n${e.body ?? ''}`);
+
+    const candidates = Array.from(rough.entries())
+      .filter(([, n]) => n >= args.minMentions)
+      .sort((a, b) => b[1] - a[1])
+      .slice(0, 80)
+      .map(([name, mentions]) => ({ name, mentions }));
+
+    if (candidates.length === 0) {
+      return { result: { days: args.days, people: [] } };
+    }
+
+    // Refine with LLM: cluster aliases, drop false positives.
+    const personSchema = z.object({
+      people: z
+        .array(
+          z.object({
+            canonical: z.string().min(1).max(80),
+            aliases: z.array(z.string().min(1).max(80)).default([]),
+            mentions: z.number().int().min(1),
+            confidence: z.number().min(0).max(1),
+          }),
+        )
+        .max(50),
+    });
+    const { model, provider, modelId } = await getModel({
+      workspaceId: ctx.workspaceId,
+      intent: 'fast',
+    });
+    const { object } = await generateObject({
+      model: model as Parameters<typeof generateObject>[0]['model'],
+      schema: personSchema,
+      schemaName: 'IdentifiedPeople',
+      system:
+        'Cluster the candidate tokens into canonical people. Pick the most-likely-real name as canonical, list other strings as aliases. Drop tokens that are clearly NOT people (places, products, common phrases). Sum mention counts of merged aliases. Confidence: 1.0 = clearly a real person, 0.5 = could be, < 0.3 = drop.',
+      prompt: JSON.stringify({ candidates }, null, 2),
+    });
+    const filtered = object.people.filter((p) => p.confidence >= 0.5);
+    return {
+      result: {
+        days: args.days,
+        people: filtered,
+        provider,
+        modelId,
+      },
+    };
+  },
+};
+
+// ─── pause_autonomy ────────────────────────────────────────────────────────
+
+const pauseAutonomyArgs = z.object({
+  /** When true, also drop defaultMode to 'observe' for the kill-switch. Defaults true. */
+  hardStop: z.boolean().default(true),
+  reason: z.string().min(1).max(280).optional(),
+});
+
+const pauseAutonomyTool: ToolDefinition<typeof pauseAutonomyArgs> = {
+  name: 'pause_autonomy',
+  description:
+    'Disable the Conductor for this workspace. Sets agent_policy.enabled = false (and defaultMode = observe with hardStop). Use when the user says "pause", "stop", "hold on", "quiet down", etc. Undoable via resume_autonomy.',
+  kind: 'low_risk',
+  args: pauseAutonomyArgs,
+  async execute(args, ctx) {
+    const db = getDb();
+    const [prev] = await db
+      .select({ enabled: agentPolicy.enabled, defaultMode: agentPolicy.defaultMode })
+      .from(agentPolicy)
+      .where(eq(agentPolicy.workspaceId, ctx.workspaceId))
+      .limit(1);
+
+    await db
+      .update(agentPolicy)
+      .set({
+        enabled: false,
+        ...(args.hardStop ? { defaultMode: 'observe' as const } : {}),
+      })
+      .where(eq(agentPolicy.workspaceId, ctx.workspaceId));
+
+    await db.insert(timelineEvent).values({
+      workspaceId: ctx.workspaceId,
+      userId: ctx.userId,
+      kind: 'autonomy.paused',
+      title: args.reason ? `Autonomy paused: ${args.reason}` : 'Autonomy paused',
+      importance: 0.6,
+    });
+
+    return {
+      result: { enabled: false, hardStop: args.hardStop },
+      undoPayload: {
+        prevEnabled: prev?.enabled ?? true,
+        prevDefaultMode: prev?.defaultMode ?? 'ask',
+      },
+    };
+  },
+  async undo(undoPayload, ctx) {
+    const db = getDb();
+    const prev = undoPayload as { prevEnabled: boolean; prevDefaultMode: string };
+    await db
+      .update(agentPolicy)
+      .set({
+        enabled: prev.prevEnabled,
+        defaultMode: prev.prevDefaultMode as 'observe' | 'ask' | 'auto_with_undo' | 'autopilot',
+      })
+      .where(eq(agentPolicy.workspaceId, ctx.workspaceId));
+  },
+};
+
 // ─── Registry ──────────────────────────────────────────────────────────────
 
 // ─── external_invoke ───────────────────────────────────────────────────────
@@ -1316,6 +3839,10 @@ export const TOOLS = {
   notify_user: notifyTool,
   log_observation: logObservationTool,
   restore_continuity: restoreContinuityTool,
+  briefing_generate: briefingGenerateTool,
+  summarize_day: summarizeDayTool,
+  identify_people: identifyPeopleTool,
+  pause_autonomy: pauseAutonomyTool,
   metu_resume: metuResumeTool,
   send_telegram: sendTelegramTool,
   send_email: sendEmailTool,
@@ -1323,6 +3850,57 @@ export const TOOLS = {
   delete_capture: deleteCaptureTool,
   merge_pr: mergePrTool,
   commit_file: commitFileTool,
+  github_draft_pr: githubDraftPrTool,
+  linear_add_comment: linearAddCommentTool,
+  slack_send_message: slackSendMessageTool,
+  gcal_create_event: gcalCreateEventTool,
+  github_add_comment: githubAddCommentTool,
+  github_pr_review_comment: githubPrReviewCommentTool,
+  notion_append_block: notionAppendBlockTool,
+  linear_move_issue: linearMoveIssueTool,
+  github_merge_pr: githubMergePrTool,
+  slack_add_reaction: slackAddReactionTool,
+  slack_pin_message: slackPinMessageTool,
+  notion_create_page: notionCreatePageTool,
+  github_close_issue: githubCloseIssueTool,
+  github_create_issue: githubCreateIssueTool,
+  linear_create_issue: linearCreateIssueTool,
+  gcal_update_event: gcalUpdateEventTool,
+  github_request_review: githubRequestReviewTool,
+  slack_update_message: slackUpdateMessageTool,
+  notion_append_block_children: notionAppendBlockChildrenTool,
+  gcal_delete_event: gcalDeleteEventTool,
+  github_add_label: githubAddLabelTool,
+  github_assign: githubAssignTool,
+  linear_set_priority: linearSetPriorityTool,
+  gcal_add_attendees: gcalAddAttendeesTool,
+  notion_search: notionSearchTool,
+  slack_search_messages: slackSearchMessagesTool,
+  gcal_list_events: gcalListEventsTool,
+  github_get_pr: githubGetPrTool,
+  linear_get_issue: linearGetIssueTool,
+  linear_assign_issue: linearAssignIssueTool,
+  notion_get_page: notionGetPageTool,
+  slack_list_channels: slackListChannelsTool,
+  gcal_quick_add: gcalQuickAddTool,
+  linear_list_teams: linearListTeamsTool,
+  github_search_issues: githubSearchIssuesTool,
+  github_list_releases: githubListReleasesTool,
+  notion_query_database: notionQueryDatabaseTool,
+  slack_list_users: slackListUsersTool,
+  gcal_list_calendars: gcalListCalendarsTool,
+  github_list_repos: githubListReposTool,
+  linear_list_projects: linearListProjectsTool,
+  linear_list_states: linearListStatesTool,
+  gcal_get_event: gcalGetEventTool,
+  slack_get_channel_history: slackGetChannelHistoryTool,
+  github_get_repo: githubGetRepoTool,
+  github_list_workflow_runs: githubListWorkflowRunsTool,
+  notion_get_database: notionGetDatabaseTool,
+  slack_open_dm: slackOpenDmTool,
+  github_get_commit: githubGetCommitTool,
+  linear_get_viewer: linearGetViewerTool,
+  gcal_freebusy: gcalFreebusyTool,
   external_invoke: externalInvokeTool,
   ...DEVICE_TOOLS,
   ...EDITOR_TOOLS,

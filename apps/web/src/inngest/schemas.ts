@@ -123,9 +123,76 @@ export const eventSchemas = {
     repoFullName: z.string(),
     reason: z.string().optional(),
   }),
+  'github/repo.webhook.ensure': z.object({
+    workspaceId: wsId,
+    integrationId: z.string().uuid(),
+    repoFullName: z.string(),
+    webhookUrl: z.string().url(),
+  }),
+  'github/digest.daily': z.object({
+    workspaceId: wsId.optional(),
+  }),
+  'project/anomaly.scan': z.object({
+    workspaceId: wsId.optional(),
+  }),
   'continuity/prewarm': z.object({
     workspaceId: wsId,
     projectId: z.string().uuid(),
+    reason: z.string().optional(),
+  }),
+  'slack/sync.requested': z.object({
+    workspaceId: wsId,
+    integrationId: z.string().uuid(),
+    reason: z.string().optional(),
+  }),
+  'gcal/sync.requested': z.object({
+    workspaceId: wsId,
+    integrationId: z.string().uuid(),
+    reason: z.string().optional(),
+  }),
+  'linear/sync.requested': z.object({
+    workspaceId: wsId,
+    integrationId: z.string().uuid(),
+    reason: z.string().optional(),
+  }),
+  'reddit/sync.requested': z.object({
+    workspaceId: wsId,
+    integrationId: z.string().uuid(),
+    reason: z.string().optional(),
+  }),
+  'twitter/sync.requested': z.object({
+    workspaceId: wsId,
+    integrationId: z.string().uuid(),
+    reason: z.string().optional(),
+  }),
+  'youtube/sync.requested': z.object({
+    workspaceId: wsId,
+    integrationId: z.string().uuid(),
+    reason: z.string().optional(),
+  }),
+  'spotify/sync.requested': z.object({
+    workspaceId: wsId,
+    integrationId: z.string().uuid(),
+    reason: z.string().optional(),
+  }),
+  'instagram/sync.requested': z.object({
+    workspaceId: wsId,
+    integrationId: z.string().uuid(),
+    reason: z.string().optional(),
+  }),
+  'notion/sync.requested': z.object({
+    workspaceId: wsId,
+    integrationId: z.string().uuid(),
+    reason: z.string().optional(),
+  }),
+  'stripe/sync.requested': z.object({
+    workspaceId: wsId,
+    integrationId: z.string().uuid(),
+    reason: z.string().optional(),
+  }),
+  'vercel/sync.requested': z.object({
+    workspaceId: wsId,
+    integrationId: z.string().uuid(),
     reason: z.string().optional(),
   }),
 } as const;

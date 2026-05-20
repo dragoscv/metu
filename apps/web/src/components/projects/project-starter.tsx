@@ -436,7 +436,7 @@ function RepoSourceModal({
     return () => {
       cancelled = true;
     };
-  }, [accountId]);
+  }, [accountId, accounts, ownerLogin, owners]);
 
   // Esc to close
   useEffect(() => {

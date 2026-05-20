@@ -60,6 +60,7 @@ type Channel = 'ws' | 'web_push' | 'expo';
 
 interface ResolvedPrefs {
   mutedChannels: Channel[];
+  mutedSources: string[];
   quietActive: boolean;
 }
 
@@ -74,12 +75,18 @@ async function resolvePrefs(workspaceId: string): Promise<ResolvedPrefs> {
     .from(agentPolicy)
     .where(eq(agentPolicy.workspaceId, workspaceId))
     .limit(1);
-  if (!row) return { mutedChannels: [], quietActive: false };
-  const meta = (row.metadata ?? {}) as { mutedChannels?: Channel[] };
+  if (!row) return { mutedChannels: [], mutedSources: [], quietActive: false };
+  const meta = (row.metadata ?? {}) as { mutedChannels?: Channel[]; mutedSources?: string[] };
   return {
     mutedChannels: Array.isArray(meta.mutedChannels) ? meta.mutedChannels : [],
+    mutedSources: Array.isArray(meta.mutedSources) ? meta.mutedSources : [],
     quietActive: isQuietActive(row.quietHours as Record<string, unknown> | null),
   };
+}
+
+function sourceMuted(source: string | undefined, mutedSources: string[]): boolean {
+  if (!source || mutedSources.length === 0) return false;
+  return mutedSources.some((p) => source.startsWith(p));
 }
 
 export async function notify(input: NotifyInput): Promise<{ id: string; delivered: string[] }> {
@@ -89,6 +96,10 @@ export async function notify(input: NotifyInput): Promise<{ id: string; delivere
   // Quiet hours suppress non-urgent push channels but never the in-app
   // record; user still sees it next time they open the inbox.
   const quietBlocksPush = prefs.quietActive && urgency !== 'critical' && urgency !== 'high';
+  // Per-source mute applies to all OUTBOUND channels (ws/web/expo) but
+  // never blocks the row insert — inbox stays the source of truth.
+  // Critical urgency overrides source-mute (safety alarms always page).
+  const sourceBlocked = sourceMuted(input.source, prefs.mutedSources) && urgency !== 'critical';
 
   const [row] = await db
     .insert(notification)
@@ -109,7 +120,7 @@ export async function notify(input: NotifyInput): Promise<{ id: string; delivere
   const delivered: string[] = [];
 
   // 1) Live fan-out via WS hub.
-  const wsMuted = prefs.mutedChannels.includes('ws');
+  const wsMuted = prefs.mutedChannels.includes('ws') || sourceBlocked;
   const hubResult = wsMuted
     ? null
     : await hubBroadcast({
@@ -140,8 +151,14 @@ export async function notify(input: NotifyInput): Promise<{ id: string; delivere
   const webSubs = subs.filter((s) => s.channel === 'web_push');
   const expoSubs = subs.filter((s) => s.channel === 'expo');
 
-  const webMuted = prefs.mutedChannels.includes('web_push') || quietBlocksPush;
-  const expoMuted = prefs.mutedChannels.includes('expo') || quietBlocksPush;
+  const webMuted = prefs.mutedChannels.includes('web_push') || quietBlocksPush || sourceBlocked;
+  // Expo push is reserved for urgency 'high' | 'critical' so passive
+  // observations / 'low' nudges don't ring the user's phone. In-app
+  // (WS + inbox) still surfaces them. Quiet hours + per-channel mute
+  // continue to apply on top.
+  const expoUrgent = urgency === 'high' || urgency === 'critical';
+  const expoMuted =
+    prefs.mutedChannels.includes('expo') || quietBlocksPush || !expoUrgent || sourceBlocked;
 
   // Web push.
   if (!webMuted && webSubs.length > 0 && ensureWebPushConfigured()) {
@@ -315,7 +332,8 @@ export async function sendPushOnly(input: {
   const expoSubs = subs.filter((s) => s.channel === 'expo');
 
   const webMuted = prefs.mutedChannels.includes('web_push') || quietBlocksPush;
-  const expoMuted = prefs.mutedChannels.includes('expo') || quietBlocksPush;
+  const expoUrgent = urgency === 'high' || urgency === 'critical';
+  const expoMuted = prefs.mutedChannels.includes('expo') || quietBlocksPush || !expoUrgent;
 
   if (!webMuted && webSubs.length > 0 && ensureWebPushConfigured()) {
     const payload = JSON.stringify({

@@ -22,10 +22,23 @@ type IntegrationKindRow =
   | 'slack'
   | 'notion'
   | 'linear'
+  | 'jira'
   | 'browser'
   | 'vscode'
   | 'webhook'
-  | 'external_mcp';
+  | 'external_mcp'
+  | 'tiktok'
+  | 'instagram'
+  | 'facebook'
+  | 'reddit'
+  | 'twitter'
+  | 'youtube'
+  | 'linkedin'
+  | 'meta_ads'
+  | 'google_ads'
+  | 'tiktok_ads'
+  | 'linkedin_ads'
+  | 'cloudflare';
 
 type IntegrationStatusRow = 'active' | 'paused' | 'error' | 'revoked';
 
@@ -77,6 +90,21 @@ export async function listIntegrationsByKind(
 ): Promise<IntegrationRow[]> {
   const all = await listIntegrations(workspaceId);
   return all.filter((r) => r.kind === kind);
+}
+
+/**
+ * All active integrations of a kind across every workspace — used by
+ * Inngest cron fan-outs (slack/gcal/linear/reddit/twitter/...).
+ */
+export async function listActiveIntegrationsByKind(
+  kind: IntegrationKindRow,
+): Promise<Array<{ workspaceId: string; integrationId: string }>> {
+  const db = getDb();
+  const rows = await db
+    .select({ workspaceId: integration.workspaceId, integrationId: integration.id })
+    .from(integration)
+    .where(and(eq(integration.kind, kind), eq(integration.status, 'active')));
+  return rows;
 }
 
 export async function getIntegrationByKind(workspaceId: string, kind: IntegrationKindRow) {
@@ -214,6 +242,45 @@ export async function upsertIntegration(input: UpsertIntegrationInput) {
     })
     .returning();
   return inserted[0]!.id;
+}
+
+/**
+ * Mark an integration as having just successfully synced. Clears
+ * `lastError` so the UI stops showing a stale failure indicator. Used
+ * by every per-platform Inngest sync handler at the end of a successful run.
+ */
+export async function markIntegrationSyncSuccess(integrationId: string): Promise<void> {
+  const db = getDb();
+  await db
+    .update(integration)
+    .set({ lastSyncAt: new Date(), lastError: null })
+    .where(eq(integration.id, integrationId));
+}
+
+/** Record a sync failure (truncated to 500 chars). Does NOT bump lastSyncAt. */
+export async function markIntegrationSyncError(
+  integrationId: string,
+  error: string,
+): Promise<void> {
+  const db = getDb();
+  await db
+    .update(integration)
+    .set({ lastError: error.slice(0, 500) })
+    .where(eq(integration.id, integrationId));
+}
+
+/** Workspace-scoped fetch by id. Used by the manual sync-now action. */
+export async function getIntegrationById(
+  workspaceId: string,
+  integrationId: string,
+): Promise<IntegrationRow | null> {
+  const db = getDb();
+  const rows = await db
+    .select()
+    .from(integration)
+    .where(and(eq(integration.workspaceId, workspaceId), eq(integration.id, integrationId)))
+    .limit(1);
+  return (rows[0] as IntegrationRow | undefined) ?? null;
 }
 
 export async function deleteIntegrationById(workspaceId: string, id: string) {

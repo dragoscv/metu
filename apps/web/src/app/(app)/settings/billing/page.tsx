@@ -13,6 +13,7 @@ import {
 import { getVoiceCapStateAction } from '@/app/actions/presence';
 import { VoiceBudgetMeter } from '@/components/voice-budget-meter';
 import { VoiceUsageChart } from '@/components/voice-usage-chart';
+import { UsageCard } from '@/components/billing/usage-card';
 
 const TIER_RANK: Record<BillingTier, number> = {
   free: 0,
@@ -86,6 +87,13 @@ export default async function BillingPage({
             <VoiceBudgetMeter initial={voiceCap} refetch={getVoiceCapStateAction} />
           </div>
         </Card>
+      </PageSection>
+
+      <PageSection
+        title="Workspace activity (30d)"
+        description="Aggregate counts across captures, timeline events, and conductor tool calls."
+      >
+        <UsageCard workspaceId={session.user.workspaceId} />
       </PageSection>
 
       <PageSection

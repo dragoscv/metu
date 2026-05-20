@@ -91,9 +91,57 @@ export type Events = {
       reason?: string;
     };
   };
+  'github/repo.webhook.ensure': {
+    data: {
+      workspaceId: string;
+      integrationId: string;
+      repoFullName: string;
+      webhookUrl: string;
+    };
+  };
+  'github/digest.daily': {
+    data: { workspaceId?: string };
+  };
+  'project/anomaly.scan': {
+    data: { workspaceId?: string };
+  };
   // ─── Continuity (auto-prewarm stale briefings) ─────────────────────────
   'continuity/prewarm': {
     data: { workspaceId: string; projectId: string; reason?: string };
+  };
+  // ─── Per-platform sync (slack/gcal/linear/reddit/twitter) ──────────────
+  'slack/sync.requested': {
+    data: { workspaceId: string; integrationId: string; reason?: string };
+  };
+  'gcal/sync.requested': {
+    data: { workspaceId: string; integrationId: string; reason?: string };
+  };
+  'linear/sync.requested': {
+    data: { workspaceId: string; integrationId: string; reason?: string };
+  };
+  'reddit/sync.requested': {
+    data: { workspaceId: string; integrationId: string; reason?: string };
+  };
+  'twitter/sync.requested': {
+    data: { workspaceId: string; integrationId: string; reason?: string };
+  };
+  'youtube/sync.requested': {
+    data: { workspaceId: string; integrationId: string; reason?: string };
+  };
+  'spotify/sync.requested': {
+    data: { workspaceId: string; integrationId: string; reason?: string };
+  };
+  'instagram/sync.requested': {
+    data: { workspaceId: string; integrationId: string; reason?: string };
+  };
+  'notion/sync.requested': {
+    data: { workspaceId: string; integrationId: string; reason?: string };
+  };
+  'stripe/sync.requested': {
+    data: { workspaceId: string; integrationId: string; reason?: string };
+  };
+  'vercel/sync.requested': {
+    data: { workspaceId: string; integrationId: string; reason?: string };
   };
 };
 

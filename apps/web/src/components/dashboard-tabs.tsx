@@ -30,11 +30,6 @@ export function DashboardTabs({
         <Link
           key={t.key}
           href={t.key === 'now' ? basePath : `${basePath}?tab=${t.key}`}
-          // Next.js 16 viewTransition: opt the navigation into the
-          // browser's View Transitions API so the tab pane crossfades
-          // instead of snapping. Cheap and degrades gracefully where
-          // the API is missing.
-          {...({ viewTransition: true } as Record<string, unknown>)}
           className={cn(
             'rounded-md px-3 py-1.5 text-sm transition-colors',
             active === t.key

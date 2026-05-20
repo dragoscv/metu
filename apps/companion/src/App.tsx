@@ -9,11 +9,14 @@
  */
 import { useEffect, useState } from 'react';
 import { invoke } from '@tauri-apps/api/core';
+import { getCurrentWindow } from '@tauri-apps/api/window';
 import { loadAuth, saveAuth, clearAuth, type AuthState } from './state/auth';
 import { Pairing } from './ui/Pairing';
 import { Connected } from './ui/Connected';
 import { useHubConnection } from './state/useHubConnection';
 import { loadSensorSettings, loadSensorsEnabled, useSensorBridge } from './state/sensors-bridge';
+import { useIdleDetection } from './state/useIdleDetection';
+import { isObserverMuted } from './state/useObserverMuted';
 
 export function App() {
   const [auth, setAuth] = useState<AuthState | null | 'loading'>('loading');
@@ -36,6 +39,33 @@ export function App() {
   // closes over fresh values because each render reloads from localStorage).
   void sensorsTick;
 
+  // Window focus events — feed Conductor a coarse 'companion focused/blurred'
+  // signal so the activity reactor can correlate "user came back to companion"
+  // moments. We send through hub WS only when it's open; no buffering.
+  useEffect(() => {
+    if (hub.status !== 'open') return;
+    const w = getCurrentWindow();
+    let unlisten: (() => void) | null = null;
+    void w
+      .onFocusChanged(({ payload: focused }) => {
+        if (isObserverMuted()) return;
+        hub.sendEnvelope({
+          v: 1,
+          type: 'event.device',
+          kind: focused ? 'companion.focus.gained' : 'companion.focus.lost',
+          payload: { window: w.label },
+          occurredAt: new Date().toISOString(),
+        });
+      })
+      .then((fn) => {
+        unlisten = fn;
+      })
+      .catch(() => {});
+    return () => {
+      unlisten?.();
+    };
+  }, [hub.status, hub.sendEnvelope]);
+
   // Best-effort LAN presence beacon: advertise the paired hub URL via
   // mDNS so other devices on the same network can discover it. Silently
   // ignored on networks without multicast (corporate VPN, container).
@@ -50,6 +80,19 @@ export function App() {
       invoke('mdns_stop').catch(() => {});
     };
   }, [auth]);
+
+  // Idle/away — emits `device.companion.{idle|active}` after 5 minutes
+  // without input inside the webview. Disabled until the hub is up.
+  useIdleDetection((next) => {
+    if (isObserverMuted()) return;
+    hub.sendEnvelope({
+      v: 1,
+      type: 'event.device',
+      kind: next === 'idle' ? 'companion.idle' : 'companion.active',
+      payload: {},
+      occurredAt: new Date().toISOString(),
+    });
+  }, hub.status === 'open');
 
   if (auth === 'loading') {
     return (

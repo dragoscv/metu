@@ -29,10 +29,22 @@ export async function recomputeMomentum(workspaceId: string, projectId: string) 
   const weights: Record<string, number> = {
     'commit.pushed': 1.0,
     'pr.merged': 0.9,
+    'pr.opened': 0.6,
+    'pr.review.approved': 0.7,
+    'pr.review.changes_requested': 0.5,
+    'pr.review.commented': 0.4,
     'task.completed': 0.8,
     'decision.logged': 0.7,
     'issue.closed': 0.6,
+    'issue.opened': 0.4,
+    'release.published': 0.9,
+    'workflow.failed': 0.5,
+    'check.failed': 0.5,
+    'security.alert': 0.7,
+    'tag.pushed': 0.5,
+    'discussion.created': 0.4,
     'capture.created': 0.3,
+    'project.velocity_dropped': -0.5,
   };
 
   let score = 0;
@@ -48,8 +60,10 @@ export async function recomputeMomentum(workspaceId: string, projectId: string) 
     }
   }
 
-  // Saturate to [0,1] with soft squash.
-  const normalized = 1 - 1 / (1 + score);
+  // Saturate to [0,1] with soft squash. Floor `score` at 0 so the
+  // optional negative-weight events (e.g. velocity_dropped) can't push
+  // the divisor below 1.
+  const normalized = 1 - 1 / (1 + Math.max(0, score));
 
   await db
     .update(project)

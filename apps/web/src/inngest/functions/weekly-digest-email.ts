@@ -14,13 +14,14 @@
  *    weekly email.
  *  - If the LLM call fails → fall back to bullets.
  */
-import { and, desc, eq, gte } from 'drizzle-orm';
+import { and, desc, eq, gte, sql } from 'drizzle-orm';
 import { generateText } from 'ai';
 import { inngest } from '../client';
 import { getDb } from '@metu/db';
 import {
   agentPolicy,
   decision,
+  deviceEvent,
   timelineEvent,
   user,
   workspace,
@@ -117,6 +118,21 @@ export const weeklyDigestEmailCron = inngest.createFunction(
           .limit(10),
       ]);
 
+      // Ambient device signals (vscode terminals + git, browser-ext copies +
+      // form submits, companion focus, mobile photos). Aggregated by kind so
+      // the digest can mention "you opened 14 terminals, copied 27 selections"
+      // without leaking content.
+      const ambient = await db
+        .select({
+          kind: deviceEvent.kind,
+          n: sql<number>`count(*)::int`,
+        })
+        .from(deviceEvent)
+        .where(and(eq(deviceEvent.workspaceId, o.workspaceId), gte(deviceEvent.occurredAt, since)))
+        .groupBy(deviceEvent.kind)
+        .orderBy(desc(sql`count(*)`))
+        .limit(20);
+
       if (events.length === 0 && decisions.length === 0) continue;
 
       const fallback = buildFallback(o.workspaceName, events, decisions);
@@ -126,7 +142,7 @@ export const weeklyDigestEmailCron = inngest.createFunction(
             workspaceId: o.workspaceId,
             intent: 'fast',
           });
-          const prompt = buildPrompt(o.workspaceName, events, decisions);
+          const prompt = buildPrompt(o.workspaceName, events, decisions, ambient);
           const { text: synth } = await generateText({
             model,
             prompt,
@@ -178,13 +194,19 @@ type DecisionRow = {
   decidedAt: Date | null;
 };
 
-function buildPrompt(workspaceName: string, events: EventRow[], decisions: DecisionRow[]): string {
+function buildPrompt(
+  workspaceName: string,
+  events: EventRow[],
+  decisions: DecisionRow[],
+  ambient: { kind: string; n: number }[] = [],
+): string {
   const eventLines = events
     .map((e) => `- [${e.kind}] ${e.title}${e.body ? ` — ${truncate(e.body, 140)}` : ''}`)
     .join('\n');
   const decisionLines = decisions
     .map((d) => `- ${d.title}${d.rationale ? ` — ${truncate(d.rationale, 160)}` : ''}`)
     .join('\n');
+  const ambientLines = ambient.map((a) => `- ${a.kind}: ${a.n}`).join('\n');
   return [
     `You are writing a short, friendly weekly recap for the user of "${workspaceName}".`,
     `Tone: calm, concise, second-person ("you"). 4–7 sentences. No headings, no bullet lists.`,
@@ -197,6 +219,9 @@ function buildPrompt(workspaceName: string, events: EventRow[], decisions: Decis
     ``,
     `Decisions logged (last 7 days):`,
     decisionLines || '(none)',
+    ``,
+    `Ambient activity counts (last 7 days, raw signals from VS Code, browser, companion, mobile):`,
+    ambientLines || '(none)',
     ``,
     `Write the recap as plain text only. Do not include a salutation or sign-off.`,
   ].join('\n');

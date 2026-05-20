@@ -12,6 +12,8 @@ import { auth } from '@metu/auth';
 import { getDb } from '@metu/db';
 import { workspace } from '@metu/db/schema';
 
+export type ConductorActivityLevel = 'off' | 'passive' | 'gentle' | 'aggressive';
+
 export type WorkspacePreferences = {
   /**
    * BCP-47 language tag the user prefers when no per-persona language is
@@ -19,6 +21,17 @@ export type WorkspacePreferences = {
    * this as a fallback when `language` is omitted in the body.
    */
   preferredLanguage?: string;
+  /**
+   * How proactive the Conductor is when reacting to ambient activity
+   * (VS Code heartbeats, browser page visits, device events, etc.).
+   *   - off:        ignore the device/event stream entirely.
+   *   - passive:    log only; never interrupt the user.
+   *   - gentle:     after 30 min idle, propose 'continue where you left off'.
+   *                 (default)
+   *   - aggressive: detect context switches in real time, ask permission
+   *                 to file/categorize, surface the most relevant project.
+   */
+  conductorActivityLevel?: ConductorActivityLevel;
 };
 
 export async function getWorkspacePreferences(): Promise<WorkspacePreferences> {
@@ -51,4 +64,40 @@ export async function setPreferredLanguageAction(formData: FormData): Promise<vo
     })
     .where(eq(workspace.id, session.user.workspaceId));
   revalidatePath('/settings/profile');
+}
+
+const conductorActivityLevelSchema = z.enum(['off', 'passive', 'gentle', 'aggressive']);
+
+export async function setConductorActivityLevelAction(formData: FormData): Promise<void> {
+  const session = await auth();
+  if (!session) throw new Error('unauthenticated');
+  const raw = formData.get('conductorActivityLevel');
+  const parsed = conductorActivityLevelSchema.parse(typeof raw === 'string' ? raw : '');
+  const db = getDb();
+  await db
+    .update(workspace)
+    .set({
+      preferences: sql`jsonb_set(coalesce(${workspace.preferences}, '{}'::jsonb), '{conductorActivityLevel}', to_jsonb(${parsed}::text))`,
+    })
+    .where(eq(workspace.id, session.user.workspaceId));
+  revalidatePath('/settings/autonomy');
+}
+
+/**
+ * Server-readable accessor for the Conductor activity level. Used by the
+ * `device/event` reactor to decide whether (and how loudly) to react.
+ * Returns the default ('gentle') when the workspace has not configured
+ * the field yet.
+ */
+export async function getConductorActivityLevel(
+  workspaceId: string,
+): Promise<ConductorActivityLevel> {
+  const db = getDb();
+  const [row] = await db
+    .select({ preferences: workspace.preferences })
+    .from(workspace)
+    .where(eq(workspace.id, workspaceId))
+    .limit(1);
+  const prefs = (row?.preferences as WorkspacePreferences | null) ?? {};
+  return prefs.conductorActivityLevel ?? 'gentle';
 }

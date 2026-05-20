@@ -35,3 +35,85 @@ export async function readRepoFile(token: string, owner: string, repo: string, p
   if (Array.isArray(data) || data.type !== 'file') return null;
   return Buffer.from(data.content, 'base64').toString('utf8');
 }
+
+/**
+ * Ensure a webhook on the repo points at our public ingest URL.
+ *
+ * - Skips silently when `process.env.GITHUB_WEBHOOK_SECRET` or `webhookUrl`
+ *   is missing (local dev: no public URL ⇒ nothing useful to install).
+ * - Idempotent: scans existing hooks for the same URL and only creates
+ *   when absent. Updates the events list if it differs.
+ * - Asks for the broadest event set we can usefully consume — including
+ *   feature-branch pushes, reviews, security advisories, deployments.
+ *   Any failure is swallowed and reported in the return value (we never
+ *   want a failed hook install to break the link flow itself).
+ */
+export async function ensureRepoWebhook(
+  token: string,
+  owner: string,
+  repo: string,
+  webhookUrl: string,
+): Promise<{ ok: boolean; created: boolean; updated: boolean; reason?: string }> {
+  const secret = process.env.GITHUB_WEBHOOK_SECRET;
+  if (!secret) return { ok: false, created: false, updated: false, reason: 'no-secret' };
+  if (!webhookUrl) return { ok: false, created: false, updated: false, reason: 'no-url' };
+  const desiredEvents = [
+    'push',
+    'create',
+    'delete',
+    'pull_request',
+    'pull_request_review',
+    'pull_request_review_comment',
+    'commit_comment',
+    'issues',
+    'issue_comment',
+    'discussion',
+    'discussion_comment',
+    'release',
+    'workflow_run',
+    'check_run',
+    'deployment_status',
+    'star',
+    'fork',
+    'member',
+    'security_advisory',
+    'repository_vulnerability_alert',
+  ];
+  try {
+    const o = octokitForToken(token);
+    const { data: hooks } = await o.rest.repos.listWebhooks({ owner, repo });
+    const existing = hooks.find((h) => h.config?.url === webhookUrl);
+    if (!existing) {
+      await o.rest.repos.createWebhook({
+        owner,
+        repo,
+        config: { url: webhookUrl, content_type: 'json', secret, insecure_ssl: '0' },
+        events: desiredEvents,
+        active: true,
+      });
+      return { ok: true, created: true, updated: false };
+    }
+    // Update the event list if drifted (don't touch secret — it's write-only on GH).
+    const have = new Set(existing.events ?? []);
+    const want = new Set(desiredEvents);
+    const drift = want.size !== have.size || desiredEvents.some((e) => !have.has(e));
+    if (drift) {
+      await o.rest.repos.updateWebhook({
+        owner,
+        repo,
+        hook_id: existing.id,
+        events: desiredEvents,
+        active: true,
+      });
+      return { ok: true, created: false, updated: true };
+    }
+    return { ok: true, created: false, updated: false };
+  } catch (err) {
+    return {
+      ok: false,
+      created: false,
+      updated: false,
+      reason: err instanceof Error ? err.message.slice(0, 200) : 'unknown',
+    };
+  }
+}

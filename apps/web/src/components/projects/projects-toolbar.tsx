@@ -116,8 +116,9 @@ export function ProjectsToolbar({
             <Input
               value={filters.q}
               onChange={(e) => void setFilters({ q: e.target.value || null })}
-              placeholder="Search…"
+              placeholder="Search… (press / to focus)"
               className="h-8 w-44 pl-7 text-xs"
+              id="projects-search"
             />
           </div>
           <Button

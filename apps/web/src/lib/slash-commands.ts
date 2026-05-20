@@ -22,6 +22,41 @@ export const SLASH_COMMANDS: SlashCommand[] = [
         : 'Recall what you remember from the last few days.',
   },
   {
+    name: 'restore',
+    description: "I'm back — catch me up on where I left off",
+    expand: (rest) => {
+      const scope = rest.trim();
+      if (scope.length > 0) {
+        return `I'm back. Catch me up on ${scope}. Use \`recall\` to ground yourself, then summarize: where I left off, why, and the single smallest next step.`;
+      }
+      return "I'm back. Catch me up: what's the state across my active projects, what's blocked, and what's the single smallest next step I should take right now?";
+    },
+  },
+  {
+    name: 'decision',
+    description: 'Record a decision in the project log',
+    expand: (rest) =>
+      rest.trim().length > 0
+        ? `Record this as a decision in the most relevant project's decision log, with rationale and alternatives if obvious: ${rest.trim()}`
+        : 'Help me articulate and record a decision I just made. Ask one clarifying question first if needed.',
+  },
+  {
+    name: 'focus',
+    description: 'Set or inspect what I should focus on',
+    expand: (rest) =>
+      rest.trim().length > 0
+        ? `Set my current focus to: ${rest.trim()}. Update the focus engine and acknowledge briefly.`
+        : 'What should I focus on for the next hour? Consider momentum, blocked tasks, and leverage. Give me exactly one thing.',
+  },
+  {
+    name: 'act',
+    description: 'Take an action (subject to my autonomy policy)',
+    expand: (rest) =>
+      rest.trim().length > 0
+        ? `Take this action now, routing through the ACL: ${rest.trim()}. If it requires approval, post the ask. If it's auto, execute and report.`
+        : 'What action would have the highest leverage right now? Propose one and ask for approval.',
+  },
+  {
     name: 'notify',
     description: 'Send a notification to my devices',
     expand: (rest) =>

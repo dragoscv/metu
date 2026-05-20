@@ -1,6 +1,14 @@
 import { and, asc, desc, eq, inArray, sql, type SQL } from 'drizzle-orm';
 import { getDb } from '../client';
-import { githubRepoStats, integrationResource, project, projectLink } from '../schema';
+import {
+  adCampaign,
+  githubRepoStats,
+  integrationResource,
+  project,
+  projectLink,
+  socialPost,
+} from '../schema';
+import { timelineEvent } from '../schema/memory';
 
 export async function listProjectLinks(workspaceId: string, projectId: string) {
   const db = getDb();
@@ -211,6 +219,11 @@ export interface ProjectGithubStats {
   openPullRequests: number;
   commitsLast7d: number;
   commitsLast30d: number;
+  commitsAllLast7d: number;
+  commitsAllLast30d: number;
+  branchesActiveLast30d: number;
+  branchesTotal: number;
+  contributorsLast30d: number;
   mergedPrsLast30d: number;
   closedIssuesLast30d: number;
   currentStreakDays: number;
@@ -250,6 +263,11 @@ export async function listGithubRepoStatsForProject(
       openPullRequests: githubRepoStats.openPullRequests,
       commitsLast7d: githubRepoStats.commitsLast7d,
       commitsLast30d: githubRepoStats.commitsLast30d,
+      commitsAllLast7d: githubRepoStats.commitsAllLast7d,
+      commitsAllLast30d: githubRepoStats.commitsAllLast30d,
+      branchesActiveLast30d: githubRepoStats.branchesActiveLast30d,
+      branchesTotal: githubRepoStats.branchesTotal,
+      contributorsLast30d: githubRepoStats.contributorsLast30d,
       mergedPrsLast30d: githubRepoStats.mergedPrsLast30d,
       closedIssuesLast30d: githubRepoStats.closedIssuesLast30d,
       currentStreakDays: githubRepoStats.currentStreakDays,
@@ -279,6 +297,11 @@ export async function listGithubRepoStatsForProject(
     openPullRequests: r.openPullRequests,
     commitsLast7d: r.commitsLast7d,
     commitsLast30d: r.commitsLast30d,
+    commitsAllLast7d: r.commitsAllLast7d,
+    commitsAllLast30d: r.commitsAllLast30d,
+    branchesActiveLast30d: r.branchesActiveLast30d,
+    branchesTotal: r.branchesTotal,
+    contributorsLast30d: r.contributorsLast30d,
     mergedPrsLast30d: r.mergedPrsLast30d,
     closedIssuesLast30d: r.closedIssuesLast30d,
     currentStreakDays: r.currentStreakDays,
@@ -355,4 +378,227 @@ export async function listGithubStatsSummaryForProjects(
     });
   }
   return out;
+}
+
+export interface BranchActivityRow {
+  branch: string;
+  commits: number;
+  lastCommitAt: string | null;
+  isDefault: boolean;
+}
+
+/**
+ * Per-branch commit volume for a project's linked GitHub repos over the
+ * last 30 days. Aggregates from `timeline_event` rows where the webhook
+ * recorded a `branch` in the payload (commit.pushed + github.push).
+ *
+ * Returns top branches by commit count (capped at `limit`), default
+ * branch always included if it appears in the data.
+ */
+export async function listGithubBranchActivity(
+  workspaceId: string,
+  projectId: string,
+  limit = 8,
+): Promise<BranchActivityRow[]> {
+  const db = getDb();
+  // Find the default branch(es) for this project's repos so we can flag them.
+  const defaults = await db
+    .select({ defaultBranch: githubRepoStats.defaultBranch })
+    .from(githubRepoStats)
+    .innerJoin(projectLink, eq(projectLink.resourceId, githubRepoStats.resourceId))
+    .where(and(eq(projectLink.workspaceId, workspaceId), eq(projectLink.projectId, projectId)));
+  const defaultSet = new Set(defaults.map((d) => d.defaultBranch).filter(Boolean));
+
+  const rows = await db
+    .select({
+      branch: sql<string>`${timelineEvent.payload}->>'branch'`,
+      commits: sql<number>`count(*)::int`,
+      lastCommitAt: sql<Date>`max(${timelineEvent.occurredAt})`,
+    })
+    .from(timelineEvent)
+    .where(
+      and(
+        eq(timelineEvent.workspaceId, workspaceId),
+        eq(timelineEvent.projectId, projectId),
+        inArray(timelineEvent.kind, ['commit.pushed', 'github.push']),
+        sql`${timelineEvent.occurredAt} > now() - interval '30 days'`,
+        sql`${timelineEvent.payload}->>'branch' is not null`,
+      ),
+    )
+    .groupBy(sql`${timelineEvent.payload}->>'branch'`)
+    .orderBy(desc(sql<number>`count(*)`))
+    .limit(limit);
+
+  return rows
+    .filter((r) => r.branch && r.branch.length > 0)
+    .map((r) => ({
+      branch: r.branch,
+      commits: r.commits,
+      lastCommitAt: r.lastCommitAt ? new Date(r.lastCommitAt).toISOString() : null,
+      isDefault: defaultSet.has(r.branch),
+    }));
+}
+
+// ─── Unified social_post + ad_campaign upserts ─────────────────────────────
+// Per-platform sync functions all funnel through these so we never have to
+// re-implement the (workspaceId, platform, externalId) conflict logic.
+
+export interface UpsertSocialPostInput {
+  workspaceId: string;
+  integrationId: string;
+  platform: string;
+  externalId: string;
+  title?: string | null;
+  url?: string | null;
+  publishedAt?: Date | null;
+  metrics?: Record<string, unknown>;
+  metadata?: Record<string, unknown>;
+}
+
+export async function upsertSocialPost(input: UpsertSocialPostInput): Promise<string> {
+  const db = getDb();
+  const existing = await db
+    .select({ id: socialPost.id })
+    .from(socialPost)
+    .where(
+      and(
+        eq(socialPost.workspaceId, input.workspaceId),
+        eq(socialPost.platform, input.platform),
+        eq(socialPost.externalId, input.externalId),
+      ),
+    )
+    .limit(1);
+
+  if (existing[0]) {
+    await db
+      .update(socialPost)
+      .set({
+        integrationId: input.integrationId,
+        title: input.title ?? null,
+        url: input.url ?? null,
+        publishedAt: input.publishedAt ?? null,
+        metrics: input.metrics ?? {},
+        metadata: input.metadata ?? {},
+        lastSyncedAt: new Date(),
+      })
+      .where(and(eq(socialPost.workspaceId, input.workspaceId), eq(socialPost.id, existing[0].id)));
+    return existing[0].id;
+  }
+
+  const inserted = await db
+    .insert(socialPost)
+    .values({
+      workspaceId: input.workspaceId,
+      integrationId: input.integrationId,
+      platform: input.platform,
+      externalId: input.externalId,
+      title: input.title ?? null,
+      url: input.url ?? null,
+      publishedAt: input.publishedAt ?? null,
+      metrics: input.metrics ?? {},
+      metadata: input.metadata ?? {},
+    })
+    .returning();
+  return inserted[0]!.id;
+}
+
+/**
+ * Latest published social post per (integration, platform) for a workspace.
+ * Used by the dashboard observatory to anchor "social_posts" stream items
+ * to a real publishedAt rather than the integration's last sync time.
+ */
+export async function latestSocialPostsByIntegration(workspaceId: string) {
+  const db = getDb();
+  // DISTINCT ON (integration_id) — pick the row with greatest published_at
+  const rows = await db.execute(sql`
+    SELECT DISTINCT ON (integration_id)
+      integration_id AS "integrationId",
+      platform,
+      external_id   AS "externalId",
+      title,
+      url,
+      published_at  AS "publishedAt"
+    FROM social_post
+    WHERE workspace_id = ${workspaceId}
+      AND published_at IS NOT NULL
+    ORDER BY integration_id, published_at DESC NULLS LAST
+  `);
+  return rows as unknown as Array<{
+    integrationId: string;
+    platform: string;
+    externalId: string;
+    title: string | null;
+    url: string | null;
+    publishedAt: Date;
+  }>;
+}
+
+export interface UpsertAdCampaignInput {
+  workspaceId: string;
+  integrationId: string;
+  platform: string;
+  externalId: string;
+  name: string;
+  status?: string | null;
+  currency?: string | null;
+  spendTotal?: number;
+  spendLast7d?: number;
+  spendLast30d?: number;
+  impressionsLast30d?: number;
+  clicksLast30d?: number;
+  conversionsLast30d?: number;
+  startedAt?: Date | null;
+  endedAt?: Date | null;
+  metadata?: Record<string, unknown>;
+}
+
+export async function upsertAdCampaign(input: UpsertAdCampaignInput): Promise<string> {
+  const db = getDb();
+  const existing = await db
+    .select({ id: adCampaign.id })
+    .from(adCampaign)
+    .where(
+      and(
+        eq(adCampaign.workspaceId, input.workspaceId),
+        eq(adCampaign.platform, input.platform),
+        eq(adCampaign.externalId, input.externalId),
+      ),
+    )
+    .limit(1);
+
+  const data = {
+    integrationId: input.integrationId,
+    name: input.name,
+    status: input.status ?? null,
+    currency: input.currency ?? null,
+    spendTotal: input.spendTotal ?? 0,
+    spendLast7d: input.spendLast7d ?? 0,
+    spendLast30d: input.spendLast30d ?? 0,
+    impressionsLast30d: input.impressionsLast30d ?? 0,
+    clicksLast30d: input.clicksLast30d ?? 0,
+    conversionsLast30d: input.conversionsLast30d ?? 0,
+    startedAt: input.startedAt ?? null,
+    endedAt: input.endedAt ?? null,
+    metadata: input.metadata ?? {},
+    lastSyncedAt: new Date(),
+  };
+
+  if (existing[0]) {
+    await db
+      .update(adCampaign)
+      .set(data)
+      .where(and(eq(adCampaign.workspaceId, input.workspaceId), eq(adCampaign.id, existing[0].id)));
+    return existing[0].id;
+  }
+
+  const inserted = await db
+    .insert(adCampaign)
+    .values({
+      workspaceId: input.workspaceId,
+      platform: input.platform,
+      externalId: input.externalId,
+      ...data,
+    })
+    .returning();
+  return inserted[0]!.id;
 }

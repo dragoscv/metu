@@ -22,6 +22,7 @@ import {
 import { Card, EmptyState, Page, PageHeader } from '@metu/ui';
 import { ScrollText } from 'lucide-react';
 import { AuditToolbar } from '@/components/audit/audit-toolbar';
+import { KeyboardFocus } from '@/components/keyboard-focus';
 import { AuditList } from '@/components/audit/audit-list';
 import { AuditAclPanel } from '@/components/audit/audit-acl-panel';
 import { AuditCostPanel } from '@/components/audit/audit-cost-panel';
@@ -171,6 +172,7 @@ export default async function AuditPage({ searchParams }: PageProps) {
         statusFacets={statusFacets}
         runKindFacets={runKindFacets}
       />
+      <KeyboardFocus targetId="audit-search" />
 
       {summary.total === 0 &&
       tools.length === 0 &&

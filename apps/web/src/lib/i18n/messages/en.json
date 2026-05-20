@@ -1,0 +1,33 @@
+{
+  "nav": {
+    "getStarted": "Get started",
+    "resume": "Resume",
+    "restore": "Restore",
+    "now": "Now",
+    "focus": "Focus",
+    "streaks": "Streaks",
+    "notifications": "Notifications",
+    "metu": "METU",
+    "chat": "Chat",
+    "agents": "Agents",
+    "projects": "Projects",
+    "knowledge": "Knowledge",
+    "connect": "Connect",
+    "settings": "Settings"
+  },
+  "userMenu": {
+    "account": "Account",
+    "profile": "Profile",
+    "settings": "Settings",
+    "autonomy": "Autonomy",
+    "billing": "Billing",
+    "appearance": "Appearance",
+    "theme": "Theme",
+    "language": "Language",
+    "signOut": "Sign out",
+    "system": "System",
+    "light": "Light",
+    "dark": "Dark",
+    "matchOs": "Match OS"
+  }
+}

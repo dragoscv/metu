@@ -38,7 +38,7 @@
     "framer-motion": "catalog:",
     "inngest": "catalog:",
     "lucide-react": "catalog:",
-    "next": "catalog:",
+    "next": "^16.1.5",
     "next-auth": "catalog:",
     "nuqs": "catalog:",
     "react": "catalog:",
@@ -60,6 +60,7 @@
     "dotenv": "^17.4.2",
     "eslint": "catalog:",
     "eslint-config-next": "catalog:",
+    "eslint-plugin-react-hooks": "^7.1.1",
     "tailwindcss": "catalog:",
     "typescript": "catalog:",
     "vitest": "catalog:"

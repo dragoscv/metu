@@ -161,6 +161,11 @@ export const onGithubRepoStatsSync = inngest.createFunction(
         deletionsLast30d: snapshot.deletionsLast30d,
         mergedPrsLast30d: snapshot.mergedPrsLast30d,
         closedIssuesLast30d: snapshot.closedIssuesLast30d,
+        commitsAllLast7d: snapshot.commitsAllLast7d,
+        commitsAllLast30d: snapshot.commitsAllLast30d,
+        branchesActiveLast30d: snapshot.branchesActiveLast30d,
+        contributorsLast30d: snapshot.contributorsLast30d,
+        branchesTotal: snapshot.branchesTotal,
         currentStreakDays: snapshot.currentStreakDays,
         weeklyCommitHistogram: snapshot.weeklyCommitHistogram,
         topContributors: snapshot.topContributors as unknown as Record<string, unknown>[],
@@ -214,13 +219,36 @@ export const onGithubRepoStatsSync = inngest.createFunction(
       if (newCommits.length || newMerged.length || newClosed.length) {
         await step.run('timeline', async () => {
           const db = getDb();
+          // Idempotency — webhook handler may have already written commit.pushed
+          // rows for the same SHAs. Filter against existing rows in this
+          // workspace+project before insert. Cheap because we cap at 60 commits.
+          const candidateShas = newCommits.map((c) => c.sha).filter(Boolean) as string[];
+          const existingShas = new Set<string>();
+          if (candidateShas.length > 0) {
+            const { sql: rawSql } = await import('drizzle-orm');
+            const seen = await db
+              .select({ sha: rawSql<string>`payload->>'sha'` })
+              .from(timelineEvent)
+              .where(
+                and(
+                  eq(timelineEvent.workspaceId, workspaceId),
+                  eq(timelineEvent.projectId, projectId),
+                  eq(timelineEvent.kind, 'commit.pushed'),
+                  rawSql`payload->>'sha' = ANY(${candidateShas})`,
+                ),
+              );
+            for (const r of seen) if (r.sha) existingShas.add(r.sha);
+          }
           const rows: Array<typeof timelineEvent.$inferInsert> = [];
           for (const c of newCommits) {
+            if (c.sha && existingShas.has(c.sha)) continue;
+            const branchTag =
+              c.branch && c.branch !== snapshot.defaultBranch ? ` [${c.branch}]` : '';
             rows.push({
               workspaceId,
               projectId,
               kind: 'commit.pushed',
-              title: `${repoFullName} · ${c.message.slice(0, 80)}`,
+              title: `${repoFullName}${branchTag} · ${c.message.slice(0, 80)}`,
               body: c.url,
               importance: 0.5,
               occurredAt: c.authoredAt ? new Date(c.authoredAt) : new Date(),
@@ -228,6 +256,8 @@ export const onGithubRepoStatsSync = inngest.createFunction(
                 repo: repoFullName,
                 sha: c.sha,
                 authorLogin: c.authorLogin,
+                authorName: c.authorName,
+                branch: c.branch ?? null,
                 url: c.url,
               },
             });

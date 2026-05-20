@@ -32,9 +32,14 @@ export async function initNodeSentry(opts: InitNodeSentryOptions): Promise<void>
   if (!dsn) return;
 
   try {
-    // eslint-disable-next-line @typescript-eslint/ban-ts-comment
-    // @ts-ignore — optional peer; resolved at runtime only when present.
-    const Sentry = (await import('@sentry/node').catch(() => null)) as SentryNode | null;
+    // Optional peer dep — dynamic import with bundler-ignore magic comments.
+    // Module name is computed so TypeScript does not try to resolve it
+    // at type-check time (the package is intentionally not installed in
+    // every workspace).
+    const sentryModuleName = ['@sentry', 'node'].join('/');
+    const Sentry = (await import(
+      /* webpackIgnore: true */ /* turbopackIgnore: true */ sentryModuleName
+    ).catch(() => null)) as SentryNode | null;
     if (!Sentry?.init) {
       log.warn('sentry.init.skipped', {
         service: opts.service,

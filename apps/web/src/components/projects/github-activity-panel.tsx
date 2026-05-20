@@ -9,14 +9,16 @@ import { Badge, Card } from '@metu/ui';
 import {
   ArrowUpRight,
   Flame,
+  GitBranch,
   GitCommit,
   GitMerge,
   GitPullRequest,
   ListChecks,
   Star,
+  Users,
 } from 'lucide-react';
 import Link from 'next/link';
-import type { ProjectGithubStats } from '@metu/db/queries';
+import type { BranchActivityRow, ProjectGithubStats } from '@metu/db/queries';
 import { RefreshGithubStatsButton } from './refresh-github-stats-button';
 
 const HEATMAP_WEEKS = 26;
@@ -67,9 +69,11 @@ function CommitHeatmap({ histogram }: { histogram: number[] }) {
 export function GitHubActivityPanel({
   stats,
   projectId,
+  branchActivity = [],
 }: {
   stats: ProjectGithubStats[];
   projectId: string;
+  branchActivity?: BranchActivityRow[];
 }) {
   if (stats.length === 0) {
     return (
@@ -86,6 +90,11 @@ export function GitHubActivityPanel({
     (acc, s) => {
       acc.commits7d += s.commitsLast7d;
       acc.commits30d += s.commitsLast30d;
+      acc.commitsAll7d += s.commitsAllLast7d;
+      acc.commitsAll30d += s.commitsAllLast30d;
+      acc.branchesActive += s.branchesActiveLast30d;
+      acc.branchesTotal += s.branchesTotal;
+      acc.contributors += s.contributorsLast30d;
       acc.openPrs += s.openPullRequests;
       acc.openIssues += s.openIssues;
       acc.merged30d += s.mergedPrsLast30d;
@@ -97,6 +106,11 @@ export function GitHubActivityPanel({
     {
       commits7d: 0,
       commits30d: 0,
+      commitsAll7d: 0,
+      commitsAll30d: 0,
+      branchesActive: 0,
+      branchesTotal: 0,
+      contributors: 0,
       openPrs: 0,
       openIssues: 0,
       merged30d: 0,
@@ -114,9 +128,21 @@ export function GitHubActivityPanel({
       <div className="grid grid-cols-2 gap-3 md:grid-cols-4">
         <SummaryStat
           icon={<GitCommit className="h-4 w-4" />}
-          label="Commits 7d"
-          value={totals.commits7d}
-          hint={`${totals.commits30d} in 30d`}
+          label="Commits 7d (all branches)"
+          value={totals.commitsAll7d || totals.commits7d}
+          hint={`${totals.commitsAll30d || totals.commits30d} in 30d · ${totals.commits7d} on default`}
+        />
+        <SummaryStat
+          icon={<GitBranch className="h-4 w-4" />}
+          label="Active branches"
+          value={totals.branchesActive}
+          hint={`${totals.branchesTotal} total`}
+        />
+        <SummaryStat
+          icon={<Users className="h-4 w-4" />}
+          label="Contributors 30d"
+          value={totals.contributors}
+          hint={totals.contributors === 1 ? 'person' : 'people'}
         />
         <SummaryStat
           icon={<GitPullRequest className="h-4 w-4" />}
@@ -137,6 +163,32 @@ export function GitHubActivityPanel({
           hint={totals.streak === 1 ? 'day' : 'days'}
         />
       </div>
+
+      {branchActivity.length > 0 && (
+        <Card className="space-y-2">
+          <div className="flex items-center gap-1.5 text-[11px] uppercase tracking-wide text-[var(--color-fg-subtle)]">
+            <GitBranch className="h-3.5 w-3.5" />
+            Branch activity · last 30d
+          </div>
+          <div className="flex flex-wrap gap-1.5">
+            {branchActivity.map((b) => (
+              <span
+                key={b.branch}
+                className="bg-[var(--color-bg-elevated)]/40 inline-flex items-center gap-1.5 rounded-md border border-[var(--color-border)] px-2 py-1 text-[11px]"
+                title={b.lastCommitAt ? `last commit ${formatRelative(b.lastCommitAt)}` : undefined}
+              >
+                <span className="font-mono">{b.branch}</span>
+                {b.isDefault && (
+                  <Badge variant="neutral" size="xs">
+                    default
+                  </Badge>
+                )}
+                <span className="tabular-nums text-[var(--color-fg-subtle)]">{b.commits}</span>
+              </span>
+            ))}
+          </div>
+        </Card>
+      )}
 
       {stats.map((s) => (
         <Card key={s.repoFullName} className="space-y-3">
@@ -170,12 +222,25 @@ export function GitHubActivityPanel({
           </header>
 
           <div className="grid grid-cols-2 gap-2 md:grid-cols-5">
-            <RepoStat label="commits 7d" value={s.commitsLast7d} />
-            <RepoStat label="commits 30d" value={s.commitsLast30d} />
+            <RepoStat label="all 7d" value={s.commitsAllLast7d || s.commitsLast7d} />
+            <RepoStat label="all 30d" value={s.commitsAllLast30d || s.commitsLast30d} />
+            <RepoStat label="branches" value={s.branchesActiveLast30d} />
+            <RepoStat label="people" value={s.contributorsLast30d} />
             <RepoStat label="open PRs" value={s.openPullRequests} />
-            <RepoStat label="merged 30d" value={s.mergedPrsLast30d} />
-            <RepoStat label="open issues" value={s.openIssues} />
           </div>
+
+          {s.topContributors.length > 0 && (
+            <div className="flex flex-wrap items-center gap-1.5">
+              <span className="text-[10px] uppercase tracking-wide text-[var(--color-fg-subtle)]">
+                Top:
+              </span>
+              {s.topContributors.slice(0, 6).map((c) => (
+                <Badge key={c.login} variant="neutral" size="xs">
+                  {c.login} · {c.contributions}
+                </Badge>
+              ))}
+            </div>
+          )}
 
           <div className="flex items-end justify-between gap-3">
             <CommitHeatmap histogram={s.weeklyCommitHistogram} />

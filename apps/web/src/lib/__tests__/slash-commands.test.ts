@@ -12,9 +12,34 @@ describe('matchSlashCommands', () => {
   });
 
   it('filters by prefix of first word', () => {
-    expect(matchSlashCommands('/r').map((c) => c.name)).toEqual(['recall']);
+    expect(
+      matchSlashCommands('/re')
+        .map((c) => c.name)
+        .sort(),
+    ).toEqual(['recall', 'restore']);
     expect(matchSlashCommands('/no').map((c) => c.name)).toEqual(['notify']);
     expect(matchSlashCommands('/h').map((c) => c.name)).toEqual(['help']);
+    expect(matchSlashCommands('/de').map((c) => c.name)).toEqual(['decision']);
+    expect(matchSlashCommands('/f').map((c) => c.name)).toEqual(['focus']);
+    expect(matchSlashCommands('/a').map((c) => c.name)).toEqual(['act']);
+  });
+
+  it('expands /restore with no arg', () => {
+    expect(expandSlashCommand('/restore')).toMatch(/back/i);
+  });
+
+  it('expands /decision with arg', () => {
+    expect(expandSlashCommand('/decision use postgres for storage')).toMatch(
+      /decision.*use postgres/i,
+    );
+  });
+
+  it('expands /focus with arg', () => {
+    expect(expandSlashCommand('/focus ship the audit')).toMatch(/focus.*ship the audit/i);
+  });
+
+  it('expands /act with arg', () => {
+    expect(expandSlashCommand('/act remind me at 5pm')).toMatch(/remind me at 5pm/);
   });
 
   it('is case-insensitive on the prefix', () => {

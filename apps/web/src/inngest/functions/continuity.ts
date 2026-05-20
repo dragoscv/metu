@@ -427,7 +427,7 @@ export const continuityMorningPrewarm = inngest.createFunction(
   async ({ step, logger }) => {
     const stale = await step.run('list-stale-projects', async () => {
       const db = getDb();
-      const cutoff = new Date(Date.now() - 24 * 60 * 60 * 1000);
+      const cutoffIso = new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString();
       return db
         .select({ workspaceId: project.workspaceId, projectId: project.id })
         .from(project)
@@ -440,7 +440,7 @@ export const continuityMorningPrewarm = inngest.createFunction(
               select 1 from ${continuityBriefing} cb
               where cb.project_id = ${project.id}
                 and cb.workspace_id = ${project.workspaceId}
-                and cb.generated_at >= ${cutoff}
+                and cb.generated_at >= ${cutoffIso}::timestamptz
             )`,
           ),
         )

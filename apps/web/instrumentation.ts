@@ -47,14 +47,9 @@ async function maybeInitSentry(): Promise<void> {
   const dsn = process.env.SENTRY_DSN;
   if (!dsn) return;
   try {
-    // Dynamic import so the package can be absent in workspaces that don't
-    // observe via Sentry. Suppress the "missing module" type error — the
-    // resolution happens at runtime only when the env var is set.
-    // eslint-disable-next-line @typescript-eslint/ban-ts-comment
-    // @ts-ignore — optional peer
-    const Sentry = (await import('@sentry/nextjs').catch(() => null)) as {
-      init: (opts: Record<string, unknown>) => void;
-    } | null;
+    const Sentry = (await import(
+      /* webpackIgnore: true */ /* turbopackIgnore: true */ '@sentry/nextjs'
+    ).catch(() => null)) as { init: (opts: Record<string, unknown>) => void } | null;
     if (!Sentry?.init) {
       const { log } = await import('./src/lib/logger');
       log.warn('sentry.init.skipped', {

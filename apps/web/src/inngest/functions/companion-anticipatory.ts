@@ -20,7 +20,7 @@
  * (b) anticipatory personas should ride at a faster cadence than backstop
  *     (5 min vs 15 min) so the user feels them.
  */
-import { and, eq, inArray, sql } from 'drizzle-orm';
+import { and, eq, gte, inArray, sql } from 'drizzle-orm';
 import { getDb } from '@metu/db';
 import { agentPolicy, persona, timelineEvent } from '@metu/db/schema';
 import { inngest } from '../client';
@@ -67,7 +67,7 @@ export const companionAgentAnticipatory = inngest.createFunction(
         .where(
           and(
             inArray(timelineEvent.workspaceId, workspaceIds),
-            sql`${timelineEvent.occurredAt} >= ${since}`,
+            gte(timelineEvent.occurredAt, since),
           ),
         );
       return recent.map((r) => r.workspaceId);

@@ -6,6 +6,7 @@ import { ArrowLeft, ChevronRight, ChevronsLeft, ChevronsRight, Plus, X } from 'l
 import { useEffect, useState, useTransition } from 'react';
 import { Button, cn } from '@metu/ui';
 import { archiveConversationAction, createSideChatAction } from '@/app/actions/conductor';
+import { useT } from '@/lib/i18n/provider';
 import { NotificationsBell } from './notifications-bell';
 import { SidebarAutonomyPausedChip } from './sidebar-autonomy-paused-chip';
 import { useSidebar } from './sidebar/sidebar-provider';
@@ -320,15 +321,13 @@ function LeafItem({
 }) {
   const active = isLeafActive(pathname, leaf);
   const Icon = leaf.icon;
+  const t = useT('nav');
+  const label = leaf.i18nKey ? (t(leaf.i18nKey as never) as string) : leaf.label;
   const showBadge = typeof badge === 'number' && badge > 0;
   return (
     <Link
       href={leaf.href}
-      // Next.js 16 opt-in: lets the browser run a View Transition for
-      // this navigation so shared `viewTransitionName` slots (page,
-      // page-title) morph between sibling routes.
-      {...({ viewTransition: true } as Record<string, unknown>)}
-      title={collapsed ? `${leaf.label}${showBadge ? ` (${badge})` : ''}` : undefined}
+      title={collapsed ? `${label}${showBadge ? ` (${badge})` : ''}` : undefined}
       className={cn(
         'relative flex items-center gap-2.5 rounded-md px-2.5 py-2 text-sm transition-colors',
         active
@@ -344,7 +343,7 @@ function LeafItem({
         />
       )}
       <Icon className="h-4 w-4 shrink-0" />
-      {!collapsed && <span className="truncate">{leaf.label}</span>}
+      {!collapsed && <span className="truncate">{label}</span>}
       {showBadge && !collapsed && <NavBadge count={badge} />}
       {showBadge && collapsed && (
         <span
@@ -380,12 +379,14 @@ function GroupRow({
 }) {
   const groupActive = isGroupActive(pathname, group);
   const Icon = group.icon;
+  const t = useT('nav');
+  const label = group.i18nKey ? (t(group.i18nKey as never) as string) : group.label;
   const showBadge = badge > 0;
   return (
     <button
       type="button"
       onClick={onClick}
-      title={collapsed ? `${group.label}${showBadge ? ` (${badge})` : ''}` : undefined}
+      title={collapsed ? `${label}${showBadge ? ` (${badge})` : ''}` : undefined}
       className={cn(
         'relative flex w-full cursor-pointer items-center gap-2.5 rounded-md px-2.5 py-2 text-sm transition-colors',
         groupActive
@@ -403,7 +404,7 @@ function GroupRow({
       <Icon className="h-4 w-4 shrink-0" />
       {!collapsed && (
         <>
-          <span className="flex-1 truncate text-left">{group.label}</span>
+          <span className="flex-1 truncate text-left">{label}</span>
           {showBadge && <NavBadge count={badge} />}
           <ChevronRight className="h-3.5 w-3.5 shrink-0 text-[var(--color-fg-subtle)]" />
         </>

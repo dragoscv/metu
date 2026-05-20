@@ -84,7 +84,8 @@ export function TimelineToolbar({ kindFacets, projects }: Props) {
 
       <div className="flex flex-wrap items-center gap-2">
         <Input
-          placeholder="Search title or body…"
+          id="timeline-search"
+          placeholder="Search title or body…  (press / to focus)"
           value={filters.q}
           onChange={(e) => setFilters({ q: e.target.value })}
           className="h-9 w-64"

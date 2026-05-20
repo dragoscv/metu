@@ -3,6 +3,7 @@ import { notFound, redirect } from 'next/navigation';
 import {
   getProject,
   listCaptures,
+  listGithubBranchActivity,
   listGithubRepoStatsForProject,
   listProjectDecisions,
   listProjectLinks,
@@ -48,14 +49,16 @@ export default async function ProjectPage({ params }: PageProps) {
   const proj = await getProject(session.user.workspaceId, id);
   if (!proj) notFound();
 
-  const [tasks, decisions, links, githubStats, briefing, captures] = await Promise.all([
-    listProjectTasks(session.user.workspaceId, id),
-    listProjectDecisions(session.user.workspaceId, id),
-    listProjectLinks(session.user.workspaceId, id),
-    listGithubRepoStatsForProject(session.user.workspaceId, id),
-    getLatestBriefing(id),
-    listCaptures({ workspaceId: session.user.workspaceId, projectId: id, limit: 8 }),
-  ]);
+  const [tasks, decisions, links, githubStats, branchActivity, briefing, captures] =
+    await Promise.all([
+      listProjectTasks(session.user.workspaceId, id),
+      listProjectDecisions(session.user.workspaceId, id),
+      listProjectLinks(session.user.workspaceId, id),
+      listGithubRepoStatsForProject(session.user.workspaceId, id),
+      listGithubBranchActivity(session.user.workspaceId, id),
+      getLatestBriefing(id),
+      listCaptures({ workspaceId: session.user.workspaceId, projectId: id, limit: 8 }),
+    ]);
   const openTasks = tasks.filter((t) => t.status !== 'done' && t.status !== 'dropped');
   const doneTasks = tasks.filter((t) => t.status === 'done');
   const meta = (proj.metadata ?? {}) as { color?: string; stack?: string[] };
@@ -161,7 +164,7 @@ export default async function ProjectPage({ params }: PageProps) {
             </span>
           }
         >
-          <GitHubActivityPanel stats={githubStats} projectId={id} />
+          <GitHubActivityPanel stats={githubStats} projectId={id} branchActivity={branchActivity} />
         </PageSection>
       )}
 

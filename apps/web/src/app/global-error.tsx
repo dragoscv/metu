@@ -71,8 +71,8 @@ export default function GlobalError({
   };
   const primaryBtn: React.CSSProperties = {
     ...btn,
-    background: '#7c3aed',
-    border: '1px solid #7c3aed',
+    background: '#0e7490',
+    border: '1px solid #0e7490',
     color: '#fff',
   };
 

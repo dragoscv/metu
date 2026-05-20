@@ -182,6 +182,24 @@ export async function handleSocket(
           payload: ev.payload,
           occurredAt: ev.occurredAt ? new Date(ev.occurredAt) : new Date(),
         });
+        // Best-effort fan-out to web for timeline_event mirror + Conductor.
+        const url = process.env.WEB_INTERNAL_URL;
+        const secret = process.env.HUB_INTERNAL_SECRET;
+        if (url && secret) {
+          fetch(`${url.replace(/\/$/, '')}/api/internal/hub/device-event`, {
+            method: 'POST',
+            headers: { 'content-type': 'application/json', 'x-hub-secret': secret },
+            body: JSON.stringify({
+              workspaceId: conn.workspaceId,
+              deviceId: conn.deviceId,
+              kind: ev.kind,
+              payload: ev.payload,
+              occurredAt: ev.occurredAt,
+            }),
+          }).catch(() => {
+            /* fire-and-forget; hub is not blocked by web availability */
+          });
+        }
         break;
       }
       case 'presence': {

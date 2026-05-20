@@ -44,7 +44,7 @@ const defaults = {
 
   // Local object storage (MinIO) — wire S3 SDK to it via these
   GCS_BUCKET: 'metu-uploads',
-  S3_ENDPOINT: 'http://localhost:9000',
+  S3_ENDPOINT: 'http://localhost:24897',
   S3_ACCESS_KEY: 'metu',
   S3_SECRET_KEY: 'metu-local-password',
   S3_REGION: 'us-east-1',
@@ -52,9 +52,9 @@ const defaults = {
   STORAGE_DRIVER: 's3-local', // app reads this to pick MinIO over GCS
 
   // Upstash-compatible REST proxy → local redis
-  UPSTASH_REDIS_REST_URL: 'http://localhost:8079',
+  UPSTASH_REDIS_REST_URL: 'http://localhost:24899',
   UPSTASH_REDIS_REST_TOKEN: 'metu-local-token',
-  REDIS_URL: 'redis://localhost:6379',
+  REDIS_URL: 'redis://localhost:24896',
 
   // Inngest dev server (no signing key needed in dev)
   INNGEST_DEV: '1',
@@ -63,7 +63,7 @@ const defaults = {
   INNGEST_SIGNING_KEY: '',
 
   // SMTP (mailpit)
-  SMTP_URL: 'smtp://localhost:1025',
+  SMTP_URL: 'smtp://localhost:24898',
   EMAIL_FROM: 'metu <noreply@localhost>',
 
   // NOTE: AI provider API keys (Anthropic / OpenAI / Google / Azure) are

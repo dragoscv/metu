@@ -43,6 +43,8 @@ export function NotificationPrefsForm({ initial }: { initial: NotificationPrefs 
       const r = await updateNotificationPrefsAction({
         quietHours: state.quietHours,
         mutedChannels: state.mutedChannels,
+        mutedSources: state.mutedSources,
+        digestEmail: state.digestEmail,
       });
       if (r.ok) toast.success('Notification preferences saved');
       else toast.error(r.error);
@@ -76,6 +78,94 @@ export function NotificationPrefsForm({ initial }: { initial: NotificationPrefs 
               </label>
             );
           })}
+        </div>
+      </Card>
+
+      <Card>
+        <CardTitle>Daily digest email</CardTitle>
+        <label className="mt-3 flex items-center gap-3 rounded-md border border-[var(--color-border)] px-3 py-2">
+          <input
+            type="checkbox"
+            checked={state.digestEmail}
+            onChange={(e) => setState((s) => ({ ...s, digestEmail: e.target.checked }))}
+          />
+          <div className="flex-1">
+            <div className="text-sm font-medium">Send me the 7am digest</div>
+            <div className="text-xs text-[var(--color-fg-subtle)]">
+              A morning summary of yesterday’s top events, pending proposals, and active projects.
+              Workspace owner only.
+            </div>
+          </div>
+          <span className="text-xs uppercase tracking-wide text-[var(--color-fg-subtle)]">
+            {state.digestEmail ? 'On' : 'Off'}
+          </span>
+        </label>
+      </Card>
+
+      <Card>
+        <CardTitle>Mute sources</CardTitle>
+        <p className="text-sm text-[var(--color-fg-subtle)]">
+          Block delivery from a specific noise source by prefix. e.g.
+          <code className="mx-1 rounded bg-[var(--color-bg-elevated)] px-1 text-xs">
+            integration:github
+          </code>
+          mutes all GitHub webhooks;
+          <code className="mx-1 rounded bg-[var(--color-bg-elevated)] px-1 text-xs">
+            device.vscode
+          </code>
+          mutes everything from VS Code. Critical alerts always go through.
+        </p>
+        <div className="mt-3 space-y-2">
+          {state.mutedSources.length === 0 ? (
+            <p className="text-xs text-[var(--color-fg-subtle)]">No sources muted.</p>
+          ) : (
+            <ul className="flex flex-wrap gap-1.5">
+              {state.mutedSources.map((s) => (
+                <li
+                  key={s}
+                  className="inline-flex items-center gap-1.5 rounded-md border border-[var(--color-border)] bg-[var(--color-bg-elevated)] px-2 py-1 text-xs"
+                >
+                  <code>{s}</code>
+                  <button
+                    type="button"
+                    aria-label={`Unmute ${s}`}
+                    className="text-[var(--color-fg-subtle)] hover:text-[var(--color-fg)]"
+                    onClick={() =>
+                      setState((st) => ({
+                        ...st,
+                        mutedSources: st.mutedSources.filter((x) => x !== s),
+                      }))
+                    }
+                  >
+                    ×
+                  </button>
+                </li>
+              ))}
+            </ul>
+          )}
+          <form
+            className="flex gap-2"
+            onSubmit={(e) => {
+              e.preventDefault();
+              const f = e.currentTarget;
+              const input = f.elements.namedItem('src') as HTMLInputElement | null;
+              const v = input?.value.trim();
+              if (!v) return;
+              setState((st) =>
+                st.mutedSources.includes(v) ? st : { ...st, mutedSources: [...st.mutedSources, v] },
+              );
+              if (input) input.value = '';
+            }}
+          >
+            <input
+              name="src"
+              className={inputCls}
+              placeholder="e.g. integration:github or device.vscode"
+            />
+            <Button type="submit" variant="outline">
+              Add
+            </Button>
+          </form>
         </div>
       </Card>
 

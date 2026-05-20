@@ -44,13 +44,11 @@ export function availabilityFor(kind: IntegrationKind): ConnectAvailability {
   const declared = CAPS[kind]?.methods ?? ['token'];
   const available: ConnectMethod[] = [];
 
-  // web-oauth: env-gated by client_id + secret in WEB_OAUTH config
+  // web-oauth: surface whenever a config exists. Effective credentials may
+  // come from env OR from per-workspace DB-stored OAuth apps; the start
+  // route resolves them lazily and surfaces a clear error if neither is set.
   const webCfg = WEB_OAUTH[kind];
-  if (webCfg) {
-    const hasId = !!process.env[webCfg.clientIdEnv];
-    const hasSecret = !!process.env[webCfg.clientSecretEnv];
-    if (hasId && hasSecret) available.push('web-oauth');
-  }
+  if (webCfg) available.push('web-oauth');
 
   // device-flow: env-gated by client_id only (no secret)
   if (declared.includes('device-flow')) {

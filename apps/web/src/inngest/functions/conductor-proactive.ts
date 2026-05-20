@@ -55,6 +55,63 @@ async function notRecentlyTriggered(workspaceId: string, subject: string): Promi
   return !hit;
 }
 
+/**
+ * Cheap "what is the user probably working on" lookup. Returns up to
+ * 3 active projects ordered by most recent meaningful activity, with a
+ * coarse name-match boost when `hint` is provided (case-insensitive
+ * substring match against `project.name`). Used by the device-event
+ * reactor's aggressive branch to surface the most relevant project on
+ * a context switch.
+ */
+export async function findRelevantProjects(
+  workspaceId: string,
+  hint?: string | null,
+): Promise<Array<{ id: string; name: string; lastMeaningfulActivityAt: Date | null }>> {
+  const db = getDb();
+  const rows = await db
+    .select({
+      id: project.id,
+      name: project.name,
+      metadata: project.metadata,
+      lastMeaningfulActivityAt: project.lastMeaningfulActivityAt,
+    })
+    .from(project)
+    .where(
+      and(
+        eq(project.workspaceId, workspaceId),
+        eq(project.status, 'active'),
+        isNull(project.deletedAt),
+        isNotNull(project.lastMeaningfulActivityAt),
+      ),
+    )
+    .orderBy(desc(project.lastMeaningfulActivityAt))
+    .limit(20);
+  type Row = (typeof rows)[number];
+  const stripMeta = (r: Row) => ({
+    id: r.id,
+    name: r.name,
+    lastMeaningfulActivityAt: r.lastMeaningfulActivityAt,
+  });
+  if (!hint) return rows.slice(0, 3).map(stripMeta);
+  const needle = hint.toLowerCase();
+  // Score: 0 = matches a known repo identifier, 1 = name substring match,
+  // 2 = no match (fall back to recency). Repo identifiers come from
+  // `project.metadata.repos[]` (set by the project edit form / GitHub
+  // integration link). Match by suffix so 'metu' matches 'owner/metu'.
+  function scoreFor(r: Row): number {
+    const meta = (r.metadata ?? {}) as { repos?: unknown };
+    const repos = Array.isArray(meta.repos) ? meta.repos : [];
+    for (const repo of repos) {
+      if (typeof repo !== 'string') continue;
+      const v = repo.toLowerCase();
+      if (v === needle || v.endsWith(`/${needle}`) || needle.endsWith(`/${v}`)) return 0;
+    }
+    return r.name.toLowerCase().includes(needle) ? 1 : 2;
+  }
+  const scored = rows.map((r) => ({ r, s: scoreFor(r) })).sort((a, b) => a.s - b.s);
+  return scored.slice(0, 3).map(({ r }) => stripMeta(r));
+}
+
 export const conductorProactiveCron = inngest.createFunction(
   {
     id: 'conductor-proactive-cron',

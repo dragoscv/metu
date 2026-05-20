@@ -16,6 +16,7 @@ import { open as openUrl } from '@tauri-apps/plugin-shell';
 import type { AuthState } from './auth';
 import { executeDeviceTool } from './device-tools';
 import { pushHubNotification } from './hub-notifications';
+import { pushAwareness } from './awareness';
 
 export type HubStatus = 'idle' | 'connecting' | 'open' | 'closed' | 'error';
 
@@ -135,6 +136,28 @@ export function useHubConnection(auth: AuthState | null): HubHandle {
               /* ignore — user can still see the toast */
             }
           }
+          return;
+        }
+        if (m.type === 'event.timeline') {
+          const t = m as {
+            kind: string;
+            title: string;
+            payload?: { sourceDeviceId?: string; deviceId?: string };
+            occurredAt?: string;
+          };
+          // Skip our own events — fingerprint matches the ws hello.kind
+          // mapping in the hub registry, which echoes deviceId for the
+          // originating connection. Without a perfect device-id round-trip,
+          // we suppress only by deviceId === fingerprint stored locally.
+          const own = localStorage.getItem('metu.companion.fingerprint') ?? '';
+          const src = t.payload?.sourceDeviceId ?? t.payload?.deviceId ?? '';
+          if (src && own && src === own) return;
+          pushAwareness({
+            kind: t.kind,
+            title: t.title,
+            sourceDeviceId: src,
+            occurredAt: t.occurredAt ? new Date(t.occurredAt).getTime() : Date.now(),
+          });
           return;
         }
         if (m.type === 'tool.invoke') {

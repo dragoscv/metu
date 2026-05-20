@@ -163,6 +163,24 @@ export async function addProjectLinkAction(input: AddLinkInput) {
           })
           .catch(() => {});
       }
+
+      // Auto-install a webhook so we get real-time push / PR / issue events
+      // (and the broadest event taxonomy we can consume — see
+      // ensureRepoWebhook). Skipped silently when no public URL is set.
+      const baseUrl = process.env.NEXT_PUBLIC_APP_URL ?? process.env.WEBHOOK_PUBLIC_URL ?? null;
+      if (baseUrl) {
+        await inngest
+          .send({
+            name: 'github/repo.webhook.ensure',
+            data: {
+              workspaceId: wsId,
+              integrationId: parsed.data.resource.integrationId,
+              repoFullName: parsed.data.resource.externalId,
+              webhookUrl: `${baseUrl.replace(/\/$/, '')}/api/webhooks/github`,
+            },
+          })
+          .catch(() => {});
+      }
     }
 
     return { ok: true as const, id: link!.id };
@@ -215,4 +233,62 @@ export async function removeProjectLinkByUrlAction(input: { projectId: string; u
   revalidatePath('/projects');
   revalidatePath(`/projects/${input.projectId}`);
   return { ok: true as const };
+}
+
+/**
+ * Manually re-sync every linked GitHub repo for a project. Fans out one
+ * `github/stats.sync.repo` event per repo. Useful when the snapshot
+ * looks stale (e.g. webhook was disabled or `NEXT_PUBLIC_APP_URL` was
+ * unset when the link was added).
+ */
+export async function reindexProjectGithubLinksAction(projectId: string) {
+  const session = await auth();
+  if (!session) return { ok: false as const, error: 'Unauthenticated' };
+  const wsId = session.user.workspaceId;
+  if (!(await ownedProject(wsId, projectId)))
+    return { ok: false as const, error: 'Project not found' };
+  const db = getDb();
+  const rows = await db
+    .select({
+      resourceId: integrationResource.id,
+      integrationId: integrationResource.integrationId,
+      externalId: integrationResource.externalId,
+    })
+    .from(projectLink)
+    .innerJoin(
+      integrationResource,
+      and(
+        eq(projectLink.resourceId, integrationResource.id),
+        eq(projectLink.workspaceId, integrationResource.workspaceId),
+      ),
+    )
+    .where(
+      and(
+        eq(projectLink.workspaceId, wsId),
+        eq(projectLink.projectId, projectId),
+        eq(projectLink.provider, 'github'),
+        eq(projectLink.kind, 'repo'),
+      ),
+    );
+
+  let fired = 0;
+  for (const r of rows) {
+    if (!r.integrationId) continue;
+    await inngest
+      .send({
+        name: 'github/stats.sync.repo',
+        data: {
+          workspaceId: wsId,
+          integrationId: r.integrationId,
+          resourceId: r.resourceId,
+          repoFullName: r.externalId,
+          reason: 'manual-reindex',
+        },
+      })
+      .catch(() => {});
+    fired += 1;
+  }
+
+  revalidatePath(`/projects/${projectId}`);
+  return { ok: true as const, fired };
 }

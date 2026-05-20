@@ -108,6 +108,43 @@ export const WEB_OAUTH: Partial<Record<IntegrationKind, WebOauthConfig>> = {
     scope: 'read_write',
     pkce: false,
   },
+  reddit: {
+    clientIdEnv: 'REDDIT_OAUTH_CLIENT_ID',
+    clientSecretEnv: 'REDDIT_OAUTH_CLIENT_SECRET',
+    authorizeUrl: 'https://www.reddit.com/api/v1/authorize',
+    tokenUrl: 'https://www.reddit.com/api/v1/access_token',
+    scope: 'identity history read mysubreddits',
+    pkce: false,
+    extraAuthParams: { duration: 'permanent' },
+  },
+  twitter: {
+    clientIdEnv: 'TWITTER_OAUTH_CLIENT_ID',
+    clientSecretEnv: 'TWITTER_OAUTH_CLIENT_SECRET',
+    authorizeUrl: 'https://twitter.com/i/oauth2/authorize',
+    tokenUrl: 'https://api.twitter.com/2/oauth2/token',
+    scope: 'tweet.read users.read offline.access',
+    pkce: true,
+  },
+  youtube: {
+    clientIdEnv: 'GOOGLE_OAUTH_CLIENT_ID',
+    clientSecretEnv: 'GOOGLE_OAUTH_CLIENT_SECRET',
+    authorizeUrl: 'https://accounts.google.com/o/oauth2/v2/auth',
+    tokenUrl: 'https://oauth2.googleapis.com/token',
+    scope:
+      'openid email profile https://www.googleapis.com/auth/youtube.readonly https://www.googleapis.com/auth/yt-analytics.readonly',
+    pkce: true,
+    extraAuthParams: { access_type: 'offline', prompt: 'consent' },
+  },
+  instagram: {
+    // Instagram Basic Display API. Tokens are long-lived (60d) but require
+    // periodic refresh via /refresh_access_token (handled lazily).
+    clientIdEnv: 'INSTAGRAM_OAUTH_CLIENT_ID',
+    clientSecretEnv: 'INSTAGRAM_OAUTH_CLIENT_SECRET',
+    authorizeUrl: 'https://api.instagram.com/oauth/authorize',
+    tokenUrl: 'https://api.instagram.com/oauth/access_token',
+    scope: 'user_profile,user_media',
+    pkce: false,
+  },
 };
 
 export function webOauthConfig(

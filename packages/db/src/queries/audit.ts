@@ -3,7 +3,7 @@
  * observability page (apps/web /audit). Joins lightly to `agentRun`
  * and `conversation` so the UI can show "what triggered this".
  */
-import { and, desc, eq, ilike, inArray, or, sql, type SQL } from 'drizzle-orm';
+import { and, desc, eq, gte, ilike, inArray, or, sql, type SQL } from 'drizzle-orm';
 import { getDb } from '../client';
 import { toolCall, agentRun, conversation } from '../schema';
 
@@ -47,7 +47,7 @@ export async function listToolCalls({
     conditions.push(sql`${toolCall.status} = ANY(${statuses}::text[])`);
   if (runKinds && runKinds.length > 0)
     conditions.push(sql`${agentRun.kind} = ANY(${runKinds}::text[])`);
-  if (since) conditions.push(sql`${toolCall.requestedAt} >= ${since}`);
+  if (since) conditions.push(gte(toolCall.requestedAt, since));
   if (search && search.trim()) {
     const q = `%${search.trim()}%`;
     const orClause = or(ilike(toolCall.tool, q), ilike(toolCall.error, q));
@@ -131,7 +131,7 @@ export async function exportToolCalls({
   if (tools && tools.length > 0) conditions.push(inArray(toolCall.tool, tools));
   if (statuses && statuses.length > 0)
     conditions.push(sql`${toolCall.status} = ANY(${statuses}::text[])`);
-  if (since) conditions.push(sql`${toolCall.requestedAt} >= ${since}`);
+  if (since) conditions.push(gte(toolCall.requestedAt, since));
   if (search && search.trim()) {
     const q = `%${search.trim()}%`;
     const orClause = or(ilike(toolCall.tool, q), ilike(toolCall.error, q));
@@ -174,7 +174,7 @@ export async function exportToolCalls({
 export async function toolCallToolFacets(workspaceId: string, since?: Date | null) {
   const db = getDb();
   const conds: SQL[] = [eq(toolCall.workspaceId, workspaceId)];
-  if (since) conds.push(sql`${toolCall.requestedAt} >= ${since}`);
+  if (since) conds.push(gte(toolCall.requestedAt, since));
   const rows = await db
     .select({ tool: toolCall.tool, count: sql<number>`count(*)::int` })
     .from(toolCall)
@@ -187,7 +187,7 @@ export async function toolCallToolFacets(workspaceId: string, since?: Date | nul
 export async function toolCallStatusFacets(workspaceId: string, since?: Date | null) {
   const db = getDb();
   const conds: SQL[] = [eq(toolCall.workspaceId, workspaceId)];
-  if (since) conds.push(sql`${toolCall.requestedAt} >= ${since}`);
+  if (since) conds.push(gte(toolCall.requestedAt, since));
   const rows = await db
     .select({ status: toolCall.status, count: sql<number>`count(*)::int` })
     .from(toolCall)
@@ -206,7 +206,7 @@ export async function toolCallStatusFacets(workspaceId: string, since?: Date | n
 export async function toolCallRunKindFacets(workspaceId: string, since?: Date | null) {
   const db = getDb();
   const conds: SQL[] = [eq(toolCall.workspaceId, workspaceId)];
-  if (since) conds.push(sql`${toolCall.requestedAt} >= ${since}`);
+  if (since) conds.push(gte(toolCall.requestedAt, since));
   const rows = await db
     .select({
       kind: sql<string>`coalesce(${agentRun.kind}, 'manual')`,
@@ -237,7 +237,7 @@ export async function agentRunSummary(workspaceId: string, since: Date) {
       cost: sql<number>`coalesce(sum(${agentRun.costUsd}), 0)::float8`,
     })
     .from(agentRun)
-    .where(and(eq(agentRun.workspaceId, workspaceId), sql`${agentRun.startedAt} >= ${since}`))
+    .where(and(eq(agentRun.workspaceId, workspaceId), gte(agentRun.startedAt, since)))
     .groupBy(agentRun.status)
     .orderBy(desc(sql`count(*)`));
   return rows.map((r) => ({
@@ -258,7 +258,7 @@ export async function toolCallSummary(workspaceId: string, since: Date) {
       cost: sql<number>`coalesce(sum(${toolCall.actualCostUsd}), 0)::float8`,
     })
     .from(toolCall)
-    .where(and(eq(toolCall.workspaceId, workspaceId), sql`${toolCall.requestedAt} >= ${since}`));
+    .where(and(eq(toolCall.workspaceId, workspaceId), gte(toolCall.requestedAt, since)));
   return agg ?? { total: 0, failed: 0, awaiting: 0, cost: 0 };
 }
 
@@ -275,7 +275,7 @@ export async function attentionToolCallCount(workspaceId: string, since: Date) {
       n: sql<number>`count(*) filter (where ${toolCall.status} in ('failed', 'awaiting_approval'))::int`,
     })
     .from(toolCall)
-    .where(and(eq(toolCall.workspaceId, workspaceId), sql`${toolCall.requestedAt} >= ${since}`));
+    .where(and(eq(toolCall.workspaceId, workspaceId), gte(toolCall.requestedAt, since)));
   return row?.n ?? 0;
 }
 
@@ -294,7 +294,7 @@ export async function toolCallDailyCost(workspaceId: string, since: Date) {
       calls: sql<number>`count(*)::int`,
     })
     .from(toolCall)
-    .where(and(eq(toolCall.workspaceId, workspaceId), sql`${toolCall.requestedAt} >= ${since}`))
+    .where(and(eq(toolCall.workspaceId, workspaceId), gte(toolCall.requestedAt, since)))
     .groupBy(sql`date_trunc('day', ${toolCall.requestedAt})`);
 
   const byDay = new Map<string, { cost: number; calls: number }>();
@@ -335,7 +335,7 @@ export async function toolCallTopByCost(workspaceId: string, since: Date, limit 
     .where(
       and(
         eq(toolCall.workspaceId, workspaceId),
-        sql`${toolCall.requestedAt} >= ${since}`,
+        gte(toolCall.requestedAt, since),
         sql`${toolCall.actualCostUsd} > 0`,
       ),
     )
@@ -373,7 +373,7 @@ export async function toolCallByAclMode(workspaceId: string, since: Date) {
       maxCost: sql<number>`coalesce(max(${toolCall.actualCostUsd}), 0)::float8`,
     })
     .from(toolCall)
-    .where(and(eq(toolCall.workspaceId, workspaceId), sql`${toolCall.requestedAt} >= ${since}`))
+    .where(and(eq(toolCall.workspaceId, workspaceId), gte(toolCall.requestedAt, since)))
     .groupBy(toolCall.tool, toolCall.aclMode)
     .orderBy(desc(sql`coalesce(sum(${toolCall.actualCostUsd}), 0)`), desc(sql`count(*)`));
   return rows;
@@ -414,7 +414,7 @@ export async function toolCallAclWarnings(params: {
     .where(
       and(
         eq(toolCall.workspaceId, workspaceId),
-        sql`${toolCall.requestedAt} >= ${since}`,
+        gte(toolCall.requestedAt, since),
         sql`${toolCall.aclMode} in ('ask', 'auto_with_undo', 'autopilot')`,
       ),
     )
@@ -548,7 +548,7 @@ export async function toolCallFailureClusters(workspaceId: string, since: Date, 
       and(
         eq(toolCall.workspaceId, workspaceId),
         eq(toolCall.status, 'failed'),
-        sql`${toolCall.requestedAt} >= ${since}`,
+        gte(toolCall.requestedAt, since),
       ),
     )
     .groupBy(

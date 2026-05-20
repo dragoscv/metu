@@ -5,8 +5,9 @@ import { integrationKindSchema } from '@metu/types';
 import { upsertIntegration } from '@metu/db/queries';
 import { seal } from '@metu/ai/crypto';
 import { safeEqual } from '@/lib/safe-equal';
-import { webOauthConfig } from '@/lib/integrations/web-oauth-config';
-import { verifyIntegrationToken } from '@/lib/integrations/verifiers';
+import { resolveOauthConfig } from '@/lib/integrations/effective-oauth-config';
+import { verifyIntegrationToken, isTokenIntegration } from '@/lib/integrations/verifiers';
+import { inngest } from '@/inngest/client';
 import { log } from '@/lib/logger';
 
 function callbackUrlFor(kind: string): string {
@@ -24,13 +25,13 @@ export async function GET(req: Request, { params }: { params: Promise<{ kind: st
     return NextResponse.redirect(new URL('/integrations?oauth_error=invalid_kind', req.url));
   }
   const kind = kindParse.data;
-  const resolved = webOauthConfig(kind);
+  const resolved = await resolveOauthConfig(session.user.workspaceId, kind);
   if (!resolved) {
     return NextResponse.redirect(
       new URL('/integrations?oauth_error=oauth_not_configured', req.url),
     );
   }
-  const { clientId, clientSecret, cfg } = resolved;
+  const { clientId, clientSecret, ...cfg } = resolved;
 
   const url = new URL(req.url);
   const code = url.searchParams.get('code');
@@ -56,17 +57,22 @@ export async function GET(req: Request, { params }: { params: Promise<{ kind: st
     grant_type: 'authorization_code',
     code,
     redirect_uri: callbackUrlFor(kind),
-    client_id: clientId,
-    client_secret: clientSecret,
   });
+  const headers: Record<string, string> = {
+    'Content-Type': 'application/x-www-form-urlencoded',
+    Accept: 'application/json',
+  };
+  if (cfg.tokenAuthMethod === 'client_secret_basic') {
+    headers.Authorization = `Basic ${Buffer.from(`${clientId}:${clientSecret}`).toString('base64')}`;
+  } else {
+    body.set('client_id', clientId);
+    body.set('client_secret', clientSecret);
+  }
   if (verifier) body.set('code_verifier', verifier);
 
   const tokenRes = await fetch(cfg.tokenUrl, {
     method: 'POST',
-    headers: {
-      'Content-Type': 'application/x-www-form-urlencoded',
-      Accept: 'application/json',
-    },
+    headers,
     body: body.toString(),
   });
   if (!tokenRes.ok) {
@@ -94,30 +100,45 @@ export async function GET(req: Request, { params }: { params: Promise<{ kind: st
     return NextResponse.redirect(new URL('/integrations?oauth_error=no_access_token', req.url));
   }
 
-  // Reuse the existing verifier for identity
-  const verify = await verifyIntegrationToken(kind, accessToken);
-  if (!verify.ok) {
-    return NextResponse.redirect(
-      new URL(
-        `/integrations?oauth_error=${encodeURIComponent(`verify_failed:${verify.error}`)}`,
-        req.url,
-      ),
-    );
+  // Reuse the existing verifier for identity. For platforms without a
+  // dedicated verifier, accept the OAuth provider's verdict and synthesize
+  // a placeholder identity — the per-platform sync function will fill in
+  // real account metadata on first run.
+  let externalId: string;
+  let label: string;
+  let metadata: Record<string, unknown> = {};
+  if (isTokenIntegration(kind)) {
+    const verify = await verifyIntegrationToken(kind, accessToken);
+    if (!verify.ok) {
+      return NextResponse.redirect(
+        new URL(
+          `/integrations?oauth_error=${encodeURIComponent(`verify_failed:${verify.error}`)}`,
+          req.url,
+        ),
+      );
+    }
+    externalId = verify.externalId;
+    label = verify.label;
+    metadata = verify.metadata ?? {};
+  } else {
+    externalId = `${kind}:${session.user.workspaceId.slice(0, 8)}`;
+    label = `${kind} (pending sync)`;
   }
 
   const sealed = seal(accessToken);
-  await upsertIntegration({
+  const integrationId = await upsertIntegration({
     workspaceId: session.user.workspaceId,
     userId: session.user.id,
     kind,
-    externalId: verify.externalId,
-    label: verify.label,
+    externalId,
+    label,
     tokenCiphertext: sealed.ciphertext,
     tokenIv: sealed.iv,
     tokenTag: sealed.tag,
     config: {
-      ...(verify.metadata ?? {}),
+      ...metadata,
       connectedVia: 'web-oauth',
+      configSource: cfg.source,
       grantedScopes: tokenJson.scope ?? cfg.scope,
       tokenType: tokenJson.token_type ?? 'Bearer',
       expiresAt: tokenJson.expires_in
@@ -125,6 +146,31 @@ export async function GET(req: Request, { params }: { params: Promise<{ kind: st
         : null,
     },
   });
+
+  // Kick off an immediate backfill for kinds that have a sync function.
+  const SYNCABLE = [
+    'slack',
+    'gcal',
+    'linear',
+    'reddit',
+    'twitter',
+    'youtube',
+    'spotify',
+    'instagram',
+    'notion',
+    'stripe',
+    'vercel',
+  ] as const;
+  if ((SYNCABLE as readonly string[]).includes(kind)) {
+    try {
+      await inngest.send({
+        name: `${kind}/sync.requested` as `${(typeof SYNCABLE)[number]}/sync.requested`,
+        data: { workspaceId: session.user.workspaceId, integrationId, reason: 'connect' },
+      });
+    } catch (err) {
+      log.warn('integration.sync.kickoff_failed', { kind, err: String(err) });
+    }
+  }
 
   return NextResponse.redirect(new URL(`/integrations?oauth_connected=${kind}`, req.url));
 }

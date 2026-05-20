@@ -9,7 +9,7 @@
  *        low_risk   → auto_with_undo
  *        high_risk  → ask
  */
-import { and, eq, isNull, sql, ne } from 'drizzle-orm';
+import { and, eq, gte, isNull, sql, ne } from 'drizzle-orm';
 import { getDb } from '@metu/db';
 import {
   agentPolicy,
@@ -294,7 +294,7 @@ export async function checkCaps(
     .where(
       and(
         eq(toolCallTable.workspaceId, workspaceId),
-        sql`${toolCallTable.requestedAt} >= ${sinceMidnight}`,
+        gte(toolCallTable.requestedAt, sinceMidnight),
         ne(toolCallTable.status, 'rejected'),
       ),
     );

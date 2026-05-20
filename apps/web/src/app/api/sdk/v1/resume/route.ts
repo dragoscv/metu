@@ -13,7 +13,7 @@
  *   - `limit` (default 5, max 20)
  */
 import { NextResponse } from 'next/server';
-import { desc, eq, sql } from 'drizzle-orm';
+import { and, desc, eq, gte, sql } from 'drizzle-orm';
 import { z } from 'zod';
 import { getDb } from '@metu/db';
 import { listRecentBriefings } from '@metu/db/queries';
@@ -84,7 +84,10 @@ export async function GET(req: Request) {
     .select({ count: sql<number>`count(*)::int` })
     .from(timelineEvent)
     .where(
-      sql`${timelineEvent.workspaceId} = ${session.workspaceId} AND ${timelineEvent.occurredAt} >= ${cutoff}`,
+      and(
+        eq(timelineEvent.workspaceId, session.workspaceId),
+        gte(timelineEvent.occurredAt, cutoff),
+      ),
     );
 
   return NextResponse.json({

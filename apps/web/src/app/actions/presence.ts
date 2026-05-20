@@ -8,7 +8,7 @@
  * revalidate `/settings/presence`.
  */
 import { revalidatePath } from 'next/cache';
-import { and, desc, eq, gte, inArray, sql } from 'drizzle-orm';
+import { and, desc, eq, gte, inArray, lt, sql } from 'drizzle-orm';
 import { z } from 'zod';
 import { auth } from '@metu/auth';
 import { getDb } from '@metu/db';
@@ -209,7 +209,7 @@ export async function pruneSensoryRingAction() {
       and(
         eq(sensoryRing.workspaceId, session.user.workspaceId),
         eq(sensoryRing.retention, 'ring_24h'),
-        sql`${sensoryRing.occurredAt} < ${cutoff}`,
+        lt(sensoryRing.occurredAt, cutoff),
       ),
     )
     .returning();

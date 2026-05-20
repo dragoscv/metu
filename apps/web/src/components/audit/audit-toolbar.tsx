@@ -142,7 +142,8 @@ export function AuditToolbar({ toolFacets, statusFacets, runKindFacets }: Props)
       </div>
       <div className="flex flex-wrap items-center gap-2">
         <Input
-          placeholder="Search tool or error…"
+          id="audit-search"
+          placeholder="Search tool or error…  (press / to focus)"
           value={filters.q}
           onChange={(e) => setFilters({ q: e.target.value })}
           className="h-9 w-64"

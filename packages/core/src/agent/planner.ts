@@ -135,10 +135,30 @@ export async function planConductor(input: PlanInput): Promise<{
 
   const system = buildConductorSystem(`You are running a planning tick.
 
-Your output is a JSON plan with:
-  - pulse: a single-line state of the world (≤500 chars)
-  - actions: ordered tool calls to take (max 5; can be empty)
-  - notes: optional internal notes
+Your output is a JSON plan with this exact shape:
+{
+  "pulse": "single-line state of the world (≤500 chars)",
+  "actions": [
+    { "tool": "<tool_name>", "args": { ... }, "why": "1 sentence" }
+  ],
+  "notes": "optional internal notes (never shown to user)"
+}
+
+Example 1 — quiet tick, nothing to do:
+{
+  "pulse": "All quiet. Last activity was the audit-skill commit 38m ago; no inbound captures since.",
+  "actions": [],
+  "notes": "Skipped: no fresh stimulus."
+}
+
+Example 2 — user just dumped 4 captures about a meeting:
+{
+  "pulse": "4 captures in 12m about the Tuesday product review. Decisions implied but not logged.",
+  "actions": [
+    { "tool": "recall", "args": { "query": "product review Tuesday decisions" }, "why": "Ground next step in prior context before proposing." },
+    { "tool": "propose_decision", "args": { "title": "Cut paid tier from launch", "rationale": "User said 'we're not ready for billing'.", "alternatives": [] }, "why": "Decision is clearly implied across 3 captures." }
+  ]
+}
 
 Available tools (name · kind · description):
 ${tools.map((t) => `  - ${t.name} · ${t.kind} · ${t.description}`).join('\n')}
@@ -150,6 +170,8 @@ Rules:
   - Use \`notify_user\` only for genuinely high-signal events.
   - Never suggest \`create_task\` for the same title twice — assume idempotency.
   - When the right answer lives in another connected brain (notai/mmo/etc.), call \`external_invoke\` with the integrationId above and a tool name from its list.
+  - When the user just got back (long gap, fresh login), prefer \`briefing_generate\` followed by \`notify_user\`.
+  - If the user explicitly asks you to stop, pause, or be quiet, call \`pause_autonomy\` and then output an empty actions array on subsequent ticks.
 `);
 
   const userPrompt = JSON.stringify(

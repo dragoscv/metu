@@ -197,10 +197,23 @@ export const integrationKindSchema = z.enum([
   'slack',
   'notion',
   'linear',
+  'jira',
   'browser',
   'vscode',
   'webhook',
   'external_mcp',
+  'tiktok',
+  'instagram',
+  'facebook',
+  'reddit',
+  'twitter',
+  'youtube',
+  'linkedin',
+  'meta_ads',
+  'google_ads',
+  'tiktok_ads',
+  'linkedin_ads',
+  'cloudflare',
 ]);
 export type IntegrationKind = z.infer<typeof integrationKindSchema>;
 

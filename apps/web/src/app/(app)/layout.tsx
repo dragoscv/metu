@@ -7,6 +7,7 @@ import {
   attentionToolCallCount,
   recentTimelineEventCount,
   notificationUnreadCount,
+  listIntegrations,
 } from '@metu/db/queries';
 import { getUserWorkspaces } from '@metu/db/queries';
 import { PageTransition } from '@metu/ui';
@@ -18,6 +19,7 @@ import { KeyboardShortcuts } from '@/components/keyboard-shortcuts';
 import { QuickCapture } from '@/components/quick-capture';
 import { SidebarProvider } from '@/components/sidebar/sidebar-provider';
 import { MobileTopbar } from '@/components/sidebar/mobile-topbar';
+import { TrialBanner } from '@/components/billing/trial-banner';
 
 export default async function AppLayout({ children }: { children: React.ReactNode }) {
   const session = await auth();
@@ -68,7 +70,7 @@ export default async function AppLayout({ children }: { children: React.ReactNod
   // long enough that the user notices the day's signals when they open
   // the app in the morning.
   const since24h = new Date(Date.now() - 24 * 60 * 60 * 1000);
-  const [timelineCount, auditAttention, unreadNotifications, workspaces, policyRow] =
+  const [timelineCount, auditAttention, unreadNotifications, workspaces, policyRow, integrations] =
     await Promise.all([
       recentTimelineEventCount(workspaceId, since24h),
       attentionToolCallCount(workspaceId, since24h),
@@ -79,12 +81,15 @@ export default async function AppLayout({ children }: { children: React.ReactNod
         .from(agentPolicy)
         .where(eq(agentPolicy.workspaceId, workspaceId))
         .limit(1),
+      listIntegrations(workspaceId),
     ]);
   const autonomyPaused = policyRow[0] ? !policyRow[0].enabled : false;
+  const activeIntegrations = integrations.filter((i) => i.status === 'active').length;
   const sidebarBadges: Record<string, number> = {
     '/timeline': timelineCount,
     '/audit': auditAttention,
     '/notifications': unreadNotifications,
+    '/integrations': activeIntegrations,
   };
   const workspaceOptions = workspaces.map((w) => ({
     id: w.workspace.id,
@@ -107,6 +112,7 @@ export default async function AppLayout({ children }: { children: React.ReactNod
           <MobileTopbar />
           <main className="flex-1 overflow-y-auto">
             <div className="mx-auto w-full max-w-6xl px-4 py-6 md:px-6 md:py-8">
+              <TrialBanner />
               <PageTransition>{children}</PageTransition>
             </div>
           </main>

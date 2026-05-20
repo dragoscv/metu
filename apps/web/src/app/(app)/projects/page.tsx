@@ -16,6 +16,7 @@ import { redirect } from 'next/navigation';
 import { ProjectsGrid } from '@/components/projects/projects-grid';
 import { ProjectsToolbar } from '@/components/projects/projects-toolbar';
 import { SeedDemoButton } from '@/components/dashboard/seed-demo-button';
+import { KeyboardFocus } from '@/components/keyboard-focus';
 
 export const dynamic = 'force-dynamic';
 
@@ -118,6 +119,7 @@ export default async function ProjectsPage({
         resultCount={projects.length}
         availableStack={availableStack}
       />
+      <KeyboardFocus targetId="projects-search" />
 
       {projects.length === 0 && hasFilters ? (
         <EmptyState
