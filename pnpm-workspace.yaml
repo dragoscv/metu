@@ -68,6 +68,11 @@ catalog:
   'recharts': ^2.15.0
   'date-fns': ^4.1.0
 
+  # 3D / avatars (companion)
+  'three': ^0.171.0
+  '@types/three': ^0.171.0
+  '@pixiv/three-vrm': ^3.4.2
+
   # GCP / cloud
   '@google-cloud/storage': ^7.14.0
   '@google-cloud/secret-manager': ^5.6.0

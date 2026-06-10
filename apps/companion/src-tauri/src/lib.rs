@@ -19,10 +19,13 @@ use tauri_plugin_shell::ShellExt;
 
 mod a11y;
 mod caps;
+mod diag;
 mod forms;
 mod fs;
 mod input;
 mod mdns;
+mod oauth;
+mod pet;
 mod screenshot;
 mod see;
 mod sensors;
@@ -278,6 +281,9 @@ pub fn run() {
 
     builder
         .plugin(tauri_plugin_shell::init())
+        .manage(oauth::LoopbackState::default())
+        .manage(diag::DiagState::default())
+        .plugin(tauri_plugin_http::init())
         .plugin(tauri_plugin_notification::init())
         .plugin(tauri_plugin_clipboard_manager::init())
         .plugin(tauri_plugin_store::Builder::default().build())
@@ -315,11 +321,30 @@ pub fn run() {
             forms::presence_pet_show,
             forms::presence_pet_hide,
             forms::presence_pet_set_clickthrough,
+            forms::presence_overlay_show,
+            forms::presence_overlay_hide,
             mdns::mdns_announce,
             mdns::mdns_stop,
             mdns::mdns_status,
+            oauth::oauth_loopback_start,
+            oauth::oauth_loopback_wait,
+            oauth::oauth_loopback_cancel,
+            oauth::oauth_exchange,
+            oauth::oauth_refresh,
+            diag::diag_log,
+            diag::diag_recent,
+            diag::diag_snapshot,
+            diag::win_minimize,
+            diag::win_hide,
+            diag::win_toggle_maximize,
+            diag::win_start_drag,
+            pet::pet_monitors,
+            pet::pet_cursor,
+            pet::pet_foreground,
         ])
         .setup(|app| {
+            // ── Diagnostics log file ────────────────────────────────────
+            diag::init(app);
             // ── Tray ────────────────────────────────────────────────────
             let show_item = MenuItem::with_id(app, "show", "Show METU", true, None::<&str>)?;
             let backlog_item = MenuItem::with_id(

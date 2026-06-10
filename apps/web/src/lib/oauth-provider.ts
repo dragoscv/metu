@@ -167,6 +167,84 @@ export async function findActiveClientByClientId(clientId: string) {
   return row ?? null;
 }
 
+/**
+ * Client IDs whose authorization requests we auto-approve (skip the consent
+ * screen) once the user is authenticated. Reserved for trusted first-party
+ * desktop/mobile shells that ship with metu. Third-party apps always see the
+ * consent screen. The companion uses a loopback-redirect + PKCE flow, so the
+ * auth code can only be intercepted by the local process that initiated it.
+ */
+export const AUTO_APPROVE_CLIENT_IDS = new Set(['metu_app_companion']);
+
+export function shouldAutoApprove(client: { type: string; clientId: string }): boolean {
+  return client.type === 'first_party' || AUTO_APPROVE_CLIENT_IDS.has(client.clientId);
+}
+
+const isLoopbackHost = (h: string) =>
+  h === '127.0.0.1' || h === '::1' || h === '[::1]' || h === 'localhost';
+
+/**
+ * Validate a candidate redirect_uri against a client's registered list.
+ *
+ * Exact match always wins. Additionally — per RFC 8252 §7.3 — native apps may
+ * use a loopback interface (`http://127.0.0.1`, `http://[::1]`, `localhost`)
+ * with an ephemeral port chosen at runtime. For those we ignore the port and
+ * match on scheme + loopback host-class + path, provided the client has at
+ * least one registered loopback redirect with the same path.
+ */
+export function isRedirectUriAllowed(registered: readonly string[], candidate: string): boolean {
+  if (registered.includes(candidate)) return true;
+  let cand: URL;
+  try {
+    cand = new URL(candidate);
+  } catch {
+    return false;
+  }
+  if (cand.protocol !== 'http:' || !isLoopbackHost(cand.hostname)) return false;
+  return registered.some((r) => {
+    let ru: URL;
+    try {
+      ru = new URL(r);
+    } catch {
+      return false;
+    }
+    return ru.protocol === 'http:' && isLoopbackHost(ru.hostname) && ru.pathname === cand.pathname;
+  });
+}
+
+/**
+ * Issue an `authorization_code` for the given grant and return the full
+ * redirect URL (with `?code=…&state=…`) the browser should be sent to.
+ * Shared by the consent `/decide` route and the auto-approve path in the
+ * authorize page so both persist PKCE + redirect_uri identically.
+ */
+export async function issueAuthCodeRedirect(args: {
+  workspaceId: string;
+  clientUuid: string;
+  userId: string;
+  grantedScopes: string[];
+  redirectUri: string;
+  state?: string | null;
+  codeChallenge?: string | null;
+  codeChallengeMethod?: string | null;
+}): Promise<string> {
+  const issued = await issueToken({
+    workspaceId: args.workspaceId,
+    clientUuid: args.clientUuid,
+    userId: args.userId,
+    kind: 'authorization_code',
+    scopes: args.grantedScopes,
+    ttlSeconds: TTL.authorizationCode,
+    codeChallenge: args.codeChallenge ?? null,
+    codeChallengeMethod: args.codeChallengeMethod ?? null,
+    redirectUri: args.redirectUri,
+  });
+  const url = new URL(args.redirectUri);
+  url.searchParams.set('code', issued.token);
+  if (args.state) url.searchParams.set('state', args.state);
+  return url.toString();
+}
+
 /** RFC 6749 §5.2 error response. */
 export function oauthError(
   error:

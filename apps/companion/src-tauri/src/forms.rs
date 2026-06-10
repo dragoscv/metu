@@ -9,6 +9,7 @@ use tauri::{Manager, Runtime, WebviewWindow};
 
 const HUD_LABEL: &str = "hud";
 const PET_LABEL: &str = "pet";
+const OVERLAY_LABEL: &str = "overlay";
 
 fn lookup<R: Runtime>(app: &tauri::AppHandle<R>, label: &str) -> Result<WebviewWindow<R>, String> {
     app.get_webview_window(label)
@@ -71,5 +72,24 @@ pub async fn presence_pet_set_clickthrough<R: Runtime>(
     let w = lookup(&app, PET_LABEL)?;
     w.set_ignore_cursor_events(enabled)
         .map_err(|e| format!("ignore_cursor_failed: {e}"))?;
+    Ok(())
+}
+
+/// Show the fullscreen transparent overlay used to highlight a region or
+/// point at an on-screen element. Always click-through so it never steals
+/// input from the app the user is working in.
+#[tauri::command]
+pub async fn presence_overlay_show<R: Runtime>(app: tauri::AppHandle<R>) -> Result<(), String> {
+    let w = lookup(&app, OVERLAY_LABEL)?;
+    w.set_ignore_cursor_events(true)
+        .map_err(|e| format!("ignore_cursor_failed: {e}"))?;
+    w.show().map_err(|e| format!("show_failed: {e}"))?;
+    Ok(())
+}
+
+#[tauri::command]
+pub async fn presence_overlay_hide<R: Runtime>(app: tauri::AppHandle<R>) -> Result<(), String> {
+    let w = lookup(&app, OVERLAY_LABEL)?;
+    w.hide().map_err(|e| format!("hide_failed: {e}"))?;
     Ok(())
 }

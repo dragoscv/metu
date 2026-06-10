@@ -13,6 +13,7 @@ import {
 } from '@tauri-apps/plugin-notification';
 import { platform } from '@tauri-apps/plugin-os';
 import { open as openUrl } from '@tauri-apps/plugin-shell';
+import { emit } from '@tauri-apps/api/event';
 import type { AuthState } from './auth';
 import { executeDeviceTool } from './device-tools';
 import { pushHubNotification } from './hub-notifications';
@@ -68,6 +69,8 @@ export function useHubConnection(auth: AuthState | null): HubHandle {
       wsRef.current = ws;
 
       ws.addEventListener('open', () => {
+        // Ignore events from a socket we've already replaced/closed.
+        if (wsRef.current !== ws || cancelledRef.current) return;
         retryRef.current = 0;
         ws.send(
           JSON.stringify({
@@ -85,6 +88,9 @@ export function useHubConnection(auth: AuthState | null): HubHandle {
       });
 
       ws.addEventListener('message', async (ev) => {
+        // A stale socket (already superseded by a reconnect) must not mutate
+        // status — otherwise its late frames clobber the live connection.
+        if (wsRef.current !== ws || cancelledRef.current) return;
         let msg: unknown;
         try {
           msg = JSON.parse(ev.data);
@@ -117,6 +123,13 @@ export function useHubConnection(auth: AuthState | null): HubHandle {
             urgency,
             actionUrl: n.actionUrl,
           });
+          // Let the desktop pet react in-character to conductor messages.
+          void emit('metu://pet-notify', {
+            title: n.title,
+            body: n.body,
+            urgency,
+            actionUrl: n.actionUrl,
+          }).catch(() => {});
           let granted = await isPermissionGranted();
           if (!granted) granted = (await requestPermission()) === 'granted';
           if (granted) {
@@ -190,12 +203,16 @@ export function useHubConnection(auth: AuthState | null): HubHandle {
       });
 
       ws.addEventListener('close', () => {
+        // A superseded socket closing is expected during reconnect/StrictMode
+        // remount — it must NOT flip status or schedule a retry, or it will
+        // clobber the live socket that already reported `open`.
+        if (wsRef.current !== ws || cancelledRef.current) return;
         setStatus('closed');
-        if (cancelledRef.current) return;
         const delay = Math.min(30_000, 1000 * 2 ** retryRef.current++);
         setTimeout(connect, delay);
       });
       ws.addEventListener('error', () => {
+        if (wsRef.current !== ws || cancelledRef.current) return;
         setStatus('error');
       });
     };

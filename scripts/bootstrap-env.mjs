@@ -26,9 +26,10 @@ const defaults = {
   AUTH_URL: 'http://localhost:24890',
   NEXTAUTH_URL: 'http://localhost:24890',
 
-  // Local Postgres + pgvector (docker-compose, host port 5433 to avoid clashes)
-  DATABASE_URL: 'postgres://metu:metu@localhost:5433/metu?sslmode=disable',
-  DIRECT_URL: 'postgres://metu:metu@localhost:5433/metu?sslmode=disable',
+  // Local Postgres + pgvector (docker-compose, host port 24800 to avoid clashes
+  // with the Windows-reserved Hyper-V/WSL port range that includes 5433)
+  DATABASE_URL: 'postgres://metu:metu@localhost:24800/metu?sslmode=disable',
+  DIRECT_URL: 'postgres://metu:metu@localhost:24800/metu?sslmode=disable',
 
   // Auth.js — create at https://console.cloud.google.com/apis/credentials
   GOOGLE_CLIENT_ID: '',

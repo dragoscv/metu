@@ -3,6 +3,7 @@ import ReactDOM from 'react-dom/client';
 import { App } from './App';
 import { PresenceHud } from './forms/Hud';
 import { PresencePet } from './forms/Pet';
+import { PresenceOverlay } from './forms/Overlay';
 import { attachDeepLinkBridge } from './state/deepLink';
 import './styles.css';
 
@@ -13,6 +14,7 @@ function pickRoot() {
   const hash = window.location.hash.replace(/^#/, '');
   if (hash === 'hud') return <PresenceHud />;
   if (hash === 'pet') return <PresencePet />;
+  if (hash === 'overlay') return <PresenceOverlay />;
   return <App />;
 }
 

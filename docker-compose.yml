@@ -28,7 +28,7 @@ services:
       POSTGRES_PASSWORD: metu
       POSTGRES_DB: metu
     ports:
-      - '5433:5432'
+      - '24800:5432'
     volumes:
       - postgres-data:/var/lib/postgresql/data
       - ./infra/docker/postgres-init.sql:/docker-entrypoint-initdb.d/01-init.sql:ro

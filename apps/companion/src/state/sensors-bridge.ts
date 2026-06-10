@@ -18,6 +18,7 @@
 import { useEffect, useRef } from 'react';
 import { invoke } from '@tauri-apps/api/core';
 import { listen, type UnlistenFn } from '@tauri-apps/api/event';
+import { isTauri } from './runtime';
 
 const ENABLED_KEY = 'metu.companion.sensors.enabled.v1';
 const SETTINGS_KEY = 'metu.companion.sensors.settings.v1';
@@ -103,6 +104,8 @@ export function useSensorBridge(
     let cancelled = false;
 
     (async () => {
+      // Only listen if Tauri is available (not in browser-only dev mode).
+      if (!isTauri()) return;
       unWin = await listen<WindowChanged>('metu://window.changed', (e) => {
         sendRef.current({
           v: 1,

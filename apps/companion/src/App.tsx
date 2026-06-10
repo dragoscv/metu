@@ -10,23 +10,79 @@
 import { useEffect, useState } from 'react';
 import { invoke } from '@tauri-apps/api/core';
 import { getCurrentWindow } from '@tauri-apps/api/window';
-import { loadAuth, saveAuth, clearAuth, type AuthState } from './state/auth';
+import { AnimatePresence, motion } from 'framer-motion';
+import { loadAuth, saveAuth, clearAuth, ensureFreshAuth, type AuthState } from './state/auth';
 import { Pairing } from './ui/Pairing';
 import { Connected } from './ui/Connected';
 import { useHubConnection } from './state/useHubConnection';
 import { loadSensorSettings, loadSensorsEnabled, useSensorBridge } from './state/sensors-bridge';
 import { useIdleDetection } from './state/useIdleDetection';
 import { isObserverMuted } from './state/useObserverMuted';
+import { info, warn } from './state/debug';
+import { Titlebar } from './ui/Titlebar';
+import { Splash } from './ui/Splash';
+import { DebugPanel } from './ui/DebugPanel';
 
 export function App() {
   const [auth, setAuth] = useState<AuthState | null | 'loading'>('loading');
   const [sensorsTick, setSensorsTick] = useState(0);
+  const [splashGone, setSplashGone] = useState(false);
+  const [showDebug, setShowDebug] = useState(false);
 
   useEffect(() => {
     loadAuth().then(setAuth);
   }, []);
 
+  // Minimum splash dwell so the wake-up animation never flickers.
+  useEffect(() => {
+    const t = setTimeout(() => setSplashGone(true), 1400);
+    return () => clearTimeout(t);
+  }, []);
+
+  // Global Ctrl/Cmd+Shift+D toggles the diagnostics panel.
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      if ((e.ctrlKey || e.metaKey) && e.shiftKey && e.key.toLowerCase() === 'd') {
+        e.preventDefault();
+        setShowDebug((v) => !v);
+      }
+    };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, []);
+
   const hub = useHubConnection(auth && auth !== 'loading' ? auth : null);
+
+  // Proactive token refresh — without this the access token expires after an
+  // hour, the hub rejects the `hello` (invalid_token), and the UI gets stuck
+  // on "Reconnecting…" forever. We check every minute and refresh within the
+  // skew window; a rotated token changes `auth.accessToken`, which makes
+  // `useHubConnection` reconnect cleanly. A revoked refresh token clears auth
+  // and drops back to pairing.
+  useEffect(() => {
+    if (!auth || auth === 'loading') return;
+    let stop = false;
+    const check = async () => {
+      const current = auth;
+      const next = await ensureFreshAuth(current);
+      if (stop) return;
+      if (!next) {
+        warn('auth', 'refresh failed — signing out');
+        setAuth(null);
+        return;
+      }
+      if (next.accessToken !== current.accessToken) {
+        info('auth', 'access token refreshed');
+        setAuth(next);
+      }
+    };
+    void check();
+    const id = setInterval(() => void check(), 60_000);
+    return () => {
+      stop = true;
+      clearInterval(id);
+    };
+  }, [auth]);
 
   // Sensor bridge — re-read settings whenever the panel bumps `sensorsTick`.
   useSensorBridge(
@@ -94,34 +150,65 @@ export function App() {
     });
   }, hub.status === 'open');
 
-  if (auth === 'loading') {
-    return (
-      <div className="shell">
-        <p className="muted">Loading…</p>
-      </div>
-    );
-  }
-
-  if (!auth) {
-    return (
-      <Pairing
-        onPaired={async (a) => {
-          await saveAuth(a);
-          setAuth(a);
-        }}
-      />
-    );
-  }
+  const booting = auth === 'loading' || !splashGone;
+  const diagContext = {
+    signedIn: Boolean(auth && auth !== 'loading'),
+    hubStatus: hub.status,
+    workspaceId: auth && auth !== 'loading' ? auth.workspaceId : null,
+    apiBase: auth && auth !== 'loading' ? auth.apiBase : null,
+  };
 
   return (
-    <Connected
-      auth={auth}
-      status={hub.status}
-      onSensorsChange={() => setSensorsTick((x) => x + 1)}
-      onSignOut={async () => {
-        await clearAuth();
-        setAuth(null);
-      }}
-    />
+    <div className="app-frame">
+      <Titlebar onOpenDebug={() => setShowDebug((v) => !v)} />
+      <div className="app-body">
+        <AnimatePresence mode="wait">
+          {booting ? (
+            <Splash key="splash" />
+          ) : !auth ? (
+            <motion.div
+              key="pairing"
+              initial={{ opacity: 0, y: 8 }}
+              animate={{ opacity: 1, y: 0 }}
+              exit={{ opacity: 0 }}
+              transition={{ duration: 0.32, ease: [0.22, 1, 0.36, 1] }}
+              style={{ height: '100%' }}
+            >
+              <Pairing
+                onPaired={async (a) => {
+                  await saveAuth(a);
+                  setAuth(a);
+                }}
+              />
+            </motion.div>
+          ) : (
+            <motion.div
+              key="connected"
+              initial={{ opacity: 0, y: 8 }}
+              animate={{ opacity: 1, y: 0 }}
+              exit={{ opacity: 0 }}
+              transition={{ duration: 0.32, ease: [0.22, 1, 0.36, 1] }}
+              style={{ height: '100%' }}
+            >
+              <Connected
+                auth={auth}
+                status={hub.status}
+                onSensorsChange={() => setSensorsTick((x) => x + 1)}
+                onSignOut={async () => {
+                  await clearAuth();
+                  setAuth(null);
+                }}
+              />
+            </motion.div>
+          )}
+        </AnimatePresence>
+      </div>
+
+      <AnimatePresence>
+        {showDebug && (
+          <DebugPanel key="debug" context={diagContext} onClose={() => setShowDebug(false)} />
+        )}
+      </AnimatePresence>
+    </div>
   );
 }

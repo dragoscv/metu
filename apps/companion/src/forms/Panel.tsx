@@ -77,17 +77,22 @@ export function PresencePanel({ auth }: { auth: AuthState }) {
         </div>
       </header>
 
-      <select
-        className="presence-panel__persona"
-        value={personaSlug}
-        onChange={(e) => setPersonaSlug(e.target.value)}
-      >
-        {VOICE_PERSONAS.map((p) => (
-          <option key={p.slug} value={p.slug}>
-            {p.name} — {p.voiceProvider}
-          </option>
-        ))}
-      </select>
+      <div className="select-wrap">
+        <select
+          className="field field--select"
+          value={personaSlug}
+          onChange={(e) => setPersonaSlug(e.target.value)}
+        >
+          {VOICE_PERSONAS.map((p) => (
+            <option key={p.slug} value={p.slug}>
+              {p.name} — {p.voiceProvider}
+            </option>
+          ))}
+        </select>
+        <span className="select-wrap__chevron" aria-hidden>
+          ⌄
+        </span>
+      </div>
 
       <div className="presence-panel__transcript" aria-live="polite">
         {state.partial || state.finalText || (

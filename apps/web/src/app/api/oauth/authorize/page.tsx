@@ -8,7 +8,13 @@
  */
 import { auth } from '@metu/auth';
 import { redirect } from 'next/navigation';
-import { findActiveClientByClientId, intersectScopes } from '@/lib/oauth-provider';
+import {
+  findActiveClientByClientId,
+  intersectScopes,
+  isRedirectUriAllowed,
+  issueAuthCodeRedirect,
+  shouldAutoApprove,
+} from '@/lib/oauth-provider';
 import { ConsentForm } from './consent-form';
 
 interface AuthorizeParams {
@@ -56,7 +62,7 @@ export default async function AuthorizePage({
 
   // Redirect URI must exactly match one of the registered values.
   const allowedRedirects = (client.redirectUris as string[]) ?? [];
-  if (!allowedRedirects.includes(params.redirect_uri)) {
+  if (!isRedirectUriAllowed(allowedRedirects, params.redirect_uri)) {
     return errorPage('invalid_request', 'redirect_uri is not registered for this client.');
   }
 
@@ -72,6 +78,27 @@ export default async function AuthorizePage({
   const grantedScopes = intersectScopes(params.scope ?? '', client.allowedScopes);
   if (grantedScopes.length === 0) {
     return errorPage('invalid_scope', 'No requested scopes are allowed for this client.');
+  }
+
+  // ─── Auto-approve (trusted first-party shells) ─────────────────────────────
+  // The companion uses loopback-redirect + PKCE, so the auth code can only be
+  // intercepted by the local process that started the flow. Skip the consent
+  // screen and redirect straight back with a code — the user only had to sign
+  // in. Third-party apps still see the consent screen below.
+  if (shouldAutoApprove(client)) {
+    const codeChallengeMethod =
+      params.code_challenge_method ?? (params.code_challenge ? 'S256' : null);
+    const target = await issueAuthCodeRedirect({
+      workspaceId: client.workspaceId,
+      clientUuid: client.id,
+      userId: session.user.id,
+      grantedScopes,
+      redirectUri: params.redirect_uri,
+      state: params.state ?? null,
+      codeChallenge: params.code_challenge ?? null,
+      codeChallengeMethod,
+    });
+    redirect(target);
   }
 
   return (

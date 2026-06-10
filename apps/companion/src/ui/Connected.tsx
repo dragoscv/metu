@@ -1,24 +1,41 @@
+/**
+ * Connected — the main window console after pairing. A fixed left sidebar
+ * selects between views; the right pane renders the active view with a crossfade
+ * transition. View selection persists to localStorage so re-opening the window
+ * lands you back where you were.
+ */
 import { useEffect, useState } from 'react';
+import { AnimatePresence, motion } from 'framer-motion';
 import type { AuthState } from '../state/auth';
 import type { HubStatus } from '../state/useHubConnection';
-import { PresencePanel } from '../forms/Panel';
-import { ObservingBadge } from './ObservingBadge';
-import { ClipboardRing } from './ClipboardRing';
+import type { AvatarState } from '../avatar/types';
 import { OnboardingWizard, shouldShowOnboarding } from './OnboardingWizard';
-import { SensorsPanel } from './SensorsPanel';
-import { UpdateBanner } from '../state/useUpdater';
-import { VoiceCaptureButton } from './VoiceCaptureButton';
-import { AwarenessStrip } from './AwarenessStrip';
-import { usePinToTop } from '../state/usePinToTop';
-import { useObserverMuted } from '../state/useObserverMuted';
-import { open as openExternal } from '@tauri-apps/plugin-shell';
+import { Sidebar } from './Sidebar';
+import { type ViewId } from './nav';
+import { HomeView } from './views/HomeView';
+import { AvatarView } from './views/AvatarView';
+import { PetView } from './views/PetView';
+import { SensorsView } from './views/SensorsView';
+import { ActivityView } from './views/ActivityView';
+import { SettingsView } from './views/SettingsView';
 
-const labels: Record<HubStatus, string> = {
-  idle: 'Idle',
-  connecting: 'Connecting…',
-  open: 'Connected',
-  closed: 'Reconnecting…',
-  error: 'Error',
+const VIEW_KEY = 'metu.companion.view';
+
+function loadView(): ViewId {
+  try {
+    const v = localStorage.getItem(VIEW_KEY) as ViewId | null;
+    if (v) return v;
+  } catch {
+    /* ignore */
+  }
+  return 'home';
+}
+
+const viewFade = {
+  initial: { opacity: 0, y: 10 },
+  animate: { opacity: 1, y: 0 },
+  exit: { opacity: 0, y: -8 },
+  transition: { duration: 0.22, ease: [0.22, 1, 0.36, 1] as const },
 };
 
 export function Connected({
@@ -32,114 +49,48 @@ export function Connected({
   onSignOut: () => Promise<void>;
   onSensorsChange: () => void;
 }) {
-  const ok = status === 'open';
-  const { pinned, toggle: togglePin } = usePinToTop();
-  const { muted: observerMuted, toggle: toggleObserver } = useObserverMuted();
+  const [view, setView] = useState<ViewId>(loadView);
   const [showOnboarding, setShowOnboarding] = useState(false);
+
   useEffect(() => {
     if (shouldShowOnboarding(auth.workspaceId)) setShowOnboarding(true);
   }, [auth.workspaceId]);
+
+  const select = (id: ViewId) => {
+    setView(id);
+    try {
+      localStorage.setItem(VIEW_KEY, id);
+    } catch {
+      /* ignore */
+    }
+  };
+
+  const avatarState: AvatarState =
+    status === 'connecting' || status === 'closed' ? 'thinking' : 'idle';
+
   return (
-    <div className="shell">
-      <div className="shell__header">
-        <h1 className="title">METU Companion</h1>
-        <ObservingBadge auth={auth} />
-        <button
-          type="button"
-          className="btn ghost"
-          onClick={toggleObserver}
-          title={
-            observerMuted
-              ? 'Resume sending presence/clipboard events'
-              : 'Pause sending presence/clipboard events'
-          }
-          style={{ marginLeft: 'auto', fontSize: 11 }}
-        >
-          {observerMuted ? '🔇 Muted' : '🔊 Live'}
-        </button>
-        <button
-          type="button"
-          className="btn ghost"
-          onClick={togglePin}
-          title={pinned ? 'Unpin window from top' : 'Keep window above others'}
-          style={{ fontSize: 11 }}
-        >
-          {pinned ? '★ Pinned' : '☆ Pin'}
-        </button>
-      </div>
-      <UpdateBanner />
-      <div className="card">
-        <div className="row">
-          <div className={`dot${ok ? '' : 'off'}`} />
-          <span>{labels[status]}</span>
-        </div>
-        <p className="muted" style={{ marginTop: 8 }}>
-          <a
-            href={auth.apiBase}
-            target="_blank"
-            rel="noreferrer"
-            style={{ color: 'inherit', textDecoration: 'underline' }}
-            title="Open metu in browser"
-          >
-            {auth.apiBase}
-          </a>
-        </p>
-      </div>
-      {ok && <PresencePanel auth={auth} />}
-      {ok && <VoiceCaptureButton auth={auth} />}
-      {ok && <AwarenessStrip />}
-      {ok && <ClipboardRing auth={auth} />}
-      <SensorsPanel onChange={onSensorsChange} />
-      <div className="card">
-        <p className="muted" style={{ margin: 0 }}>
-          Workspace
-        </p>
-        <code style={{ fontSize: 11 }}>{auth.workspaceId}</code>
-      </div>
-      <div style={{ marginTop: 'auto', display: 'flex', gap: 8 }}>
-        <button className="btn ghost" onClick={() => setShowOnboarding(true)}>
-          Show onboarding
-        </button>
-        <button
-          className="btn ghost"
-          onClick={() => window.location.reload()}
-          title="Reload window"
-        >
-          Reload
-        </button>
-        <button
-          className="btn ghost"
-          onClick={() => void openExternal(auth.apiBase)}
-          title="Open metu.app in your browser"
-        >
-          Open web
-        </button>
-        <button className="btn ghost" onClick={onSignOut}>
-          Sign out
-        </button>
-      </div>
-      <p
-        className="muted"
-        style={{
-          margin: '6px 0 0',
-          fontSize: 10,
-          textAlign: 'center',
-          opacity: 0.7,
-        }}
-      >
-        ⌘⇧V voice capture · ⌘⇧C clipboard ring
-      </p>
-      <p
-        className="muted"
-        style={{
-          margin: '2px 0 0',
-          fontSize: 10,
-          textAlign: 'center',
-          opacity: 0.5,
-        }}
-      >
-        v{__APP_VERSION__}
-      </p>
+    <div className="console">
+      <Sidebar active={view} onSelect={select} status={status} avatarState={avatarState} />
+
+      <main className="console__pane">
+        <AnimatePresence mode="wait">
+          <motion.div key={view} className="console__view" {...viewFade}>
+            {view === 'home' && <HomeView auth={auth} status={status} />}
+            {view === 'avatar' && <AvatarView />}
+            {view === 'pet' && <PetView />}
+            {view === 'sensors' && <SensorsView onChange={onSensorsChange} />}
+            {view === 'activity' && <ActivityView auth={auth} status={status} />}
+            {view === 'settings' && (
+              <SettingsView
+                auth={auth}
+                onSignOut={onSignOut}
+                onShowOnboarding={() => setShowOnboarding(true)}
+              />
+            )}
+          </motion.div>
+        </AnimatePresence>
+      </main>
+
       {showOnboarding && <OnboardingWizard auth={auth} onClose={() => setShowOnboarding(false)} />}
     </div>
   );

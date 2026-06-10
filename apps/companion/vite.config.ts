@@ -1,4 +1,4 @@
-import { defineConfig } from 'vite';
+import { defineConfig, type Plugin } from 'vite';
 import react from '@vitejs/plugin-react';
 import { readFileSync } from 'node:fs';
 
@@ -6,23 +6,34 @@ const pkg = JSON.parse(readFileSync(new URL('./package.json', import.meta.url), 
   version: string;
 };
 
-// Optional runtime peers loaded via dynamic `import()` from
-// `src/ui/Live2DAvatar.tsx` and `src/ui/VrmAvatar.tsx`. They are *not*
-// installed in the workspace by default — the avatar components handle
-// the resulting load failure and fall back to a CSS orb. Without these
-// externals, Rollup tries to resolve them at build time and fails.
-const OPTIONAL_AVATAR_DEPS = ['pixi.js', 'pixi-live2d-display', '@pixiv/three-vrm', 'three'];
+// Live2D peers (`pixi.js`, `pixi-live2d-display`) remain optional and are NOT
+// installed — the Live2D avatar tier is dormant and falls back to the shader
+// orb / VRM. `three` and `@pixiv/three-vrm` ARE installed now (VRM tier is
+// live), so they must resolve normally. Without this stub Vite's dev
+// import-analysis 500s on the uninstalled pixi packages.
+const OPTIONAL_LIVE2D_DEPS = ['pixi.js', 'pixi-live2d-display'];
 
-// Also match deep subpath imports like `three/examples/jsm/...` so they
-// stay external. Rollup external accepts either string or RegExp.
-const OPTIONAL_AVATAR_PATTERNS: (string | RegExp)[] = [
-  ...OPTIONAL_AVATAR_DEPS,
-  /^three\//,
-  /^@pixiv\/three-vrm\//,
-];
+function optionalLive2dDepsStub(): Plugin {
+  const VIRTUAL = '\0metu-missing-optional-dep';
+  const isOptional = (id: string) => OPTIONAL_LIVE2D_DEPS.includes(id);
+  return {
+    name: 'metu:optional-live2d-deps-stub',
+    enforce: 'pre',
+    resolveId(id) {
+      if (isOptional(id)) return VIRTUAL;
+      return null;
+    },
+    load(id) {
+      if (id === VIRTUAL) {
+        return `throw new Error('optional Live2D dependency not installed');`;
+      }
+      return null;
+    },
+  };
+}
 
 export default defineConfig({
-  plugins: [react()],
+  plugins: [optionalLive2dDepsStub(), react()],
   clearScreen: false,
   define: {
     __APP_VERSION__: JSON.stringify(pkg.version),
@@ -31,17 +42,19 @@ export default defineConfig({
     port: 5173,
     strictPort: true,
     host: false,
+    // Tauri writes build artifacts (incl. a locked *.dll) under src-tauri/.
+    // Watching them races cargo and crashes Vite with EBUSY on Windows.
+    watch: {
+      ignored: ['**/src-tauri/**'],
+    },
   },
   envPrefix: ['VITE_', 'TAURI_'],
   optimizeDeps: {
-    exclude: OPTIONAL_AVATAR_DEPS,
+    exclude: OPTIONAL_LIVE2D_DEPS,
   },
   build: {
     target: 'es2022',
     minify: 'esbuild',
     sourcemap: true,
-    rollupOptions: {
-      external: OPTIONAL_AVATAR_PATTERNS,
-    },
   },
 });

@@ -47,8 +47,24 @@
     },
     {
       "label": "dev (web + worker + inngest)",
-      "dependsOn": ["web dev", "worker dev"],
+      "dependsOn": ["web dev", "worker dev", "hub dev"],
       "problemMatcher": []
+    },
+    {
+      "label": "hub dev",
+      "type": "shell",
+      "command": "pnpm --filter @metu/hub dev",
+      "isBackground": true,
+      "presentation": { "reveal": "always", "panel": "dedicated", "group": "dev" },
+      "problemMatcher": {
+        "owner": "tsx",
+        "pattern": [{ "regexp": "." }],
+        "background": {
+          "activeOnStart": true,
+          "beginsPattern": ".",
+          "endsPattern": "hub.http.listening|listening"
+        }
+      }
     },
     {
       "label": "web dev",

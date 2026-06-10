@@ -3,8 +3,12 @@
  * redirects back to the client's redirect_uri.
  */
 import { auth } from '@metu/auth';
-import { findActiveClientByClientId, intersectScopes, issueToken } from '@/lib/oauth-provider';
-import { TTL } from '@metu/auth/oauth';
+import {
+  findActiveClientByClientId,
+  intersectScopes,
+  isRedirectUriAllowed,
+  issueAuthCodeRedirect,
+} from '@/lib/oauth-provider';
 import { clientKey, rateLimit } from '@/lib/ratelimit';
 
 export async function POST(req: Request) {
@@ -27,7 +31,7 @@ export async function POST(req: Request) {
     return new Response('workspace mismatch', { status: 403 });
   }
   const allowedRedirects = (client.redirectUris as string[]) ?? [];
-  if (!allowedRedirects.includes(params.redirect_uri ?? '')) {
+  if (!isRedirectUriAllowed(allowedRedirects, params.redirect_uri ?? '')) {
     return new Response('invalid redirect_uri', { status: 400 });
   }
 
@@ -55,20 +59,15 @@ export async function POST(req: Request) {
     return new Response('invalid_request: only S256 PKCE is supported', { status: 400 });
   }
 
-  const issued = await issueToken({
+  const target = await issueAuthCodeRedirect({
     workspaceId: client.workspaceId,
     clientUuid: client.id,
     userId: session.user.id,
-    kind: 'authorization_code',
-    scopes: grantedScopes,
-    ttlSeconds: TTL.authorizationCode,
+    grantedScopes,
+    redirectUri: params.redirect_uri!,
+    state: params.state ?? null,
     codeChallenge: params.code_challenge ?? null,
     codeChallengeMethod,
-    redirectUri: params.redirect_uri ?? null,
   });
-
-  const redirectUrl = new URL(params.redirect_uri!);
-  redirectUrl.searchParams.set('code', issued.token);
-  if (params.state) redirectUrl.searchParams.set('state', params.state);
-  return Response.redirect(redirectUrl.toString(), 302);
+  return Response.redirect(target, 302);
 }

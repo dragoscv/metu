@@ -20,7 +20,8 @@ import {
   getPersonaOverride,
 } from '../state/usePersonas';
 import { playWakeBlip } from '../state/wakeBlip';
-import { VrmAvatar, vrmEnabled } from '../ui/VrmAvatar';
+import { AvatarHost } from '../avatar/AvatarHost';
+import type { AvatarState } from '../avatar/types';
 
 const STATUS_LABEL: Record<VoiceStatus, string> = {
   idle: 'Idle',
@@ -117,7 +118,14 @@ function HudInner({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [auth.accessToken, persona.slug]);
 
-  const vrmUrl = persona.avatarKind === 'vrm' ? vrmEnabled(persona.avatarUrl) : vrmEnabled(null);
+  const avatarState: AvatarState =
+    state.lastToolCall?.tool === 'conductor.escalate'
+      ? 'thinking'
+      : state.status === 'speaking'
+        ? 'speaking'
+        : state.status === 'listening'
+          ? 'listening'
+          : 'idle';
 
   return (
     <div className="hud-scrim" onClick={() => void invoke('presence_hud_hide')}>
@@ -125,23 +133,9 @@ function HudInner({
         className={`hud-console hud-console--${state.status}`}
         onClick={(e) => e.stopPropagation()}
       >
-        {vrmUrl ? (
-          <div className="hud-orb" aria-hidden>
-            <VrmAvatar
-              modelUrl={vrmUrl}
-              speaking={state.status === 'speaking'}
-              listening={state.status === 'listening'}
-              thinking={state.lastToolCall?.tool === 'conductor.escalate'}
-              size={220}
-              audioEl={audioEl}
-            />
-          </div>
-        ) : (
-          <div className="hud-orb" aria-hidden>
-            <div className="hud-orb__core" />
-            <div className="hud-orb__rim" />
-          </div>
-        )}
+        <div className="hud-orb" aria-hidden>
+          <AvatarHost state={avatarState} size={220} audioEl={audioEl} />
+        </div>
         <div className="hud-meta">
           <strong className="hud-name">{persona.name}</strong>
           <span className="muted">
@@ -155,17 +149,22 @@ function HudInner({
           )}
         </div>
         <div className="hud-controls">
-          <select
-            className="hud-persona"
-            value={personaSlug}
-            onChange={(e) => setPersonaSlug(e.target.value)}
-          >
-            {voicePersonas.map((p) => (
-              <option key={p.slug} value={p.slug}>
-                {p.name}
-              </option>
-            ))}
-          </select>
+          <div className="select-wrap" style={{ flex: 1 }}>
+            <select
+              className="field field--select"
+              value={personaSlug}
+              onChange={(e) => setPersonaSlug(e.target.value)}
+            >
+              {voicePersonas.map((p) => (
+                <option key={p.slug} value={p.slug}>
+                  {p.name}
+                </option>
+              ))}
+            </select>
+            <span className="select-wrap__chevron" aria-hidden>
+              ⌄
+            </span>
+          </div>
           <button className="btn ghost" onClick={() => interrupt()}>
             Interrupt
           </button>

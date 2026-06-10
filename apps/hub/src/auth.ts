@@ -7,7 +7,7 @@
  */
 import { createHash } from 'node:crypto';
 import { getDb } from '@metu/db';
-import { oauthToken, workspace } from '@metu/db/schema';
+import { oauthClient, oauthToken, workspace } from '@metu/db/schema';
 import { and, eq, gt, isNull } from 'drizzle-orm';
 
 export interface AuthenticatedToken {
@@ -33,11 +33,15 @@ export async function authenticateHello(accessToken: string): Promise<Authentica
       workspaceId: oauthToken.workspaceId,
       userId: oauthToken.userId,
       scopes: oauthToken.scopes,
-      clientId: oauthToken.clientId,
+      // oauthToken.clientId is the UUID FK to oauthClient.id; the hub's
+      // kind↔client binding compares against the PUBLIC client id string
+      // (e.g. 'metu_app_companion'), so resolve it here via the join.
+      clientId: oauthClient.clientId,
       slug: workspace.slug,
     })
     .from(oauthToken)
     .leftJoin(workspace, eq(workspace.id, oauthToken.workspaceId))
+    .leftJoin(oauthClient, eq(oauthClient.id, oauthToken.clientId))
     .where(
       and(
         eq(oauthToken.tokenHash, tokenHash),

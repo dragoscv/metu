@@ -10,18 +10,22 @@
     "frontendDist": "../dist"
   },
   "app": {
+    "withGlobalTauri": true,
     "windows": [
       {
         "label": "main",
         "title": "METU",
-        "width": 380,
-        "height": 520,
+        "width": 860,
+        "height": 560,
         "resizable": true,
-        "decorations": true,
+        "decorations": false,
         "transparent": true,
         "alwaysOnTop": false,
         "skipTaskbar": false,
-        "visible": true
+        "visible": true,
+        "shadow": false,
+        "minWidth": 760,
+        "minHeight": 520
       },
       {
         "label": "hud",
@@ -49,6 +53,22 @@
         "transparent": true,
         "alwaysOnTop": true,
         "skipTaskbar": true,
+        "visible": false,
+        "focus": false,
+        "shadow": false
+      },
+      {
+        "label": "overlay",
+        "title": "METU Overlay",
+        "url": "index.html#overlay",
+        "width": 1280,
+        "height": 800,
+        "resizable": true,
+        "decorations": false,
+        "transparent": true,
+        "alwaysOnTop": true,
+        "skipTaskbar": true,
+        "maximized": true,
         "visible": false,
         "focus": false,
         "shadow": false
