@@ -84,6 +84,9 @@ interface Options {
 
 const FRAME_MS = 33; // ~30fps stepping
 const HOVER_POLL_MS = 120;
+/** Extra px around the window bounds that still counts as "inside" — makes
+ * waking a click-through window forgiving of polling latency. */
+const WAKE_MARGIN_PX = 16;
 
 // ── Click-through management ────────────────────────────────────────────────
 // HARD-LEARNED: never gate re-enabling on a cached "current" value. The cache
@@ -94,14 +97,37 @@ const HOVER_POLL_MS = 120;
 // desktop. The poll below is the single authority: it recomputes the desired
 // state every tick and force re-applies periodically so any desync self-heals
 // within ~1s.
-let lastApplied: boolean | null = null;
+//
+// HARD-LEARNED #2: invokes MUST be serialized (single-flight, latest-wins).
+// Two concurrent `set_clickthrough` IPC calls can land on the Rust side in
+// the wrong order — a stale `true` arriving after a fresh `false` makes the
+// chat panel / avatar dead to clicks even though our JS state says
+// interactive. `desired` always holds the newest intent; `pump` applies it
+// one invoke at a time and re-checks after each completion.
+let desired: boolean | null = null;
+let applied: boolean | null = null;
+let inflight = false;
+function pumpClickthrough() {
+  if (inflight || desired === null || desired === applied) return;
+  const next = desired;
+  inflight = true;
+  invoke('presence_assistant_set_clickthrough', { enabled: next })
+    .then(() => {
+      applied = next;
+    })
+    .catch(() => {
+      // Unknown real state — forget so the next tick retries.
+      applied = null;
+    })
+    .finally(() => {
+      inflight = false;
+      pumpClickthrough(); // desired may have changed while in flight
+    });
+}
 function applyClickthrough(enabled: boolean, force = false) {
-  if (!force && lastApplied === enabled) return;
-  lastApplied = enabled;
-  void invoke('presence_assistant_set_clickthrough', { enabled }).catch(() => {
-    // On failure forget the cache so the next tick retries.
-    lastApplied = null;
-  });
+  desired = enabled;
+  if (force) applied = null; // bypass dedupe — re-assert against the OS
+  pumpClickthrough();
 }
 
 export function useAssistantBrain(opts: Options): AssistantBrainState {
@@ -130,7 +156,9 @@ export function useAssistantBrain(opts: Options): AssistantBrainState {
   useEffect(() => {
     lockedRef.current = !!interactionLocked;
     // Entering a locked state must immediately guarantee interactivity.
-    if (interactionLocked) applyClickthrough(false);
+    // Force: bypass the dedupe cache so the OS state is re-asserted even if
+    // we *think* it's already interactive (the think can be wrong).
+    if (interactionLocked) applyClickthrough(false, true);
   }, [interactionLocked]);
 
   // DOM-reported hover over interactive zones (body, bubble, chat).
@@ -141,7 +169,9 @@ export function useAssistantBrain(opts: Options): AssistantBrainState {
     setHovering(on);
     if (on) {
       lastActivityRef.current = Date.now();
-      applyClickthrough(false);
+      // Force: the pointer is *on* an interactive zone right now — re-assert
+      // against the OS even if our cache believes we're already interactive.
+      applyClickthrough(false, true);
     }
     // Leaving is handled by the authoritative poll (below) so a missed
     // pointerleave can never strand the window in the wrong state.
@@ -325,16 +355,33 @@ export function useAssistantBrain(opts: Options): AssistantBrainState {
   useEffect(() => {
     if (!isTauri()) return;
     let ticks = 0;
+    let seq = 0;
+    const win = getCurrentWindow();
     const timer = setInterval(() => {
       void (async () => {
         ticks++;
+        const mySeq = ++seq;
         let inside = false;
         if (!lockedRef.current && !domHoverRef.current) {
-          const cur = await getCursor();
+          // Read the REAL window position — posRef only tracks brain-driven
+          // movement and goes stale after manual drags / external moves,
+          // which made the bounds test check the wrong rectangle ("cursor is
+          // on the character but clicks land behind it").
+          const [cur, realPos] = await Promise.all([
+            getCursor(),
+            win.outerPosition().catch(() => null),
+          ]);
+          // A newer tick (or a lock/hover flip) may have happened while we
+          // awaited the IPC round-trips — never let a stale read win.
+          if (mySeq !== seq) return;
+          if (realPos) posRef.current = { x: realPos.x, y: realPos.y };
           if (cur) {
             const pos = posRef.current;
             inside =
-              cur.x >= pos.x && cur.x <= pos.x + width && cur.y >= pos.y && cur.y <= pos.y + height;
+              cur.x >= pos.x - WAKE_MARGIN_PX &&
+              cur.x <= pos.x + width + WAKE_MARGIN_PX &&
+              cur.y >= pos.y - WAKE_MARGIN_PX &&
+              cur.y <= pos.y + height + WAKE_MARGIN_PX;
           } else {
             // Cursor unknown (unsupported platform) — never go click-through,
             // otherwise the window could become permanently unreachable.

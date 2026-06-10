@@ -377,6 +377,18 @@ function AssistantSkin({
     else setAmbient(null);
   };
 
+  // The assistant window is created with `focus: false` (it must never steal
+  // focus while ambient). Opening the chat is an explicit user action, so we
+  // DO want focus then — otherwise the input can't receive keystrokes and
+  // clicks feel dead on Windows until the user alt-tabs.
+  useEffect(() => {
+    if (chatOpen && isTauri()) {
+      void getCurrentWindow()
+        .setFocus()
+        .catch(() => {});
+    }
+  }, [chatOpen]);
+
   const onAvatarClick = () => {
     if (suppressClickRef.current) return;
     if (speaking) {
