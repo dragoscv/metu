@@ -65,6 +65,7 @@ export function useAvatarSelection() {
     setOrbPreset: (orbPresetId: string) => write({ ...read(), orbPresetId }),
     setFacePreset: (facePresetId: string) => write({ ...read(), facePresetId }),
     setVrmPreset: (vrmPresetId: string) => write({ ...read(), vrmPresetId }),
+    setGlbPreset: (glbPresetId: string) => write({ ...read(), glbPresetId }),
     setCustomVrmUrl,
   };
 }

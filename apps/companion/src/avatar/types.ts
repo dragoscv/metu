@@ -1,17 +1,18 @@
 /**
  * Shared avatar types for the companion's "metu" character system.
  *
- * Three renderers, user-switchable:
+ * Four renderers, user-switchable:
  *   - 'orb'  → a custom Three.js shader being (many color/shape presets)
  *   - 'face' → a procedural SVG character with animated eyes/expressions
- *   - 'vrm'  → a 3D humanoid loaded from a .vrm model (many model presets)
+ *   - 'vrm'  → a 3D humanoid loaded from a .vrm model (anime/VRoid style)
+ *   - 'glb'  → an animated glTF model (game characters, robots, pets)
  *
  * All react to the same expressive `AvatarState` so the rest of the app
  * (voice session, hub) drives one interface regardless of renderer.
  */
 export type AvatarState = 'idle' | 'listening' | 'speaking' | 'thinking';
 
-export type AvatarKind = 'orb' | 'face' | 'vrm';
+export type AvatarKind = 'orb' | 'face' | 'vrm' | 'glb';
 
 export interface AvatarSelection {
   kind: AvatarKind;
@@ -21,6 +22,8 @@ export interface AvatarSelection {
   facePresetId: string;
   /** id of the active vrm preset (when kind==='vrm') */
   vrmPresetId: string;
+  /** id of the active glb preset (when kind==='glb') */
+  glbPresetId: string;
 }
 
 export const DEFAULT_AVATAR_SELECTION: AvatarSelection = {
@@ -28,6 +31,7 @@ export const DEFAULT_AVATAR_SELECTION: AvatarSelection = {
   orbPresetId: 'aurora',
   facePresetId: 'mochi',
   vrmPresetId: 'none',
+  glbPresetId: 'robo',
 };
 
 export interface AvatarDriveProps {

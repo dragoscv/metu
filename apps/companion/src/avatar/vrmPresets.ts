@@ -99,6 +99,25 @@ const CURATED: VrmPreset[] = [
     url: `${VRM_PACK_BASE}/Seed-san/vrm/Seed-san.vrm`,
     note: 'VRM Consortium sample',
   },
+  // ── Western / game-art styles ────────────────────────────────────────────
+  {
+    id: 'meebit',
+    name: 'Meebit (voxel)',
+    url: `${VRM_PACK_BASE}/meebits/meebit_09842.vrm`,
+    note: 'Minecraft-style voxel character',
+  },
+  {
+    id: 'voxel-girl',
+    name: 'Voxel Scout',
+    url: `${VRM_PACK_BASE}/cryptovoxels.vrm`,
+    note: 'CryptoVoxels block character',
+  },
+  {
+    id: 'orion',
+    name: 'Orion',
+    url: `${VRM_PACK_BASE}/Avatar_Orion.vrm`,
+    note: 'Sci-fi western character',
+  },
 ];
 
 /**

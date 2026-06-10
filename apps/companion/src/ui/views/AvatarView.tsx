@@ -10,6 +10,7 @@ import { AvatarHost } from '../../avatar/AvatarHost';
 import { ORB_PRESETS } from '../../avatar/orbPresets';
 import { FACE_PRESETS } from '../../avatar/facePresets';
 import { VRM_PRESETS } from '../../avatar/vrmPresets';
+import { GLB_PRESETS } from '../../avatar/glbPresets';
 import type { AvatarKind, AvatarState } from '../../avatar/types';
 import { ViewHeader } from '../ViewHeader';
 
@@ -21,6 +22,7 @@ export function AvatarView() {
     setOrbPreset,
     setFacePreset,
     setVrmPreset,
+    setGlbPreset,
     setCustomVrmUrl,
   } = useAvatarSelection();
   const [customDraft, setCustomDraft] = useState(customVrmUrl ?? '');
@@ -62,9 +64,10 @@ export function AvatarView() {
 
         <div className="avatar-studio__controls">
           <div className="seg-group">
-            {tab('orb', '✦ Shader orb')}
+            {tab('orb', '✦ Orb')}
             {tab('face', '☺ Character')}
-            {tab('vrm', '☻ 3D avatar')}
+            {tab('vrm', '☻ Anime 3D')}
+            {tab('glb', '🎮 Game & pets')}
           </div>
 
           {selection.kind === 'orb' ? (
@@ -106,6 +109,23 @@ export function AvatarView() {
                     </span>
                   </span>
                   <span className="orb-chip__name">{p.name}</span>
+                </button>
+              ))}
+            </div>
+          ) : selection.kind === 'glb' ? (
+            <div className="vrm-list">
+              {GLB_PRESETS.map((p) => (
+                <button
+                  key={p.id}
+                  className={`vrm-row ${selection.glbPresetId === p.id ? 'vrm-row--on' : ''}`}
+                  onClick={() => setGlbPreset(p.id)}
+                >
+                  <span>{p.name}</span>
+                  {p.note ? (
+                    <span className="muted" style={{ fontSize: 11 }}>
+                      {p.note}
+                    </span>
+                  ) : null}
                 </button>
               ))}
             </div>

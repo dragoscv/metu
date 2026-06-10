@@ -1,0 +1,160 @@
+/**
+ * GlbStage — animated glTF/GLB character renderer (game characters + pets).
+ *
+ * The VRM pipeline requires humanoid rigs; this stage renders *anything*:
+ * quadrupeds, birds, robots. It auto-fits the camera to the model's bounding
+ * box, plays the model's AnimationMixer clips, and maps the shared
+ * {@link AvatarDriveProps} state to per-preset clip names (e.g. the Fox
+ * surveys while idle and walks while "speaking"). Models without multiple
+ * clips just loop their first one.
+ *
+ * Loading/error surface through `onStatus` exactly like VrmStage so the
+ * AvatarHost can fall back to the orb when a URL is bad/offline.
+ */
+import { useEffect, useRef } from 'react';
+import * as THREE from 'three';
+import { GLTFLoader } from 'three/examples/jsm/loaders/GLTFLoader.js';
+import type { AvatarDriveProps, AvatarState } from './types';
+import { getGlbPreset } from './glbPresets';
+import type { VrmStatus } from './VrmStage';
+
+export function GlbStage({
+  presetId,
+  state,
+  size = 220,
+  onStatus,
+}: AvatarDriveProps & { presetId: string; onStatus?: (s: VrmStatus) => void }) {
+  const canvasRef = useRef<HTMLCanvasElement | null>(null);
+  const driveRef = useRef({ state });
+  driveRef.current.state = state;
+
+  useEffect(() => {
+    const canvas = canvasRef.current;
+    if (!canvas) return;
+    const preset = getGlbPreset(presetId);
+    let raf = 0;
+    let disposed = false;
+    onStatus?.('loading');
+
+    const renderer = new THREE.WebGLRenderer({ canvas, alpha: true, antialias: true });
+    renderer.setSize(size, size, false);
+    renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+    renderer.setClearColor(0x000000, 0);
+
+    const scene = new THREE.Scene();
+    const camera = new THREE.PerspectiveCamera(30, 1, 0.01, 1000);
+
+    const key = new THREE.DirectionalLight(0xffffff, 1.6);
+    key.position.set(1, 2, 1.5);
+    scene.add(key);
+    const rim = new THREE.DirectionalLight(0x90b4ff, 0.7);
+    rim.position.set(-1.5, 1, -1.5);
+    scene.add(rim);
+    scene.add(new THREE.AmbientLight(0xffffff, 0.7));
+
+    let mixer: THREE.AnimationMixer | null = null;
+    let clipsByState: Partial<Record<AvatarState, THREE.AnimationClip>> = {};
+    let fallbackClip: THREE.AnimationClip | null = null;
+    let activeAction: THREE.AnimationAction | null = null;
+    let root: THREE.Object3D | null = null;
+    let lastState: AvatarState | null = null;
+
+    const pickClip = (clips: THREE.AnimationClip[], names?: string[]) => {
+      if (!names) return null;
+      for (const n of names) {
+        const found = clips.find((c) => c.name.toLowerCase() === n.toLowerCase());
+        if (found) return found;
+      }
+      return null;
+    };
+
+    const loader = new GLTFLoader();
+    loader
+      .loadAsync(preset.url)
+      .then((gltf) => {
+        if (disposed) return;
+        root = gltf.scene;
+
+        // Auto-fit: center the model and pull the camera back so the whole
+        // bounding sphere is in frame regardless of model scale (the Fox is
+        // ~90 units tall, the Soldier ~1.8).
+        const box = new THREE.Box3().setFromObject(root);
+        const sphere = box.getBoundingSphere(new THREE.Sphere());
+        root.position.sub(sphere.center); // center at origin
+        if (preset.yaw) root.rotation.y = preset.yaw;
+        const margin = preset.fitMargin ?? 1.25;
+        const dist = (sphere.radius * margin) / Math.sin((camera.fov * Math.PI) / 360);
+        camera.position.set(0, sphere.radius * 0.12, dist);
+        camera.lookAt(0, 0, 0);
+        scene.add(root);
+
+        const clips = gltf.animations ?? [];
+        fallbackClip = clips[0] ?? null;
+        clipsByState = {
+          idle: pickClip(clips, preset.clips?.idle) ?? fallbackClip ?? undefined,
+          listening: pickClip(clips, preset.clips?.listening) ?? undefined,
+          speaking: pickClip(clips, preset.clips?.speaking) ?? undefined,
+          thinking: pickClip(clips, preset.clips?.thinking) ?? undefined,
+        };
+        if (clips.length) mixer = new THREE.AnimationMixer(root);
+        onStatus?.('ready');
+      })
+      .catch(() => {
+        if (!disposed) onStatus?.('error');
+      });
+
+    const clock = new THREE.Clock();
+
+    const tick = () => {
+      if (disposed) return;
+      const delta = clock.getDelta();
+      const t = clock.getElapsedTime();
+      const s = driveRef.current.state;
+
+      if (mixer && s !== lastState) {
+        lastState = s;
+        const clip = clipsByState[s] ?? clipsByState.idle ?? fallbackClip;
+        if (clip) {
+          const next = mixer.clipAction(clip);
+          if (next !== activeAction) {
+            next.reset().fadeIn(0.3).play();
+            activeAction?.fadeOut(0.3);
+            activeAction = next;
+          }
+        }
+      }
+      mixer?.update(delta);
+
+      if (root) {
+        // Gentle bob + sway so even single-clip models feel alive; perk up
+        // slightly while listening, dip while thinking.
+        const lift = s === 'listening' ? 0.015 : s === 'thinking' ? -0.01 : 0;
+        root.position.y += (Math.sin(t * 1.4) * 0.004 + lift - root.position.y) * 0.08;
+        root.rotation.y = (preset.yaw ?? 0) + Math.sin(t * 0.4) * (s === 'listening' ? 0.04 : 0.1);
+      }
+
+      renderer.render(scene, camera);
+      raf = requestAnimationFrame(tick);
+    };
+    raf = requestAnimationFrame(tick);
+
+    return () => {
+      disposed = true;
+      cancelAnimationFrame(raf);
+      mixer?.stopAllAction();
+      if (root) {
+        scene.remove(root);
+        root.traverse((o) => {
+          const mesh = o as THREE.Mesh;
+          if (mesh.geometry) mesh.geometry.dispose();
+          const mats = Array.isArray(mesh.material) ? mesh.material : [mesh.material];
+          for (const m of mats) m?.dispose?.();
+        });
+      }
+      renderer.dispose();
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [presetId, size]);
+
+  return <canvas ref={canvasRef} style={{ display: 'block', width: size, height: size }} />;
+}
