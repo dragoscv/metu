@@ -344,7 +344,6 @@ function AssistantSkin({
       });
     }
     return () => unlisten?.();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [personality]);
 
   // Ask-before-act: surface a confirm bubble for any proposed window action.
