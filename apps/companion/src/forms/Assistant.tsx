@@ -4,12 +4,15 @@
  * confirm actions, and an expandable agentic chat panel that talks to the
  * metu Conductor (codai-backed) via `/api/sdk/v1/companion/turn/stream`.
  *
- * ── Drag model (fix) ───────────────────────────────────────────────────────
- * `data-tauri-drag-region` only fires on the attributed element itself — the
- * avatar's WebGL canvas is a child, so presses on the character never started
- * the OS drag. We now drive dragging manually: pointerdown arms a gesture; if
- * the pointer travels > 6px before release we call `win_start_drag` (the OS
- * takes over). Releases without movement remain clicks (toggle chat, etc).
+ * ── Drag model (fix v2) ────────────────────────────────────────────────────
+ * `data-tauri-drag-region` only fires on the attributed element itself (the
+ * avatar's WebGL canvas swallowed it), and handing off to the OS modal move
+ * loop (`win_start_drag`) mid-gesture proved unreliable in WebView2. We now
+ * move the window OURSELVES: pointerdown captures the pointer and snapshots
+ * the window's outerPosition; each pointermove computes the screen-space
+ * delta and calls `setPosition`. Pointer capture keeps events flowing even
+ * while the window moves under the cursor. Releases without movement remain
+ * clicks (toggle chat, interrupt, etc).
  *
  * Click-through is owned by the brain via DOM-exact `setInteractive` — see
  * useAssistantBrain for the contract.
@@ -17,6 +20,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { invoke } from '@tauri-apps/api/core';
 import { listen } from '@tauri-apps/api/event';
+import { getCurrentWindow, PhysicalPosition } from '@tauri-apps/api/window';
 import { loadAuth, type AuthState } from '../state/auth';
 import { isTauri } from '../state/runtime';
 import { useVoiceSession } from '../state/useVoiceSession';
@@ -149,48 +153,115 @@ function AssistantSkin({
 
   const conversing = speaking || !!listening;
 
-  // ── Manual drag gesture ───────────────────────────────────────────────────
+  // ── Manual drag gesture (self-move) ──────────────────────────────────────
+  // We move the window ourselves with setPosition deltas instead of handing
+  // off to the OS modal loop, which silently no-ops when invoked mid-gesture
+  // from an async IPC call on WebView2. Pointer capture guarantees we keep
+  // receiving pointermove while the window slides under the cursor.
   const [dragging, setDragging] = useState(false);
-  const gestureRef = useRef<{ x: number; y: number; started: boolean } | null>(null);
   const suppressClickRef = useRef(false);
+  const dragRef = useRef<{
+    pointerId: number;
+    startX: number;
+    startY: number;
+    winX: number;
+    winY: number;
+    started: boolean;
+    el: HTMLElement;
+  } | null>(null);
   const dragCooldownRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const onBodyPointerDown = (e: React.PointerEvent) => {
-    if (e.button !== 0) return;
-    gestureRef.current = { x: e.screenX, y: e.screenY, started: false };
+    if (e.button !== 0 || !isTauri()) return;
+    const el = e.currentTarget as HTMLElement;
+    const pointerId = e.pointerId;
+    // Snapshot async; gesture arms when the position lands (a few ms).
+    void getCurrentWindow()
+      .outerPosition()
+      .then((pos) => {
+        // User may have released already.
+        dragRef.current = {
+          pointerId,
+          startX: e.screenX,
+          startY: e.screenY,
+          winX: pos.x,
+          winY: pos.y,
+          started: false,
+          el,
+        };
+      })
+      .catch(() => {});
   };
 
   useEffect(() => {
+    const dpr = window.devicePixelRatio || 1;
+    let raf = 0;
+    let pending: { x: number; y: number } | null = null;
+
+    const flush = () => {
+      raf = 0;
+      if (!pending) return;
+      const { x, y } = pending;
+      pending = null;
+      void getCurrentWindow()
+        .setPosition(new PhysicalPosition(x, y))
+        .catch(() => {});
+    };
+
     const onMove = (e: PointerEvent) => {
-      const g = gestureRef.current;
-      if (!g || g.started) return;
-      const dist = Math.hypot(e.screenX - g.x, e.screenY - g.y);
-      if (dist >= DRAG_THRESHOLD_PX) {
+      const g = dragRef.current;
+      if (!g || e.pointerId !== g.pointerId) return;
+      const dxLogical = e.screenX - g.startX;
+      const dyLogical = e.screenY - g.startY;
+      if (!g.started) {
+        if (Math.hypot(dxLogical, dyLogical) < DRAG_THRESHOLD_PX) return;
         g.started = true;
         suppressClickRef.current = true;
         setDragging(true);
-        // Hand the gesture to the OS — it owns the pointer until release.
-        void invoke('win_start_drag').catch(() => {});
+        try {
+          g.el.setPointerCapture(g.pointerId);
+        } catch {
+          /* capture is best-effort */
+        }
       }
+      // screenX/Y are logical CSS px; outerPosition is physical px.
+      pending = {
+        x: Math.round(g.winX + dxLogical * dpr),
+        y: Math.round(g.winY + dyLogical * dpr),
+      };
+      if (!raf) raf = requestAnimationFrame(flush);
     };
-    const onUp = () => {
-      const g = gestureRef.current;
-      gestureRef.current = null;
-      if (g?.started) {
+
+    const endDrag = () => {
+      const g = dragRef.current;
+      dragRef.current = null;
+      if (!g) return;
+      try {
+        g.el.releasePointerCapture(g.pointerId);
+      } catch {
+        /* ignore */
+      }
+      if (g.started) {
         if (dragCooldownRef.current) clearTimeout(dragCooldownRef.current);
+        // Brief cooldown so the brain doesn't immediately re-target, and so
+        // the click that follows pointerup doesn't toggle the chat.
         dragCooldownRef.current = setTimeout(() => {
           setDragging(false);
           suppressClickRef.current = false;
-        }, 1200);
+        }, 400);
       }
     };
+
     window.addEventListener('pointermove', onMove, true);
-    window.addEventListener('pointerup', onUp, true);
-    window.addEventListener('blur', onUp, true);
+    window.addEventListener('pointerup', endDrag, true);
+    window.addEventListener('pointercancel', endDrag, true);
+    window.addEventListener('blur', endDrag, true);
     return () => {
       window.removeEventListener('pointermove', onMove, true);
-      window.removeEventListener('pointerup', onUp, true);
-      window.removeEventListener('blur', onUp, true);
+      window.removeEventListener('pointerup', endDrag, true);
+      window.removeEventListener('pointercancel', endDrag, true);
+      window.removeEventListener('blur', endDrag, true);
+      if (raf) cancelAnimationFrame(raf);
       if (dragCooldownRef.current) clearTimeout(dragCooldownRef.current);
     };
   }, []);
@@ -345,6 +416,7 @@ function AssistantSkin({
             onStop={chat.stop}
             onClear={chat.clear}
             onClose={() => setChatOpen(false)}
+            onDragPointerDown={onBodyPointerDown}
           />
         </div>
       ) : (

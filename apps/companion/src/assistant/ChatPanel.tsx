@@ -23,6 +23,7 @@ export function ChatPanel({
   onStop,
   onClear,
   onClose,
+  onDragPointerDown,
 }: {
   messages: ChatMessage[];
   status: ChatStatus;
@@ -31,6 +32,8 @@ export function ChatPanel({
   onStop: () => void;
   onClear: () => void;
   onClose: () => void;
+  /** Press-and-drag on the header repositions the assistant window. */
+  onDragPointerDown?: (e: React.PointerEvent) => void;
 }) {
   const [draft, setDraft] = useState('');
   const threadRef = useRef<HTMLDivElement | null>(null);
@@ -57,8 +60,8 @@ export function ChatPanel({
   const hint = STATUS_HINT[status];
 
   return (
-    <div className="chat" onPointerDown={(e) => e.stopPropagation()}>
-      <div className="chat__head" data-tauri-drag-region>
+    <div className="chat">
+      <div className="chat__head" onPointerDown={onDragPointerDown} style={{ cursor: 'grab' }}>
         <span className="chat__title">{personaName}</span>
         <div className="chat__head-actions">
           {messages.length > 0 && (

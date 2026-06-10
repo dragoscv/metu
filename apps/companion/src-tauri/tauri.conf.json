@@ -75,7 +75,7 @@
       }
     ],
     "security": {
-      "csp": "default-src 'self'; img-src 'self' data: https:; connect-src 'self' http://localhost:24890 http://localhost:24891 ws://localhost:24891 https://*.metu.app wss://*.metu.app; style-src 'self' 'unsafe-inline'; script-src 'self'"
+      "csp": "default-src 'self'; img-src 'self' data: https:; connect-src 'self' http://localhost:24890 http://localhost:24891 ws://localhost:24891 https://*.metu.app wss://*.metu.app https://raw.githubusercontent.com; style-src 'self' 'unsafe-inline'; script-src 'self'"
     }
   },
   "bundle": {

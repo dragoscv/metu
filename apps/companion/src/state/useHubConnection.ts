@@ -46,13 +46,21 @@ export function useHubConnection(auth: AuthState | null): HubHandle {
   const [status, setStatus] = useState<HubStatus>('idle');
   const wsRef = useRef<WebSocket | null>(null);
   const retryRef = useRef(0);
-  const cancelledRef = useRef(false);
+  // Mirror of `status` for timers that must not close over stale state.
+  const statusRef = useRef<HubStatus>('idle');
+  statusRef.current = status;
 
   const accessToken = auth?.accessToken;
   const hubUrl = auth?.hubUrl;
   useEffect(() => {
     if (!accessToken || !hubUrl) return;
-    cancelledRef.current = false;
+    // Per-generation cancellation. This MUST be a local (not a shared ref):
+    // a shared ref gets reset to `false` when the effect re-runs after a
+    // token refresh, which would revive the previous generation's pending
+    // retry timer — a zombie reconnect loop with a stale token that clobbers
+    // the live socket and pins the UI on "Reconnecting…".
+    let cancelled = false;
+    let retryTimer: ReturnType<typeof setTimeout> | null = null;
     const fingerprint = getOrCreateFingerprint();
     let plat: string = 'unknown';
     try {
@@ -62,7 +70,7 @@ export function useHubConnection(auth: AuthState | null): HubHandle {
     }
 
     const connect = () => {
-      if (cancelledRef.current) return;
+      if (cancelled) return;
       setStatus('connecting');
       const url = `${hubUrl.replace(/^http/, 'ws')}/ws`;
       const ws = new WebSocket(url);
@@ -70,7 +78,7 @@ export function useHubConnection(auth: AuthState | null): HubHandle {
 
       ws.addEventListener('open', () => {
         // Ignore events from a socket we've already replaced/closed.
-        if (wsRef.current !== ws || cancelledRef.current) return;
+        if (wsRef.current !== ws || cancelled) return;
         retryRef.current = 0;
         ws.send(
           JSON.stringify({
@@ -90,7 +98,7 @@ export function useHubConnection(auth: AuthState | null): HubHandle {
       ws.addEventListener('message', async (ev) => {
         // A stale socket (already superseded by a reconnect) must not mutate
         // status — otherwise its late frames clobber the live connection.
-        if (wsRef.current !== ws || cancelledRef.current) return;
+        if (wsRef.current !== ws || cancelled) return;
         let msg: unknown;
         try {
           msg = JSON.parse(ev.data);
@@ -206,20 +214,47 @@ export function useHubConnection(auth: AuthState | null): HubHandle {
         // A superseded socket closing is expected during reconnect/StrictMode
         // remount — it must NOT flip status or schedule a retry, or it will
         // clobber the live socket that already reported `open`.
-        if (wsRef.current !== ws || cancelledRef.current) return;
+        if (wsRef.current !== ws || cancelled) return;
         setStatus('closed');
-        const delay = Math.min(30_000, 1000 * 2 ** retryRef.current++);
-        setTimeout(connect, delay);
+        // Cap the exponent so the backoff math can't overflow into a 0/NaN
+        // delay after many hours of failed retries (2**1024 === Infinity).
+        const attempt = Math.min(retryRef.current++, 5);
+        const delay = Math.min(30_000, 1000 * 2 ** attempt);
+        if (retryTimer) clearTimeout(retryTimer);
+        retryTimer = setTimeout(connect, delay);
       });
       ws.addEventListener('error', () => {
-        if (wsRef.current !== ws || cancelledRef.current) return;
+        if (wsRef.current !== ws || cancelled) return;
         setStatus('error');
       });
+
+      // Hello watchdog: if the hub never ACKs within 15s (half-open socket,
+      // proxy that accepted TCP but the app is wedged, token rejected without
+      // a close frame), force-close so the `close` handler reschedules. This
+      // is the cure for the indefinite "Reconnecting…" state — a socket that
+      // connects but never completes the handshake previously sat in
+      // `connecting` forever with no timer running.
+      const helloWatchdog = setTimeout(() => {
+        if (wsRef.current !== ws || cancelled) return;
+        if (ws.readyState === WebSocket.OPEN || ws.readyState === WebSocket.CONNECTING) {
+          // Only kill it if we never got hello_ack (status still connecting).
+          // statusRef avoids stale closure over `status`.
+          if (statusRef.current !== 'open') {
+            try {
+              ws.close();
+            } catch {
+              /* ignore */
+            }
+          }
+        }
+      }, 15_000);
+      ws.addEventListener('close', () => clearTimeout(helloWatchdog), { once: true });
     };
 
     connect();
     return () => {
-      cancelledRef.current = true;
+      cancelled = true;
+      if (retryTimer) clearTimeout(retryTimer);
       wsRef.current?.close();
     };
   }, [accessToken, hubUrl]);

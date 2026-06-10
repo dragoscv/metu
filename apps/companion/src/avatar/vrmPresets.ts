@@ -24,6 +24,84 @@ const THREE_VRM_SAMPLES =
   'https://raw.githubusercontent.com/pixiv/three-vrm/dev/packages/three-vrm/examples/models';
 
 /**
+ * Curated character pack — full VRoid Studio sample characters mirrored in
+ * madjin/vrm-samples (github). Licensing: the AvatarSample_* models follow
+ * pixiv's VRoid sample conditions of use (free to use in apps); the beta-era
+ * presets (Vita, Vivi, Victoria, Sendagaya, Sakurada) are CC0 per the repo's
+ * README. Streamed on first use, then browser-cached.
+ */
+const VRM_PACK_BASE = 'https://raw.githubusercontent.com/madjin/vrm-samples/master';
+
+const CURATED: VrmPreset[] = [
+  {
+    id: 'sample-a',
+    name: 'Hana (Sample A)',
+    url: `${VRM_PACK_BASE}/vroid/stable/AvatarSample_A.vrm`,
+    note: 'VRoid official sample',
+  },
+  {
+    id: 'sample-b',
+    name: 'Mio (Sample B)',
+    url: `${VRM_PACK_BASE}/vroid/stable/AvatarSample_B.vrm`,
+    note: 'VRoid official sample',
+  },
+  {
+    id: 'sample-c',
+    name: 'Ren (Sample C)',
+    url: `${VRM_PACK_BASE}/vroid/stable/AvatarSample_C.vrm`,
+    note: 'VRoid official sample',
+  },
+  {
+    id: 'vita',
+    name: 'Vita',
+    url: `${VRM_PACK_BASE}/vroid/beta/Vita.vrm`,
+    note: 'VRoid preset — CC0',
+  },
+  {
+    id: 'vivi',
+    name: 'Vivi',
+    url: `${VRM_PACK_BASE}/vroid/beta/Vivi.vrm`,
+    note: 'VRoid preset — CC0',
+  },
+  {
+    id: 'victoria',
+    name: 'Victoria',
+    url: `${VRM_PACK_BASE}/vroid/beta/Victoria_Rubin.vrm`,
+    note: 'VRoid preset — CC0',
+  },
+  {
+    id: 'shino',
+    name: 'Shino',
+    url: `${VRM_PACK_BASE}/vroid/beta/Sendagaya_Shino.vrm`,
+    note: 'VRoid preset — CC0',
+  },
+  {
+    id: 'fumiriya',
+    name: 'Fumiriya',
+    url: `${VRM_PACK_BASE}/vroid/beta/Sakurada_Fumiriya.vrm`,
+    note: 'VRoid preset — CC0',
+  },
+  {
+    id: 'femme',
+    name: 'Femme (base)',
+    url: `${VRM_PACK_BASE}/vroid/fem_vroid.vrm`,
+    note: 'VRoid base body',
+  },
+  {
+    id: 'masc',
+    name: 'Masc (base)',
+    url: `${VRM_PACK_BASE}/vroid/masc_vroid.vrm`,
+    note: 'VRoid base body',
+  },
+  {
+    id: 'seed-san',
+    name: 'Seed-san',
+    url: `${VRM_PACK_BASE}/Seed-san/vrm/Seed-san.vrm`,
+    note: 'VRM Consortium sample',
+  },
+];
+
+/**
  * Bundled character pack — drop CC0/`.vrm` files into
  * `apps/companion/public/avatars/` and list them here. Vite serves `public/`
  * at the app root, so the URLs are relative and work offline in the Tauri
@@ -33,15 +111,15 @@ const THREE_VRM_SAMPLES =
 const BUNDLED: VrmPreset[] = [
   {
     id: 'pack-sora',
-    name: 'Sora',
+    name: 'Sora (local)',
     url: '/avatars/sora.vrm',
-    note: 'bundled — drop sora.vrm in public/avatars',
+    note: 'drop sora.vrm in public/avatars',
   },
   {
     id: 'pack-yuki',
-    name: 'Yuki',
+    name: 'Yuki (local)',
     url: '/avatars/yuki.vrm',
-    note: 'bundled — drop yuki.vrm in public/avatars',
+    note: 'drop yuki.vrm in public/avatars',
   },
   {
     id: 'pack-kai',
@@ -53,6 +131,7 @@ const BUNDLED: VrmPreset[] = [
 
 export const VRM_PRESETS: VrmPreset[] = [
   { id: 'none', name: 'No model (use orb)', url: null },
+  ...CURATED,
   {
     id: 'vrm1-a',
     name: 'Sample — VRM1 Constraint',
