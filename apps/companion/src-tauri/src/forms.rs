@@ -59,6 +59,11 @@ pub async fn presence_hud_toggle<R: Runtime>(app: tauri::AppHandle<R>) -> Result
 pub async fn presence_assistant_show<R: Runtime>(app: tauri::AppHandle<R>) -> Result<(), String> {
     let w = lookup(&app, ASSISTANT_LABEL)?;
     w.show().map_err(|e| format!("show_failed: {e}"))?;
+    // Tell the assistant webview it just became visible so it can greet.
+    // The webview mounts (and runs effects) long before the window is shown,
+    // so any "greet on mount" bubble would have expired before being seen.
+    use tauri::Emitter;
+    let _ = w.emit("metu://assistant-shown", ());
     Ok(())
 }
 

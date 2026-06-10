@@ -329,6 +329,24 @@ function AssistantSkin({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
+  // Re-greet whenever the window is actually SHOWN. The webview mounts while
+  // the window is still hidden (`visible: false` in tauri.conf.json), so the
+  // mount-greeting's TTL expires before the user ever sees it — which looked
+  // like "the bubble is missing".
+  useEffect(() => {
+    let unlisten: (() => void) | undefined;
+    if (isTauri()) {
+      void listen('metu://assistant-shown', () => {
+        const line = assistantLines.greeting(personality);
+        if (line) setAmbient({ text: line });
+      }).then((fn) => {
+        unlisten = fn;
+      });
+    }
+    return () => unlisten?.();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [personality]);
+
   // Ask-before-act: surface a confirm bubble for any proposed window action.
   useEffect(() => {
     return onProposal((p) => {
