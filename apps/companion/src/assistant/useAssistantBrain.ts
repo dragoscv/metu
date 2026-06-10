@@ -85,12 +85,23 @@ interface Options {
 const FRAME_MS = 33; // ~30fps stepping
 const HOVER_POLL_MS = 120;
 
-// Module-scope so applyClickthrough can be shared without re-creation.
-let clickthroughState = false;
-function applyClickthrough(enabled: boolean) {
-  if (clickthroughState === enabled) return;
-  clickthroughState = enabled;
-  void invoke('presence_assistant_set_clickthrough', { enabled }).catch(() => {});
+// ── Click-through management ────────────────────────────────────────────────
+// HARD-LEARNED: never gate re-enabling on a cached "current" value. The cache
+// desyncs from the real window (Vite HMR resets module state; the Conductor's
+// settings_update tool toggles the window directly; an invoke can fail), and
+// a stale `false` cache meant the wake-up poll never ran — the window stayed
+// ignore_cursor_events(true) forever and every click/drag fell through to the
+// desktop. The poll below is the single authority: it recomputes the desired
+// state every tick and force re-applies periodically so any desync self-heals
+// within ~1s.
+let lastApplied: boolean | null = null;
+function applyClickthrough(enabled: boolean, force = false) {
+  if (!force && lastApplied === enabled) return;
+  lastApplied = enabled;
+  void invoke('presence_assistant_set_clickthrough', { enabled }).catch(() => {
+    // On failure forget the cache so the next tick retries.
+    lastApplied = null;
+  });
 }
 
 export function useAssistantBrain(opts: Options): AssistantBrainState {
@@ -122,16 +133,18 @@ export function useAssistantBrain(opts: Options): AssistantBrainState {
     if (interactionLocked) applyClickthrough(false);
   }, [interactionLocked]);
 
+  // DOM-reported hover over interactive zones (body, bubble, chat).
+  const domHoverRef = useRef(false);
+
   const setInteractive = useCallback((on: boolean) => {
+    domHoverRef.current = on;
     setHovering(on);
     if (on) {
       lastActivityRef.current = Date.now();
       applyClickthrough(false);
-    } else if (!lockedRef.current) {
-      // Cursor left all interactive zones and nothing locks interaction —
-      // let clicks pass through the transparent margin again.
-      applyClickthrough(true);
     }
+    // Leaving is handled by the authoritative poll (below) so a missed
+    // pointerleave can never strand the window in the wrong state.
   }, []);
 
   // Allow external (hub) point requests via a window event.
@@ -299,22 +312,37 @@ export function useAssistantBrain(opts: Options): AssistantBrainState {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  // ── Re-entry poll: wake the window from click-through ───────────────────
-  // When click-through is ON the DOM gets no events, so we poll the global
-  // cursor against the window bounds and flip click-through OFF as soon as
-  // the cursor enters. The DOM then owns the exact hit-testing (see
-  // setInteractive) and will re-enable click-through on leave.
+  // ── Authoritative click-through reconciler ───────────────────────────────
+  // Single source of truth, runs every HOVER_POLL_MS:
+  //   interactive  ⇐ locked ∨ DOM-hover ∨ cursor inside window bounds
+  //   click-through = ¬interactive
+  // The cursor-bounds check is what wakes a click-through window (the DOM
+  // gets no events while ignored); DOM hover + lock keep it interactive with
+  // exact hit-testing once awake. Every ~1s the state is force re-applied so
+  // a desync (failed IPC, HMR module reset, external toggle via the
+  // Conductor's settings_update) self-heals instead of stranding the window
+  // un-clickable forever.
   useEffect(() => {
     if (!isTauri()) return;
+    let ticks = 0;
     const timer = setInterval(() => {
-      if (!clickthroughState) return; // DOM owns it right now
       void (async () => {
-        const cur = await getCursor();
-        if (!cur) return;
-        const pos = posRef.current;
-        const inside =
-          cur.x >= pos.x && cur.x <= pos.x + width && cur.y >= pos.y && cur.y <= pos.y + height;
-        if (inside) applyClickthrough(false);
+        ticks++;
+        let inside = false;
+        if (!lockedRef.current && !domHoverRef.current) {
+          const cur = await getCursor();
+          if (cur) {
+            const pos = posRef.current;
+            inside =
+              cur.x >= pos.x && cur.x <= pos.x + width && cur.y >= pos.y && cur.y <= pos.y + height;
+          } else {
+            // Cursor unknown (unsupported platform) — never go click-through,
+            // otherwise the window could become permanently unreachable.
+            inside = true;
+          }
+        }
+        const interactive = lockedRef.current || domHoverRef.current || inside;
+        applyClickthrough(!interactive, ticks % 8 === 0);
       })();
     }, HOVER_POLL_MS);
     return () => clearInterval(timer);

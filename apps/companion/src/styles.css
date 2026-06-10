@@ -352,6 +352,36 @@ html:has(.overlay-stage), body:has(.overlay-stage) { background: transparent; }
 }
 .assistant-body:active { cursor: grabbing; }
 
+/* ── Context menu ────────────────────────────────────────────────── */
+.assistant-menu {
+  pointer-events: auto;
+  position: fixed;
+  background: rgba(14, 16, 26, 0.96);
+  border: 1px solid rgba(140, 180, 255, 0.28);
+  border-radius: 12px;
+  box-shadow: 0 12px 32px rgba(0, 0, 0, 0.5);
+  backdrop-filter: blur(14px);
+  -webkit-backdrop-filter: blur(14px);
+  min-width: 160px;
+  z-index: 1000;
+}
+.assistant-menu__item {
+  appearance: none;
+  display: block;
+  width: 100%;
+  padding: 10px 12px;
+  font-size: 13px;
+  color: #f5f7fb;
+  background: transparent;
+  border: none;
+  cursor: pointer;
+  text-align: left;
+  transition: background 160ms ease;
+}
+.assistant-menu__item:first-child { border-radius: 11px 11px 0 0; }
+.assistant-menu__item:last-child { border-radius: 0 0 11px 11px; }
+.assistant-menu__item:hover { background: rgba(124, 140, 255, 0.25); }
+
 /* ── Assistant expanded chat panel ────────────────────────────────── */
 .assistant-panel {
   pointer-events: auto;

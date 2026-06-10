@@ -170,6 +170,8 @@ function AssistantSkin({
     el: HTMLElement;
   } | null>(null);
   const dragCooldownRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  // Right-click context menu (anchored inside the window).
+  const [menu, setMenu] = useState<{ x: number; y: number } | null>(null);
 
   const onBodyPointerDown = (e: React.PointerEvent) => {
     if (e.button !== 0 || !isTauri()) return;
@@ -384,6 +386,27 @@ function AssistantSkin({
     setChatOpen((v) => !v);
   };
 
+  // Right-click: in-window context menu. WebView2 suppresses the native menu
+  // on transparent frameless windows, so we draw our own.
+  const onAvatarContextMenu = (e: React.MouseEvent) => {
+    e.preventDefault();
+    setMenu({ x: e.clientX, y: e.clientY });
+  };
+  // Dismiss the menu on any click elsewhere or Escape.
+  useEffect(() => {
+    if (!menu) return;
+    const close = () => setMenu(null);
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') close();
+    };
+    window.addEventListener('pointerdown', close);
+    window.addEventListener('keydown', onKey);
+    return () => {
+      window.removeEventListener('pointerdown', close);
+      window.removeEventListener('keydown', onKey);
+    };
+  }, [menu]);
+
   const quickReply = auth
     ? (text: string) => {
         setChatBubble(null);
@@ -445,11 +468,61 @@ function AssistantSkin({
             onPointerDown={onBodyPointerDown}
             onClick={onAvatarClick}
             onDoubleClick={() => onToggleMic?.()}
+            onContextMenu={onAvatarContextMenu}
             title="Click to chat · drag to move · double-click for voice"
           >
             <AvatarHost state={avatarState} size={180} audioEl={audioEl} />
           </div>
         </>
+      )}
+      {menu && (
+        <div
+          className="assistant-menu"
+          style={{ left: Math.min(menu.x, WIN_W - 168), top: Math.min(menu.y, WIN_H - 190) }}
+          onPointerDown={(e) => e.stopPropagation()}
+          onPointerEnter={() => setInteractive(true)}
+          onPointerLeave={() => setInteractive(false)}
+        >
+          {auth && (
+            <button
+              className="assistant-menu__item"
+              onClick={() => {
+                setMenu(null);
+                setChatOpen(true);
+              }}
+            >
+              💬 Open chat
+            </button>
+          )}
+          <button
+            className="assistant-menu__item"
+            onClick={() => {
+              setMenu(null);
+              onToggleMic?.();
+            }}
+          >
+            🎤 Toggle voice
+          </button>
+          <button
+            className="assistant-menu__item"
+            onClick={() => {
+              setMenu(null);
+              setAmbient(null);
+              setChatBubble(null);
+            }}
+          >
+            ✨ Dismiss bubble
+          </button>
+          <button
+            className="assistant-menu__item"
+            onClick={() => {
+              setMenu(null);
+              void invoke('presence_assistant_hide').catch(() => {});
+            }}
+          >
+            👻 Hide assistant
+          </button>
+        </div>
       )}
       <audio ref={handleAudio} autoPlay playsInline />
     </div>
