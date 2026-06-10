@@ -116,6 +116,8 @@ export const aiProviderKind = pgEnum('ai_provider_kind', [
   'copilot',
   'ollama',
   'custom',
+  // First-class codai gateway (ai.codai.ro) — OpenAI-compatible, preconfigured.
+  'codai',
   // Voice (slice 5b — BYOK voice keys reuses provider_credential).
   'deepgram',
   'cartesia',

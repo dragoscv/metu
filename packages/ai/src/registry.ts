@@ -23,6 +23,19 @@ import type { LanguageModel } from 'ai';
 import { open } from './crypto';
 import { copilotFetch, getCopilotSession } from './copilot';
 
+// ─── codai gateway (first-class, preconfigured) ────────────────────────────
+// ai.codai.ro is OpenAI-compatible. Base URL + tuning headers are baked in so
+// the user only pastes an API key. Power users can override via cred.config.
+export const CODAI_BASE_URL = 'https://ai.codai.ro/v1';
+export const CODAI_DEFAULT_HEADERS: Record<string, string> = {
+  // Extended thinking + semantic cache + cascade verification. Mirrors the
+  // VS Code Copilot Chat custom-endpoint config for the `codai` model.
+  'x-codai-thinking': '1',
+  'x-codai-thinking-budget': '32768',
+  'x-codai-cache': '1',
+  'x-codai-cascade': 'verify',
+};
+
 // ─── Default model per (provider, intent) ──────────────────────────────────
 
 const DEFAULTS: Record<AiProvider, Partial<Record<AiIntent, string>>> = {
@@ -73,6 +86,17 @@ const DEFAULTS: Record<AiProvider, Partial<Record<AiIntent, string>>> = {
     fast: 'llama3.2',
   },
   custom: {},
+  codai: {
+    // First-class codai gateway (ai.codai.ro). The `codai` alias auto-routes
+    // to the best upstream; codai-fast/vision are direct tiers. Embeddings
+    // must stay 1536-dim to match the pgvector column, so force
+    // text-embedding-3-small (codai proxies it).
+    reasoning: 'codai',
+    agentic: 'codai',
+    fast: 'codai-fast',
+    vision: 'codai-vision',
+    embed: 'text-embedding-3-small',
+  },
   // Voice providers — no LLM intents. Empty maps so DEFAULTS matches the
   // AiProvider union (extended for BYOK voice keys in slice 5b).
   deepgram: {},
@@ -81,12 +105,16 @@ const DEFAULTS: Record<AiProvider, Partial<Record<AiIntent, string>>> = {
 };
 
 const FALLBACK_CHAIN: Record<AiIntent, AiProvider[]> = {
-  reasoning: ['copilot', 'anthropic', 'openai', 'google', 'azure_openai'],
-  agentic: ['copilot', 'anthropic', 'openai', 'google', 'azure_openai'],
-  fast: ['copilot', 'google', 'openai', 'anthropic', 'azure_openai'],
-  embed: ['openai', 'azure_openai', 'google', 'ollama'],
+  // `codai` is preferred first for LLM intents so that connecting it
+  // immediately takes over from Copilot. `custom` stays in the chain for
+  // generic OpenAI-compatible endpoints.
+  reasoning: ['codai', 'custom', 'copilot', 'anthropic', 'openai', 'google', 'azure_openai'],
+  agentic: ['codai', 'custom', 'copilot', 'anthropic', 'openai', 'google', 'azure_openai'],
+  fast: ['codai', 'custom', 'copilot', 'google', 'openai', 'anthropic', 'azure_openai'],
+  embed: ['codai', 'custom', 'openai', 'azure_openai', 'google', 'ollama'],
+  // codai has no transcription endpoint — keep Whisper-compatible providers.
   transcribe: ['openai', 'google'],
-  vision: ['copilot', 'anthropic', 'openai', 'google'],
+  vision: ['codai', 'custom', 'copilot', 'anthropic', 'openai', 'google'],
 };
 
 // ─── Credential resolution ─────────────────────────────────────────────────
@@ -203,8 +231,11 @@ export async function getModel(input: GetModelInput): Promise<ResolvedModel> {
     // credential default > catalog default.
     const policyModel =
       policyEntry && policyEntry.provider === provider ? policyEntry.model : undefined;
-    const modelId =
-      input.model ?? policyModel ?? cred.defaultModel ?? DEFAULTS[provider][input.intent];
+    // For embeddings, never inherit the stored chat default model (e.g. a
+    // user who saved defaultModel='codai' must still embed with a 1536-dim
+    // embedding model). Skip cred.defaultModel on the embed intent.
+    const credDefault = input.intent === 'embed' ? undefined : cred.defaultModel;
+    const modelId = input.model ?? policyModel ?? credDefault ?? DEFAULTS[provider][input.intent];
     if (!modelId) continue;
     try {
       const model = instantiate(provider, cred, modelId, input.intent);
@@ -273,8 +304,47 @@ function instantiate(
     }
     case 'ollama':
       throw new Error('Ollama provider not yet wired (V2).');
-    case 'custom':
-      throw new Error('Custom provider not yet wired.');
+    case 'codai': {
+      // First-class codai gateway. Base URL + tuning headers are baked in;
+      // the user only provides an API key. config overrides allow power users
+      // to tweak (endpoint, headers) without code changes.
+      const cfg = cred.config as {
+        endpoint?: string;
+        headers?: Record<string, string>;
+      };
+      const baseURL = (cfg?.endpoint ?? cred.endpoint ?? CODAI_BASE_URL).replace(/\/+$/, '');
+      const client = createOpenAI({
+        apiKey: cred.apiKey,
+        baseURL,
+        headers: { ...CODAI_DEFAULT_HEADERS, ...(cfg?.headers ?? {}) },
+      });
+      if (intent === 'embed') return client.textEmbedding(modelId);
+      // codai speaks OpenAI Chat Completions, not the Responses API.
+      return client.chat(modelId);
+    }
+    case 'custom': {
+      // OpenAI-compatible custom endpoint (e.g. ai.codai.ro). The base URL is
+      // stored on the credential's `endpoint` column (or config.endpoint).
+      // createOpenAI appends `/chat/completions`, so the base must end at the
+      // OpenAI-style root (e.g. https://ai.codai.ro/v1).
+      const baseURL =
+        cred.endpoint ?? (cred.config as { endpoint?: string })?.endpoint ?? undefined;
+      if (!baseURL) {
+        throw new Error('Custom provider requires a base URL (e.g. https://ai.codai.ro/v1)');
+      }
+      // Optional provider-specific request headers (codai: thinking/cache/
+      // cascade tuning). Stored under config.headers as a string map.
+      const headers =
+        ((cred.config as { headers?: Record<string, string> })?.headers) ?? undefined;
+      const client = createOpenAI({
+        apiKey: cred.apiKey,
+        baseURL: baseURL.replace(/\/+$/, ''),
+        ...(headers ? { headers } : {}),
+      });
+      if (intent === 'embed') return client.textEmbedding(modelId);
+      // OpenAI-compatible gateways speak Chat Completions, not the Responses API.
+      return client.chat(modelId);
+    }
   }
 }
 
@@ -289,6 +359,8 @@ export async function listAvailableProviders(workspaceId: string) {
     'vertex',
     'copilot',
     'ollama',
+    'custom',
+    'codai',
   ];
   const out: { provider: AiProvider; source: 'workspace' | 'none' }[] = [];
   for (const p of providers) {

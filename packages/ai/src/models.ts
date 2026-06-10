@@ -75,6 +75,15 @@ export const MODEL_CATALOG: Record<AiProvider, ModelEntry[]> = {
     { id: 'nomic-embed-text', label: 'Nomic Embed', intents: ['embed'] },
   ],
   custom: [],
+  codai: [
+    // First-class codai gateway (ai.codai.ro). The `codai` alias auto-routes
+    // to the best upstream; the rest pin a tier directly.
+    { id: 'codai', label: 'Codai (auto router)', intents: all },
+    { id: 'codai-fast', label: 'Codai (fast)', intents: ['fast', 'agentic'] },
+    { id: 'codai-vision', label: 'Codai (vision)', intents: ['vision', 'agentic'] },
+    { id: 'claude-opus-4-8', label: 'Claude Opus 4.8 (Codai)', intents: reasoning },
+    { id: 'text-embedding-3-small', label: 'Embed: 3-small (1536)', intents: ['embed'] },
+  ],
   // Voice providers — no LLM models. Listed only so MODEL_CATALOG matches
   // the AiProvider union (extended for BYOK voice keys in slice 5b).
   deepgram: [],

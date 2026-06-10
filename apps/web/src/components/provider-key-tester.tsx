@@ -23,6 +23,8 @@ const TESTABLE = new Set([
   'deepgram',
   'elevenlabs',
   'ollama',
+  'codai',
+  'custom',
 ]);
 
 export function ProviderKeyTester({ providers }: { providers: string[] }) {

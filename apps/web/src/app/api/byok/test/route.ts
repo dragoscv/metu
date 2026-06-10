@@ -12,7 +12,7 @@
 import { NextResponse } from 'next/server';
 import { z } from 'zod';
 import { auth } from '@metu/auth';
-import { getProviderCredential } from '@metu/ai';
+import { getProviderCredential, CODAI_BASE_URL } from '@metu/ai';
 import { rateLimit } from '@/lib/ratelimit';
 import { assertSafeOutboundUrl } from '@/lib/safe-equal';
 
@@ -27,6 +27,7 @@ const Body = z.object({
     'vertex',
     'ollama',
     'custom',
+    'codai',
     'deepgram',
     'cartesia',
     'elevenlabs',
@@ -90,6 +91,33 @@ async function testProvider(provider: string, key: string, endpoint?: string): P
         const base = (endpoint || 'http://localhost:11434').replace(/\/+$/, '');
         const r = await tryFetch(`${base}/api/tags`, {});
         return { ok: r.ok, latencyMs: Date.now() - t0, message: r.ok ? undefined : `HTTP ${r.status}` };
+      }
+      case 'custom': {
+        // Generic OpenAI-compatible gateway. Probe GET {base}/models.
+        if (!endpoint) {
+          return { ok: false, message: 'no base URL stored' };
+        }
+        const base = endpoint.replace(/\/+$/, '');
+        const r = await tryFetch(`${base}/models`, {
+          headers: { authorization: `Bearer ${key}` },
+        });
+        return {
+          ok: r.ok,
+          latencyMs: Date.now() - t0,
+          message: r.ok ? undefined : `HTTP ${r.status}`,
+        };
+      }
+      case 'codai': {
+        // Native codai gateway — base URL is baked in (cred.endpoint mirrors it).
+        const base = (endpoint || CODAI_BASE_URL).replace(/\/+$/, '');
+        const r = await tryFetch(`${base}/models`, {
+          headers: { authorization: `Bearer ${key}` },
+        });
+        return {
+          ok: r.ok,
+          latencyMs: Date.now() - t0,
+          message: r.ok ? undefined : `HTTP ${r.status}`,
+        };
       }
       default:
         return { ok: false, message: 'no_test_for_provider' };

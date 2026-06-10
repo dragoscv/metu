@@ -147,6 +147,7 @@ export const aiProviderSchema = z.enum([
   'copilot',
   'ollama',
   'custom',
+  'codai',
   'deepgram',
   'cartesia',
   'elevenlabs',

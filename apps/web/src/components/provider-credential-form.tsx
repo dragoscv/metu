@@ -21,6 +21,7 @@ export function ProviderCredentialForm() {
   const [provider, setProvider] = useState<(typeof PROVIDERS)[number]>('anthropic');
   const [apiKey, setApiKey] = useState('');
   const [endpoint, setEndpoint] = useState('');
+  const [defaultModel, setDefaultModel] = useState('');
   const [label, setLabel] = useState('default');
   const [pending, start] = useTransition();
 
@@ -58,6 +59,25 @@ export function ProviderCredentialForm() {
           onChange={(e) => setEndpoint(e.target.value)}
         />
       )}
+      {provider === 'custom' && (
+        <>
+          <Input
+            placeholder="Base URL (OpenAI-compatible, e.g. https://ai.codai.ro/v1)"
+            value={endpoint}
+            onChange={(e) => setEndpoint(e.target.value)}
+          />
+          <Input
+            placeholder="Default model (e.g. codai)"
+            value={defaultModel}
+            onChange={(e) => setDefaultModel(e.target.value)}
+          />
+          <p className="text-xs text-[var(--color-fg-subtle)]">
+            OpenAI-compatible chat-completions endpoint. The base URL should end at
+            the API root (we append <code>/chat/completions</code>). Embeddings are
+            forced to a 1536-dim model to match memory search.
+          </p>
+        </>
+      )}
       <Button
         disabled={pending || !apiKey.trim()}
         onClick={() =>
@@ -67,6 +87,7 @@ export function ProviderCredentialForm() {
               label: label || 'default',
               apiKey,
               endpoint: endpoint || undefined,
+              defaultModel: provider === 'custom' ? defaultModel || undefined : undefined,
               isDefault: true,
               config: {},
             });

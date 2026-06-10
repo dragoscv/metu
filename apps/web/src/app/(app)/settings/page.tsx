@@ -5,6 +5,7 @@ import { listAvailableProviders, getProviderPolicy } from '@metu/ai';
 import { ProviderCredentialForm } from '@/components/provider-credential-form';
 import { ProviderKeyTester } from '@/components/provider-key-tester';
 import { CopilotConnect } from '@/components/copilot-connect';
+import { CodaiConnect } from '@/components/codai-connect';
 import { ProviderPolicyForm } from '@/components/provider-policy-form';
 import { TestNotificationCard } from '@/components/test-notification-card';
 import { loadCopilotIdentity } from '@/lib/copilot-identity';
@@ -17,6 +18,8 @@ const PROVIDER_LABELS: Record<string, string> = {
   groq: 'Groq',
   mistral: 'Mistral',
   ollama: 'Ollama (local)',
+  codai: 'Codai (ai.codai.ro)',
+  custom: 'Custom endpoint',
 };
 
 function providerLabel(p: string): string {
@@ -56,6 +59,7 @@ export default async function SettingsPage() {
   ]);
   const copilotConnected = providers.find((p) => p.provider === 'copilot')?.source === 'workspace';
   const copilotUser = copilotConnected ? await loadCopilotIdentity(session.user.workspaceId) : null;
+  const codaiConnected = providers.find((p) => p.provider === 'codai')?.source === 'workspace';
   const connectedProviders = providers
     .filter((p) => p.source === 'workspace')
     .map((p) => p.provider);
@@ -89,6 +93,16 @@ export default async function SettingsPage() {
             );
           })}
         </ul>
+      </Card>
+
+      <Card>
+        <CardTitle>Codai</CardTitle>
+        <p className="mt-2 text-xs text-[var(--color-fg-subtle)]">
+          Your own inference gateway at <code>ai.codai.ro</code> — OpenAI-compatible, with the{' '}
+          <code>codai</code> auto-router (thinking, caching & cascade verification baked in). Paste
+          a key and it becomes the default for reasoning, agentic, fast, vision & embeddings.
+        </p>
+        <CodaiConnect connected={codaiConnected} />
       </Card>
 
       <Card>
