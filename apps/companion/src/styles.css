@@ -270,7 +270,7 @@ html:has(.assistant-stage), body:has(.assistant-stage) { background: transparent
 }
 .bubble__btn--no { background: rgba(255, 255, 255, 0.06); color: #c8d2e6; }
 .bubble__btn--no:hover { background: rgba(255, 255, 255, 0.12); }
-.bubble__quick { display: flex; gap: 6px; margin-top: 9px; }
+.bubble__quick { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 9px; }
 .bubble__chip {
   appearance: none; cursor: pointer;
   font-size: 11px; font-weight: 600;
@@ -282,6 +282,12 @@ html:has(.assistant-stage), body:has(.assistant-stage) { background: transparent
   transition: background 0.14s ease, color 0.14s ease;
 }
 .bubble__chip:hover { background: rgba(124, 140, 255, 0.25); color: #fff; }
+.bubble__chip--suggest {
+  color: #dbe4ff;
+  background: rgba(124, 140, 255, 0.14);
+  border-color: rgba(124, 140, 255, 0.35);
+}
+.bubble__chip--suggest:hover { background: rgba(124, 140, 255, 0.32); }
 .bubble__reply { display: flex; gap: 6px; margin-top: 9px; }
 .bubble__input {
   flex: 1; min-width: 0;

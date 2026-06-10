@@ -20,6 +20,7 @@ export function SpeechBubble({
   pending,
   onDismiss,
   onQuickReply,
+  suggestions,
   onOpenChat,
 }: {
   text: string;
@@ -30,6 +31,8 @@ export function SpeechBubble({
   onDismiss?: () => void;
   /** When provided, renders the inline quick-reply input. */
   onQuickReply?: (text: string) => void;
+  /** One-tap canned replies — each chip sends its text immediately. */
+  suggestions?: string[];
   /** Expand to the full chat panel. */
   onOpenChat?: () => void;
 }) {
@@ -82,6 +85,16 @@ export function SpeechBubble({
 
       {!action && onQuickReply && !replying && (
         <div className="bubble__quick">
+          {suggestions?.map((s) => (
+            <button
+              type="button"
+              key={s}
+              className="bubble__chip bubble__chip--suggest"
+              onClick={() => onQuickReply(s)}
+            >
+              {s}
+            </button>
+          ))}
           <button type="button" className="bubble__chip" onClick={() => setReplying(true)}>
             ↩ Reply
           </button>

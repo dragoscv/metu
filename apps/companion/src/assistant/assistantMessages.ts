@@ -33,6 +33,16 @@ const ASK_BEFORE_ACT: Bank = {
   quiet: ['Proceed?', 'OK to act?'],
 };
 
+/**
+ * One-tap quick replies shown as chips under a bubble — for when the user
+ * doesn't want to type or speak. `ambient` follows greetings/nudges;
+ * `followup` follows an assistant chat reply.
+ */
+export const QUICK_REPLIES: Record<'ambient' | 'followup', string[]> = {
+  ambient: ['Catch me up', "What's next on my plate?", 'Summarize where I left off'],
+  followup: ['Tell me more', 'Continue', 'Thanks! 👍'],
+};
+
 function pick(bank: Bank, p: PersonalityId): string | null {
   const arr = bank[p].filter(Boolean);
   if (arr.length === 0) return null;

@@ -31,7 +31,7 @@ import { AvatarHost } from '../avatar/AvatarHost';
 import type { AvatarState } from '../avatar/types';
 import { useAssistantBrain, type PointRequest } from '../assistant/useAssistantBrain';
 import { SpeechBubble, type BubbleAction } from '../assistant/SpeechBubble';
-import { assistantLines } from '../assistant/assistantMessages';
+import { assistantLines, QUICK_REPLIES } from '../assistant/assistantMessages';
 import { showHighlight } from '../assistant/overlay-bridge';
 import { onProposal } from '../assistant/assistantActions';
 import { useAssistantChat } from '../assistant/useAssistantChat';
@@ -393,6 +393,14 @@ function AssistantSkin({
   const bubbleText = voiceBubble ?? chatBubble ?? ambient?.text;
   const bubbleAction = voiceBubble || chatBubble ? undefined : ambient?.action;
   const bubbleIsChat = !voiceBubble && !!chatBubble;
+  // One-tap chips: ambient remarks get conversation starters; chat replies
+  // get follow-ups. Confirm bubbles + live voice transcripts get none.
+  const bubbleSuggestions =
+    voiceBubble || bubbleAction || !auth
+      ? undefined
+      : bubbleIsChat
+        ? QUICK_REPLIES.followup
+        : QUICK_REPLIES.ambient;
 
   const dismissBubble = () => {
     if (bubbleIsChat) setChatBubble(null);
@@ -491,6 +499,7 @@ function AssistantSkin({
                 pending={bubbleIsChat && chatBusy}
                 onDismiss={dismissBubble}
                 onQuickReply={quickReply}
+                suggestions={bubbleSuggestions}
                 onOpenChat={auth ? () => setChatOpen(true) : undefined}
               />
             </div>
