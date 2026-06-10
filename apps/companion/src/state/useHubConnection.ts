@@ -123,8 +123,8 @@ export function useHubConnection(auth: AuthState | null): HubHandle {
             urgency,
             actionUrl: n.actionUrl,
           });
-          // Let the desktop pet react in-character to conductor messages.
-          void emit('metu://pet-notify', {
+          // Let the desktop assistant react in-character to conductor messages.
+          void emit('metu://assistant-notify', {
             title: n.title,
             body: n.body,
             urgency,

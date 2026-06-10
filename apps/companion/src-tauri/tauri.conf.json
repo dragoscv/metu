@@ -43,11 +43,11 @@
         "focus": false
       },
       {
-        "label": "pet",
-        "title": "METU Pet",
-        "url": "index.html#pet",
-        "width": 280,
-        "height": 340,
+        "label": "assistant",
+        "title": "METU Assistant",
+        "url": "index.html#assistant",
+        "width": 380,
+        "height": 560,
         "resizable": false,
         "decorations": false,
         "transparent": true,

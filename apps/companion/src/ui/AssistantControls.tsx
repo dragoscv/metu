@@ -1,8 +1,8 @@
 /**
- * PetControls — main-window controls for the detached desktop pet. The real
- * animated character lives in the always-on-top `pet` window; here the user
- * only toggles its visibility and picks its personality. Avatar appearance is
- * chosen in the Avatar view.
+ * AssistantControls — main-window controls for the floating desktop
+ * assistant. The real animated character lives in the always-on-top
+ * `assistant` window; here the user toggles its visibility and picks its
+ * personality. Avatar appearance is chosen in the Avatar view.
  */
 import { useEffect, useState } from 'react';
 import { invoke } from '@tauri-apps/api/core';
@@ -13,21 +13,26 @@ import {
   type PersonalityId,
 } from '../avatar/personality';
 
-const PET_VISIBLE_KEY = 'metu.companion.petVisible';
+const VISIBLE_KEY = 'metu.companion.assistantVisible';
+/** Pre-rename key — migrated on first read. */
+const LEGACY_VISIBLE_KEY = 'metu.companion.petVisible';
 
-export function PetControls() {
-  const [visible, setVisible] = useState<boolean>(() => {
-    try {
-      return localStorage.getItem(PET_VISIBLE_KEY) === '1';
-    } catch {
-      return false;
-    }
-  });
+function loadVisible(): boolean {
+  try {
+    const v = localStorage.getItem(VISIBLE_KEY) ?? localStorage.getItem(LEGACY_VISIBLE_KEY);
+    return v === '1';
+  } catch {
+    return false;
+  }
+}
+
+export function AssistantControls() {
+  const [visible, setVisible] = useState<boolean>(loadVisible);
   const [personality, setPersonality] = useState<PersonalityId>(() => loadPersonality());
 
   // Reflect persisted state to the actual window on mount.
   useEffect(() => {
-    void invoke(visible ? 'presence_pet_show' : 'presence_pet_hide').catch(() => {});
+    void invoke(visible ? 'presence_assistant_show' : 'presence_assistant_hide').catch(() => {});
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
@@ -35,11 +40,12 @@ export function PetControls() {
     const next = !visible;
     setVisible(next);
     try {
-      localStorage.setItem(PET_VISIBLE_KEY, next ? '1' : '0');
+      localStorage.setItem(VISIBLE_KEY, next ? '1' : '0');
+      localStorage.removeItem(LEGACY_VISIBLE_KEY);
     } catch {
       /* ignore */
     }
-    void invoke(next ? 'presence_pet_show' : 'presence_pet_hide').catch(() => {});
+    void invoke(next ? 'presence_assistant_show' : 'presence_assistant_hide').catch(() => {});
   };
 
   const choose = (id: PersonalityId) => {
@@ -48,20 +54,20 @@ export function PetControls() {
   };
 
   return (
-    <div className="glass-card glass-card--mini pet-controls">
+    <div className="glass-card glass-card--mini assistant-controls">
       <div className="row" style={{ justifyContent: 'space-between', alignItems: 'center' }}>
         <p className="muted" style={{ margin: 0 }}>
-          Desktop pet
+          Desktop assistant
         </p>
         <button
           type="button"
           className={`chip ${visible ? 'chip--on' : ''}`}
           onClick={toggleVisible}
         >
-          {visible ? '👁 Showing' : '🐾 Show pet'}
+          {visible ? '👁 Showing' : '✨ Show assistant'}
         </button>
       </div>
-      <div className="pet-controls__personas">
+      <div className="assistant-controls__personas">
         {Object.values(PERSONALITIES).map((p) => (
           <button
             key={p.id}

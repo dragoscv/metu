@@ -9,6 +9,7 @@
 import { useEffect, useState } from 'react';
 import type { AvatarDriveProps } from './types';
 import { ShaderOrb } from './ShaderOrb';
+import { FaceAvatar } from './FaceAvatar';
 import { VrmStage, type VrmStatus } from './VrmStage';
 import { useAvatarSelection } from './useAvatarSelection';
 import { resolveVrmUrl } from './vrmPresets';
@@ -26,11 +27,14 @@ export function AvatarHost(props: AvatarDriveProps) {
   }, [vrmUrl]);
 
   const showVrm = wantsVrm && vrmUrl && vrmStatus !== 'error';
+  const showFace = selection.kind === 'face';
 
   return (
     <div style={{ position: 'relative', width: props.size, height: props.size }}>
       {showVrm ? (
         <VrmStage {...props} modelUrl={vrmUrl} onStatus={setVrmStatus} />
+      ) : showFace ? (
+        <FaceAvatar {...props} presetId={selection.facePresetId} />
       ) : (
         <ShaderOrb {...props} presetId={selection.orbPresetId} />
       )}

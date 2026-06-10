@@ -101,8 +101,8 @@ export const ServerEventSchema = z.discriminatedUnion('type', [
     type: z.literal('persona.activate'),
     activationId: Uuid,
     personaId: Uuid,
-    /** 'panel' | 'in_window' | 'hud' | 'pet' */
-    form: z.enum(['panel', 'in_window', 'hud', 'pet']),
+    /** 'panel' | 'in_window' | 'hud' | 'assistant' */
+    form: z.enum(['panel', 'in_window', 'hud', 'assistant']),
     position: z.record(z.string(), z.unknown()).default({}),
     /** Snapshot of persona fields the device needs to render + speak. */
     persona: z.object({

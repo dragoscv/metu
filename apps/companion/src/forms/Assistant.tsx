@@ -1,0 +1,385 @@
+/**
+ * Form D — the desktop assistant. A transparent always-on-top window hosting
+ * the persona character, an ambient speech bubble with inline quick-reply /
+ * confirm actions, and an expandable agentic chat panel that talks to the
+ * metu Conductor (codai-backed) via `/api/sdk/v1/companion/turn/stream`.
+ *
+ * ── Drag model (fix) ───────────────────────────────────────────────────────
+ * `data-tauri-drag-region` only fires on the attributed element itself — the
+ * avatar's WebGL canvas is a child, so presses on the character never started
+ * the OS drag. We now drive dragging manually: pointerdown arms a gesture; if
+ * the pointer travels > 6px before release we call `win_start_drag` (the OS
+ * takes over). Releases without movement remain clicks (toggle chat, etc).
+ *
+ * Click-through is owned by the brain via DOM-exact `setInteractive` — see
+ * useAssistantBrain for the contract.
+ */
+import { useCallback, useEffect, useRef, useState } from 'react';
+import { invoke } from '@tauri-apps/api/core';
+import { listen } from '@tauri-apps/api/event';
+import { loadAuth, type AuthState } from '../state/auth';
+import { isTauri } from '../state/runtime';
+import { useVoiceSession } from '../state/useVoiceSession';
+import { useWakeWord } from '../state/useWakeWord';
+import { useBillingTier, usePersonas, useResolvedPersona } from '../state/usePersonas';
+import { playWakeBlip } from '../state/wakeBlip';
+import { AvatarHost } from '../avatar/AvatarHost';
+import type { AvatarState } from '../avatar/types';
+import { useAssistantBrain, type PointRequest } from '../assistant/useAssistantBrain';
+import { SpeechBubble, type BubbleAction } from '../assistant/SpeechBubble';
+import { assistantLines } from '../assistant/assistantMessages';
+import { showHighlight } from '../assistant/overlay-bridge';
+import { onProposal } from '../assistant/assistantActions';
+import { useAssistantChat } from '../assistant/useAssistantChat';
+import { ChatPanel } from '../assistant/ChatPanel';
+import {
+  loadPersonality,
+  onPersonalityChange,
+  PERSONALITIES,
+  type PersonalityId,
+} from '../avatar/personality';
+
+/** Logical window size — must match the `assistant` window in tauri.conf.json. */
+const WIN_W = 380;
+const WIN_H = 560;
+const DRAG_THRESHOLD_PX = 6;
+
+export function PresenceAssistant() {
+  const [auth, setAuth] = useState<AuthState | null>(null);
+  useEffect(() => {
+    loadAuth().then(setAuth);
+  }, []);
+
+  if (!auth) {
+    return (
+      <AssistantSkin
+        auth={null}
+        personaSlug="atlas"
+        personaName="metu"
+        personality={loadPersonality()}
+        speaking={false}
+      />
+    );
+  }
+  return <AssistantInner auth={auth} />;
+}
+
+function AssistantInner({ auth }: { auth: AuthState }) {
+  const personas = usePersonas(auth);
+  const persona = useResolvedPersona('assistant', personas);
+  const billingTier = useBillingTier();
+  const { state, start, stop, interrupt, setMicEnabled, setAudioElement } = useVoiceSession(auth);
+
+  const [personality, setPersonality] = useState<PersonalityId>(() => loadPersonality());
+  useEffect(() => onPersonalityChange(setPersonality), []);
+
+  useWakeWord({
+    word: persona.wakeWord,
+    costTier: persona.costTier,
+    billingTier,
+    enabled: state.status === 'idle' || state.status === 'ready',
+    onWake: () => {
+      playWakeBlip();
+      void invoke('presence_hud_show').catch(() => {});
+    },
+  });
+
+  useEffect(() => {
+    void start(persona.slug, persona.voiceProvider);
+    return () => {
+      void stop();
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [auth.accessToken, persona.slug]);
+
+  const voiceBubble = state.partial || (state.status === 'listening' ? 'Listening…' : undefined);
+
+  return (
+    <AssistantSkin
+      auth={auth}
+      personaSlug={persona.slug}
+      personaName={persona.name}
+      personality={personality}
+      speaking={state.status === 'speaking'}
+      listening={state.status === 'listening'}
+      thinking={state.lastToolCall?.tool === 'conductor.escalate'}
+      voiceBubble={voiceBubble}
+      onInterrupt={() => {
+        if (state.status === 'speaking') interrupt();
+      }}
+      onToggleMic={() => setMicEnabled(state.status !== 'listening')}
+      audioRef={setAudioElement}
+    />
+  );
+}
+
+function AssistantSkin({
+  auth,
+  personaSlug,
+  personaName,
+  personality,
+  speaking,
+  listening,
+  thinking,
+  voiceBubble,
+  onInterrupt,
+  onToggleMic,
+  audioRef,
+}: {
+  auth: AuthState | null;
+  personaSlug: string;
+  personaName: string;
+  personality: PersonalityId;
+  speaking: boolean;
+  listening?: boolean;
+  thinking?: boolean;
+  voiceBubble?: string;
+  onInterrupt?: () => void;
+  onToggleMic?: () => void;
+  audioRef?: (el: HTMLAudioElement | null) => void;
+}) {
+  const [audioEl, setAudioEl] = useState<HTMLAudioElement | null>(null);
+  const [ambient, setAmbient] = useState<{ text: string; action?: BubbleAction } | null>(null);
+  const [chatOpen, setChatOpen] = useState(false);
+  const cfg = PERSONALITIES[personality];
+
+  const dpr = typeof window !== 'undefined' ? window.devicePixelRatio || 1 : 1;
+  const physW = Math.round(WIN_W * dpr);
+  const physH = Math.round(WIN_H * dpr);
+
+  const conversing = speaking || !!listening;
+
+  // ── Manual drag gesture ───────────────────────────────────────────────────
+  const [dragging, setDragging] = useState(false);
+  const gestureRef = useRef<{ x: number; y: number; started: boolean } | null>(null);
+  const suppressClickRef = useRef(false);
+  const dragCooldownRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  const onBodyPointerDown = (e: React.PointerEvent) => {
+    if (e.button !== 0) return;
+    gestureRef.current = { x: e.screenX, y: e.screenY, started: false };
+  };
+
+  useEffect(() => {
+    const onMove = (e: PointerEvent) => {
+      const g = gestureRef.current;
+      if (!g || g.started) return;
+      const dist = Math.hypot(e.screenX - g.x, e.screenY - g.y);
+      if (dist >= DRAG_THRESHOLD_PX) {
+        g.started = true;
+        suppressClickRef.current = true;
+        setDragging(true);
+        // Hand the gesture to the OS — it owns the pointer until release.
+        void invoke('win_start_drag').catch(() => {});
+      }
+    };
+    const onUp = () => {
+      const g = gestureRef.current;
+      gestureRef.current = null;
+      if (g?.started) {
+        if (dragCooldownRef.current) clearTimeout(dragCooldownRef.current);
+        dragCooldownRef.current = setTimeout(() => {
+          setDragging(false);
+          suppressClickRef.current = false;
+        }, 1200);
+      }
+    };
+    window.addEventListener('pointermove', onMove, true);
+    window.addEventListener('pointerup', onUp, true);
+    window.addEventListener('blur', onUp, true);
+    return () => {
+      window.removeEventListener('pointermove', onMove, true);
+      window.removeEventListener('pointerup', onUp, true);
+      window.removeEventListener('blur', onUp, true);
+      if (dragCooldownRef.current) clearTimeout(dragCooldownRef.current);
+    };
+  }, []);
+
+  // ── Chat (agentic, codai-backed) ─────────────────────────────────────────
+  const chat = useAssistantChat(
+    auth ?? {
+      accessToken: '',
+      refreshToken: null,
+      expiresAt: 0,
+      workspaceId: '',
+      userId: '',
+      apiBase: '',
+      hubUrl: '',
+    },
+    personaSlug,
+  );
+  const chatBusy = chat.status === 'thinking' || chat.status === 'streaming';
+
+  // Surface the latest assistant chat text as a bubble while collapsed.
+  const [chatBubble, setChatBubble] = useState<string | null>(null);
+  useEffect(() => {
+    if (chatOpen) {
+      setChatBubble(null);
+      return;
+    }
+    if (chat.lastAssistantText) setChatBubble(chat.lastAssistantText);
+  }, [chat.lastAssistantText, chatOpen]);
+
+  const handlePoint = useCallback((req: PointRequest | null) => {
+    if (req?.rect) void showHighlight({ ...req.rect, label: req.label });
+  }, []);
+
+  const handleRemark = useCallback(
+    (kind: 'greeting' | 'idleNudge' | 'windowReact') => {
+      const line = assistantLines[kind](personality);
+      if (line) setAmbient({ text: line });
+    },
+    [personality],
+  );
+
+  const interactionLocked = chatOpen || dragging || !!ambient?.action;
+
+  const { hovering, setInteractive } = useAssistantBrain({
+    personality,
+    width: physW,
+    height: physH,
+    paused: conversing || dragging,
+    interactionLocked,
+    onRemark: handleRemark,
+    onPoint: handlePoint,
+  });
+
+  // Greet once on mount.
+  useEffect(() => {
+    const line = assistantLines.greeting(personality);
+    if (line) setAmbient({ text: line });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  // Ask-before-act: surface a confirm bubble for any proposed window action.
+  useEffect(() => {
+    return onProposal((p) => {
+      setAmbient({
+        text: p.prompt,
+        action: {
+          label: p.confirmLabel,
+          onConfirm: () => {
+            setAmbient(null);
+            void p.execute();
+          },
+          onDeny: () => setAmbient(null),
+        },
+      });
+    });
+  }, []);
+
+  // Conductor notifications forwarded from the main window's hub connection.
+  useEffect(() => {
+    let unlisten: (() => void) | undefined;
+    if (isTauri()) {
+      void listen<{ title?: string; body?: string }>('metu://assistant-notify', (event) => {
+        const { title, body } = event.payload ?? {};
+        const text = [title, body].filter(Boolean).join(' — ');
+        if (text) setAmbient({ text });
+      }).then((fn) => {
+        unlisten = fn;
+      });
+    }
+    return () => unlisten?.();
+  }, []);
+
+  const handleAudio = useCallback(
+    (el: HTMLAudioElement | null) => {
+      setAudioEl(el);
+      audioRef?.(el);
+    },
+    [audioRef],
+  );
+
+  const avatarState: AvatarState =
+    thinking || chatBusy ? 'thinking' : speaking ? 'speaking' : listening ? 'listening' : 'idle';
+
+  // Priority: live voice transcript > fresh chat reply > ambient remark.
+  const bubbleText = voiceBubble ?? chatBubble ?? ambient?.text;
+  const bubbleAction = voiceBubble || chatBubble ? undefined : ambient?.action;
+  const bubbleIsChat = !voiceBubble && !!chatBubble;
+
+  const dismissBubble = () => {
+    if (bubbleIsChat) setChatBubble(null);
+    else setAmbient(null);
+  };
+
+  const onAvatarClick = () => {
+    if (suppressClickRef.current) return;
+    if (speaking) {
+      onInterrupt?.();
+      return;
+    }
+    setChatOpen((v) => !v);
+  };
+
+  const quickReply = auth
+    ? (text: string) => {
+        setChatBubble(null);
+        setAmbient(null);
+        void chat.send(text);
+      }
+    : undefined;
+
+  return (
+    <div
+      className="assistant-stage"
+      data-persona={personaSlug}
+      data-speaking={speaking}
+      data-hovering={hovering}
+    >
+      {chatOpen && auth ? (
+        <div
+          className="assistant-panel"
+          onPointerEnter={() => setInteractive(true)}
+          onPointerLeave={() => setInteractive(false)}
+        >
+          <div className="assistant-panel__avatar" onPointerDown={onBodyPointerDown}>
+            <AvatarHost state={avatarState} size={72} audioEl={audioEl} />
+          </div>
+          <ChatPanel
+            messages={chat.messages}
+            status={chat.status}
+            personaName={personaName}
+            onSend={(t) => void chat.send(t)}
+            onStop={chat.stop}
+            onClear={chat.clear}
+            onClose={() => setChatOpen(false)}
+          />
+        </div>
+      ) : (
+        <>
+          {bubbleText && (
+            <div
+              className="assistant-bubblezone"
+              onPointerEnter={() => setInteractive(true)}
+              onPointerLeave={() => setInteractive(false)}
+            >
+              <SpeechBubble
+                text={bubbleText}
+                ttlMs={cfg.bubbleTtlMs}
+                action={bubbleAction}
+                pending={bubbleIsChat && chatBusy}
+                onDismiss={dismissBubble}
+                onQuickReply={quickReply}
+                onOpenChat={auth ? () => setChatOpen(true) : undefined}
+              />
+            </div>
+          )}
+          <div
+            className={`assistant-body ${speaking ? 'assistant-body--speaking' : ''}`}
+            onPointerEnter={() => setInteractive(true)}
+            onPointerLeave={() => setInteractive(false)}
+            onPointerDown={onBodyPointerDown}
+            onClick={onAvatarClick}
+            onDoubleClick={() => onToggleMic?.()}
+            title="Click to chat · drag to move · double-click for voice"
+          >
+            <AvatarHost state={avatarState} size={180} audioEl={audioEl} />
+          </div>
+        </>
+      )}
+      <audio ref={handleAudio} autoPlay playsInline />
+    </div>
+  );
+}

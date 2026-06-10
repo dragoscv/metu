@@ -8,7 +8,7 @@
 import { z } from 'zod';
 import type { VoicePersonaTuning } from '@metu/voice';
 
-export const PERSONA_FORMS = ['panel', 'in_window', 'hud', 'pet'] as const;
+export const PERSONA_FORMS = ['panel', 'in_window', 'hud', 'assistant'] as const;
 export type PersonaForm = (typeof PERSONA_FORMS)[number];
 
 export const AVATAR_KINDS = ['orb', 'portrait', 'live2d', 'vrm', 'sprite'] as const;
@@ -29,7 +29,7 @@ export const FormPrefsSchema = z.object({
   panel: z.boolean().default(true),
   inWindow: z.boolean().default(true),
   hud: z.boolean().default(true),
-  pet: z.boolean().default(false),
+  assistant: z.boolean().default(false),
 });
 export type FormPrefs = z.infer<typeof FormPrefsSchema>;
 
@@ -69,7 +69,7 @@ export const PersonaInputSchema = z.object({
     panel: true,
     inWindow: true,
     hud: true,
-    pet: false,
+    assistant: false,
   }),
   defaultForm: z.enum(PERSONA_FORMS).default('panel'),
   wakeWord: z.string().nullable().default(null),

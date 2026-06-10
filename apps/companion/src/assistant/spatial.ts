@@ -1,6 +1,7 @@
 /**
- * Typed bindings to the Rust spatial-sensing commands (`pet.rs`) plus a few
- * geometry helpers the brain uses to move the pet window around the desktop.
+ * Typed bindings to the Rust spatial-sensing commands (`spatial.rs`) plus a
+ * few geometry helpers the brain uses to move the assistant window around the
+ * desktop.
  *
  * All coordinates are PHYSICAL pixels (what Tauri's setPosition expects via
  * PhysicalPosition), matching what the Rust side returns.
@@ -32,7 +33,7 @@ export interface ForegroundWindow {
 
 export async function getMonitors(): Promise<MonitorInfo[]> {
   try {
-    return await invoke<MonitorInfo[]>('pet_monitors');
+    return await invoke<MonitorInfo[]>('spatial_monitors');
   } catch {
     return [];
   }
@@ -40,7 +41,7 @@ export async function getMonitors(): Promise<MonitorInfo[]> {
 
 export async function getCursor(): Promise<Point | null> {
   try {
-    return await invoke<Point>('pet_cursor');
+    return await invoke<Point>('spatial_cursor');
   } catch {
     return null;
   }
@@ -48,13 +49,13 @@ export async function getCursor(): Promise<Point | null> {
 
 export async function getForeground(): Promise<ForegroundWindow | null> {
   try {
-    return await invoke<ForegroundWindow | null>('pet_foreground');
+    return await invoke<ForegroundWindow | null>('spatial_foreground');
   } catch {
     return null;
   }
 }
 
-/** Clamp a desired top-left so the pet (w×h) stays fully on some monitor. */
+/** Clamp a desired top-left so the assistant (w×h) stays fully on some monitor. */
 export function clampToMonitors(
   x: number,
   y: number,
@@ -83,7 +84,7 @@ export function clampToMonitors(
 }
 
 /** A random on-screen point for wandering, biased toward screen edges/corners
- * so the pet feels like it lives at the periphery rather than the middle. */
+ * so the assistant feels like it lives at the periphery rather than the middle. */
 export function randomWanderTarget(w: number, h: number, monitors: MonitorInfo[]): Point {
   if (monitors.length === 0) {
     return { x: 100, y: 100 };

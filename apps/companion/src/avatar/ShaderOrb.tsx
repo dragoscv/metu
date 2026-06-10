@@ -5,7 +5,7 @@
  * displacement (the orb "breathes" and roils), a fresnel rim for depth, and a
  * palette driven entirely by the active {@link OrbPreset}. An additive halo
  * sprite behind it gives bloom-like glow without a postprocessing pass (cheap
- * enough for an always-on desktop pet).
+ * enough for an always-on desktop assistant).
  *
  * State drives motion, not geometry:
  *   - idle      → slow breath, gentle turbulence
@@ -130,6 +130,38 @@ const FRAG = /* glsl */ `
     }
     // ghost style: translucent, soft
     float alpha = (uStyle == 5.0) ? (0.45 + fres * 0.5) : 1.0;
+
+    // galaxy style: swirling starfield arms
+    if (uStyle == 6.0) {
+      float ang = atan(N.y, N.x) + uTime * 0.15;
+      float swirl = sin(ang * 3.0 + length(N.xy) * 8.0 - uTime * 0.6);
+      col += uAccent * smoothstep(0.6, 1.0, swirl) * 0.45;
+      // starlike sparkles from high-frequency displacement bands
+      float star = step(0.96, fract(vDisp * 43.7 + uTime * 0.05));
+      col += vec3(1.0) * star * 0.5;
+    }
+    // water style: caustic ripple bands + cool depth falloff
+    if (uStyle == 7.0) {
+      float caustic = sin(vDisp * 24.0 + uTime * 1.8) * sin(fres * 9.0 - uTime * 1.2);
+      col += uAccent * smoothstep(0.5, 1.0, caustic) * 0.35;
+      col = mix(col, uCore * 0.6, pow(max(dot(N, V), 0.0), 2.0) * 0.35);
+    }
+    // glass style: hard specular streak + chromatic rim split
+    if (uStyle == 8.0) {
+      float spec = pow(max(dot(reflect(-V, N), vec3(0.4, 0.8, 0.45)), 0.0), 24.0);
+      col += vec3(1.0) * spec * 0.8;
+      col.r += fres * uRefraction * 0.25;
+      col.b += pow(fres, 3.0) * uRefraction * 0.35;
+    }
+    // sunburst style: radial pulse rays
+    if (uStyle == 9.0) {
+      float ang2 = atan(N.y, N.x);
+      float rays = pow(abs(sin(ang2 * 9.0 + uTime * 0.8)), 6.0);
+      col += uAccent * rays * (0.3 + uAmp * 0.5);
+      col += uCore * pow(fres, 2.0) * 0.4 * (1.0 + sin(uTime * 2.2) * 0.3);
+    }
+    // glass is also translucent
+    if (uStyle == 8.0) { alpha = 0.6 + fres * 0.4; }
 
     // rim glow
     col += uAccent * fres * (0.8 + uRefraction * 0.8);

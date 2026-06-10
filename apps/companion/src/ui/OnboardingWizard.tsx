@@ -7,7 +7,7 @@
  */
 import { useEffect, useState } from 'react';
 import type { AuthState } from '../state/auth';
-import { pickPetPersona, usePersonas, type CompanionPersona } from '../state/usePersonas';
+import { pickAssistantPersona, usePersonas, type CompanionPersona } from '../state/usePersonas';
 
 type Step = 'welcome' | 'persona' | 'mic' | 'hotkey' | 'done';
 
@@ -25,7 +25,7 @@ export function OnboardingWizard({ auth, onClose }: Props) {
   const [micGranted, setMicGranted] = useState<boolean | null>(null);
 
   useEffect(() => {
-    if (!chosen && personas.length > 0) setChosen(pickPetPersona(personas));
+    if (!chosen && personas.length > 0) setChosen(pickAssistantPersona(personas));
   }, [chosen, personas]);
 
   const next = () => {

@@ -25,11 +25,11 @@ mod fs;
 mod input;
 mod mdns;
 mod oauth;
-mod pet;
 mod screenshot;
 mod see;
 mod sensors;
 mod shell;
+mod spatial;
 mod windowing;
 
 // ── Tauri commands (slice 6) ───────────────────────────────────────────────
@@ -318,9 +318,9 @@ pub fn run() {
             forms::presence_hud_show,
             forms::presence_hud_hide,
             forms::presence_hud_toggle,
-            forms::presence_pet_show,
-            forms::presence_pet_hide,
-            forms::presence_pet_set_clickthrough,
+            forms::presence_assistant_show,
+            forms::presence_assistant_hide,
+            forms::presence_assistant_set_clickthrough,
             forms::presence_overlay_show,
             forms::presence_overlay_hide,
             mdns::mdns_announce,
@@ -338,9 +338,9 @@ pub fn run() {
             diag::win_hide,
             diag::win_toggle_maximize,
             diag::win_start_drag,
-            pet::pet_monitors,
-            pet::pet_cursor,
-            pet::pet_foreground,
+            spatial::spatial_monitors,
+            spatial::spatial_cursor,
+            spatial::spatial_foreground,
         ])
         .setup(|app| {
             // ── Diagnostics log file ────────────────────────────────────

@@ -14,7 +14,7 @@ import { Sidebar } from './Sidebar';
 import { type ViewId } from './nav';
 import { HomeView } from './views/HomeView';
 import { AvatarView } from './views/AvatarView';
-import { PetView } from './views/PetView';
+import { AssistantView } from './views/AssistantView';
 import { SensorsView } from './views/SensorsView';
 import { ActivityView } from './views/ActivityView';
 import { SettingsView } from './views/SettingsView';
@@ -24,7 +24,11 @@ const VIEW_KEY = 'metu.companion.view';
 function loadView(): ViewId {
   try {
     const v = localStorage.getItem(VIEW_KEY) as ViewId | null;
-    if (v) return v;
+    // Legacy migration: the 'pet' view became 'assistant'.
+    if ((v as string) === 'pet') return 'assistant';
+    if (v && ['home', 'avatar', 'assistant', 'sensors', 'activity', 'settings'].includes(v)) {
+      return v;
+    }
   } catch {
     /* ignore */
   }
@@ -77,7 +81,7 @@ export function Connected({
           <motion.div key={view} className="console__view" {...viewFade}>
             {view === 'home' && <HomeView auth={auth} status={status} />}
             {view === 'avatar' && <AvatarView />}
-            {view === 'pet' && <PetView />}
+            {view === 'assistant' && <AssistantView />}
             {view === 'sensors' && <SensorsView onChange={onSensorsChange} />}
             {view === 'activity' && <ActivityView auth={auth} status={status} />}
             {view === 'settings' && (

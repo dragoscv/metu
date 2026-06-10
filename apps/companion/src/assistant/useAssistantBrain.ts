@@ -1,7 +1,7 @@
 /**
- * usePetBrain — the desktop pet's behavior engine. Runs *inside* the pet
- * window so it can move its own window via `getCurrentWindow().setPosition`
- * without cross-window plumbing.
+ * useAssistantBrain — the desktop assistant's behavior engine. Runs *inside*
+ * the assistant window so it can move its own window via
+ * `getCurrentWindow().setPosition` without cross-window plumbing.
  *
  * State machine:
  *   idle   → resting in place
@@ -16,14 +16,26 @@
  *   - idle/away time (nudge)
  *   - explicit `point at` requests (from hub conductor events)
  *
- * Per-pixel hit-testing is also driven here: we poll the global cursor and
- * compare it to the pet's opaque region (a centered circle approximating the
- * character body) to toggle click-through, because Tauri's
- * `set_ignore_cursor_events` is all-or-nothing.
+ * ── Click-through model (and the drag fix) ─────────────────────────────────
+ * Tauri's `set_ignore_cursor_events` is all-or-nothing for the window, so we
+ * approximate per-pixel hit-testing. The OLD implementation polled the global
+ * cursor against a circle and toggled click-through from that poll — which
+ * raced with `data-tauri-drag-region`: mid-press the poll could flip
+ * click-through ON and the OS drag died. The new contract:
+ *
+ *   1. `interactive` (cursor over body/bubble/chat) is reported by the DOM
+ *      via `setInteractive()` — exact, no geometry guess.
+ *   2. While `interactionLocked` (dragging OR chat open OR bubble shown),
+ *      click-through is FORCED OFF and the poll may not touch it.
+ *   3. The cursor poll's only job is re-ENABLING interactivity: when the
+ *      window is click-through, DOM events can't fire, so the poll detects
+ *      the cursor entering the window bounds and turns click-through off so
+ *      the DOM can take over again.
  */
-import { useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { invoke } from '@tauri-apps/api/core';
 import { getCurrentWindow, PhysicalPosition } from '@tauri-apps/api/window';
+import { isTauri } from '../state/runtime';
 import {
   clampToMonitors,
   getCursor,
@@ -36,7 +48,7 @@ import {
 } from './spatial';
 import { PERSONALITIES, type PersonalityId } from '../avatar/personality';
 
-export type PetMode = 'idle' | 'wander' | 'perch' | 'point' | 'follow';
+export type AssistantMode = 'idle' | 'wander' | 'perch' | 'point' | 'follow';
 
 export interface PointRequest {
   /** Target rect to highlight (physical px). */
@@ -44,19 +56,26 @@ export interface PointRequest {
   label?: string;
 }
 
-export interface PetBrainState {
-  mode: PetMode;
-  /** True when the cursor is over the opaque character region. */
+export interface AssistantBrainState {
+  mode: AssistantMode;
+  /** True when the cursor is over an interactive region (body/bubble/chat). */
   hovering: boolean;
+  /** Report DOM hover over interactive elements (exact hit-testing). */
+  setInteractive: (on: boolean) => void;
 }
 
 interface Options {
   personality: PersonalityId;
-  /** Pet window size in physical px (after scale). */
-  petWidth: number;
-  petHeight: number;
+  /** Assistant window size in physical px (after scale). */
+  width: number;
+  height: number;
   /** Disable autonomous motion (e.g. while the user is dragging or talking). */
   paused?: boolean;
+  /**
+   * Hard-lock interaction: click-through stays OFF no matter what (dragging,
+   * chat panel open, action bubble visible). Movement is also paused.
+   */
+  interactionLocked?: boolean;
   /** Fired when the brain decides to surface an ambient remark. */
   onRemark?: (kind: 'greeting' | 'idleNudge' | 'windowReact') => void;
   /** Fired with the overlay highlight rect when entering `point` mode. */
@@ -64,17 +83,26 @@ interface Options {
 }
 
 const FRAME_MS = 33; // ~30fps stepping
-const HOVER_POLL_MS = 80;
+const HOVER_POLL_MS = 120;
 
-export function usePetBrain(opts: Options): PetBrainState {
-  const { personality, petWidth, petHeight, paused, onRemark, onPoint } = opts;
-  const [mode, setMode] = useState<PetMode>('idle');
+// Module-scope so applyClickthrough can be shared without re-creation.
+let clickthroughState = false;
+function applyClickthrough(enabled: boolean) {
+  if (clickthroughState === enabled) return;
+  clickthroughState = enabled;
+  void invoke('presence_assistant_set_clickthrough', { enabled }).catch(() => {});
+}
+
+export function useAssistantBrain(opts: Options): AssistantBrainState {
+  const { personality, width, height, paused, interactionLocked, onRemark, onPoint } = opts;
+  const [mode, setMode] = useState<AssistantMode>('idle');
   const [hovering, setHovering] = useState(false);
 
   // Mutable refs so the long-lived timers always see fresh values without
   // re-subscribing every render.
   const cfgRef = useRef(PERSONALITIES[personality]);
   const pausedRef = useRef(!!paused);
+  const lockedRef = useRef(!!interactionLocked);
   const monitorsRef = useRef<MonitorInfo[]>([]);
   const targetRef = useRef<Point | null>(null);
   const posRef = useRef<Point>({ x: 0, y: 0 });
@@ -88,6 +116,23 @@ export function usePetBrain(opts: Options): PetBrainState {
   useEffect(() => {
     pausedRef.current = !!paused;
   }, [paused]);
+  useEffect(() => {
+    lockedRef.current = !!interactionLocked;
+    // Entering a locked state must immediately guarantee interactivity.
+    if (interactionLocked) applyClickthrough(false);
+  }, [interactionLocked]);
+
+  const setInteractive = useCallback((on: boolean) => {
+    setHovering(on);
+    if (on) {
+      lastActivityRef.current = Date.now();
+      applyClickthrough(false);
+    } else if (!lockedRef.current) {
+      // Cursor left all interactive zones and nothing locks interaction —
+      // let clicks pass through the transparent margin again.
+      applyClickthrough(true);
+    }
+  }, []);
 
   // Allow external (hub) point requests via a window event.
   useEffect(() => {
@@ -98,12 +143,13 @@ export function usePetBrain(opts: Options): PetBrainState {
         setMode('point');
       }
     };
-    window.addEventListener('metu:pet-point', handler);
-    return () => window.removeEventListener('metu:pet-point', handler);
+    window.addEventListener('metu:assistant-point', handler);
+    return () => window.removeEventListener('metu:assistant-point', handler);
   }, []);
 
   // Seed current position from the actual window + load monitor layout.
   useEffect(() => {
+    if (!isTauri()) return;
     let alive = true;
     void (async () => {
       const [mons, pos] = await Promise.all([
@@ -135,7 +181,7 @@ export function usePetBrain(opts: Options): PetBrainState {
     const decide = async () => {
       if (cancelled) return;
       const cfg = cfgRef.current;
-      if (!pausedRef.current) {
+      if (!pausedRef.current && !lockedRef.current) {
         // Active point request wins.
         if (pointReqRef.current) {
           const r = pointReqRef.current.rect;
@@ -143,28 +189,28 @@ export function usePetBrain(opts: Options): PetBrainState {
           targetRef.current = clampToMonitors(
             r.x + r.w + 8,
             r.y,
-            petWidth,
-            petHeight,
+            width,
+            height,
             monitorsRef.current,
           );
           setMode('point');
           onPoint?.(pointReqRef.current);
         } else {
           const fg = await getForeground().catch(() => null);
-          reactToForeground(fg, cfg.perchBias);
+          reactToForeground(fg);
           const roll = Math.random();
           if (fg && roll < cfg.perchBias) {
             // Perch beside the active window.
             targetRef.current = clampToMonitors(
-              fg.x + fg.w - petWidth - 8,
-              Math.max(fg.y - petHeight + 24, 0),
-              petWidth,
-              petHeight,
+              fg.x + fg.w - width - 8,
+              Math.max(fg.y - height + 24, 0),
+              width,
+              height,
               monitorsRef.current,
             );
             setMode('perch');
           } else {
-            targetRef.current = randomWanderTarget(petWidth, petHeight, monitorsRef.current);
+            targetRef.current = randomWanderTarget(width, height, monitorsRef.current);
             setMode('wander');
           }
         }
@@ -175,7 +221,7 @@ export function usePetBrain(opts: Options): PetBrainState {
       timer = setTimeout(decide, next);
     };
 
-    const reactToForeground = (fg: ForegroundWindow | null, _bias: number) => {
+    const reactToForeground = (fg: ForegroundWindow | null) => {
       const id = fg?.id ?? null;
       if (id && id !== lastForegroundRef.current) {
         lastForegroundRef.current = id;
@@ -190,7 +236,7 @@ export function usePetBrain(opts: Options): PetBrainState {
       clearTimeout(timer);
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [petWidth, petHeight]);
+  }, [width, height]);
 
   // ── Idle nudge loop ──────────────────────────────────────────────────────
   useEffect(() => {
@@ -208,12 +254,14 @@ export function usePetBrain(opts: Options): PetBrainState {
 
   // ── Movement stepping ────────────────────────────────────────────────────
   useEffect(() => {
+    if (!isTauri()) return;
     const w = getCurrentWindow();
     const timer = setInterval(() => {
-      // While paused (user dragging or conversing), the user — not the brain —
-      // owns the window position. Keep posRef in sync with reality and drop any
-      // pending target so we never snap the pet back after a manual move.
-      if (pausedRef.current) {
+      // While paused/locked (user dragging, chatting, or conversing), the user
+      // — not the brain — owns the window position. Keep posRef in sync with
+      // reality and drop any pending target so we never snap back after a
+      // manual move.
+      if (pausedRef.current || lockedRef.current) {
         targetRef.current = null;
         void w
           .outerPosition()
@@ -251,30 +299,26 @@ export function usePetBrain(opts: Options): PetBrainState {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  // ── Per-pixel hit-testing via cursor polling ─────────────────────────────
+  // ── Re-entry poll: wake the window from click-through ───────────────────
+  // When click-through is ON the DOM gets no events, so we poll the global
+  // cursor against the window bounds and flip click-through OFF as soon as
+  // the cursor enters. The DOM then owns the exact hit-testing (see
+  // setInteractive) and will re-enable click-through on leave.
   useEffect(() => {
-    let last = false;
+    if (!isTauri()) return;
     const timer = setInterval(() => {
+      if (!clickthroughState) return; // DOM owns it right now
       void (async () => {
         const cur = await getCursor();
         if (!cur) return;
         const pos = posRef.current;
-        // Opaque region ≈ centered circle covering the character body.
-        const cx = pos.x + petWidth / 2;
-        const cy = pos.y + petHeight / 2;
-        const r = Math.min(petWidth, petHeight) * 0.42;
-        const inside = (cur.x - cx) ** 2 + (cur.y - cy) ** 2 <= r * r;
-        if (inside !== last) {
-          last = inside;
-          setHovering(inside);
-          // Click-through ENABLED when NOT hovering the body.
-          void invoke('presence_pet_set_clickthrough', { enabled: !inside }).catch(() => {});
-          if (inside) lastActivityRef.current = Date.now();
-        }
+        const inside =
+          cur.x >= pos.x && cur.x <= pos.x + width && cur.y >= pos.y && cur.y <= pos.y + height;
+        if (inside) applyClickthrough(false);
       })();
     }, HOVER_POLL_MS);
     return () => clearInterval(timer);
-  }, [petWidth, petHeight]);
+  }, [width, height]);
 
-  return { mode, hovering };
+  return { mode, hovering, setInteractive };
 }

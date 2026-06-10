@@ -1,6 +1,6 @@
 /**
  * Persisted avatar selection (renderer + preset) backed by localStorage so it
- * survives reloads and is shared across the main window, HUD, and pet (they're
+ * survives reloads and is shared across the main window, HUD, and assistant (they're
  * separate webview windows in the same origin).
  *
  * Exposes a tiny pub/sub so all windows update live when the user picks a new
@@ -63,6 +63,7 @@ export function useAvatarSelection() {
     customVrmUrl: customUrl,
     setKind: (kind: AvatarKind) => write({ ...read(), kind }),
     setOrbPreset: (orbPresetId: string) => write({ ...read(), orbPresetId }),
+    setFacePreset: (facePresetId: string) => write({ ...read(), facePresetId }),
     setVrmPreset: (vrmPresetId: string) => write({ ...read(), vrmPresetId }),
     setCustomVrmUrl,
   };

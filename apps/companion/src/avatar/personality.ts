@@ -1,8 +1,8 @@
 /**
- * Pet personality presets — these tune *how* the desktop pet behaves, not
+ * Personality presets — these tune *how* the desktop assistant behaves, not
  * what it looks like (that's the avatar selection). The user can switch
  * between them from the main window; the active one is persisted and read by
- * the pet brain (`usePetBrain`) and the message layer.
+ * the assistant brain (`useAssistantBrain`) and the message layer.
  *
  * Three personalities, per the product decision:
  *   - calm     → professional, low chatter, slow deliberate motion
@@ -20,9 +20,9 @@ export interface Personality {
   wanderIntervalMs: number;
   /** Pixels per animation frame when moving (higher = snappier). */
   moveSpeed: number;
-  /** 0..1 likelihood the pet emits an unprompted remark when it has nothing to say. */
+  /** 0..1 likelihood the assistant emits an unprompted remark when it has nothing to say. */
   chattiness: number;
-  /** Idle ms before the pet offers a "still there?" nudge. 0 disables. */
+  /** Idle ms before the assistant offers a "still there?" nudge. 0 disables. */
   idleNudgeMs: number;
   /** Prefer perching on the active window vs. free wandering. */
   perchBias: number; // 0..1

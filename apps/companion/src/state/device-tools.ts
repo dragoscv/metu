@@ -211,8 +211,10 @@ export async function executeDeviceTool(tool: string, args: DeviceToolArgs): Pro
     }
     case 'device.persona_set': {
       const slug = asString(args, 'slug');
-      const formArg = typeof args.form === 'string' ? args.form : 'pet';
-      if (formArg !== 'pet' && formArg !== 'hud' && formArg !== 'panel') {
+      const raw = typeof args.form === 'string' ? args.form : 'assistant';
+      // Legacy alias: 'pet' → 'assistant'.
+      const formArg = raw === 'pet' ? 'assistant' : raw;
+      if (formArg !== 'assistant' && formArg !== 'hud' && formArg !== 'panel') {
         throw new Error(`invalid_form: ${formArg}`);
       }
       setPersonaOverride(formArg as PersonaForm, slug);
@@ -226,14 +228,16 @@ export async function executeDeviceTool(tool: string, args: DeviceToolArgs): Pro
           await invoke(value ? 'presence_hud_show' : 'presence_hud_hide');
           return { ok: true, kind, value };
         }
+        case 'assistant_visible':
         case 'pet_visible': {
           const value = args.value === true;
-          await invoke(value ? 'presence_pet_show' : 'presence_pet_hide');
+          await invoke(value ? 'presence_assistant_show' : 'presence_assistant_hide');
           return { ok: true, kind, value };
         }
+        case 'assistant_clickthrough':
         case 'pet_clickthrough': {
           const enabled = args.value === true;
-          await invoke('presence_pet_set_clickthrough', { enabled });
+          await invoke('presence_assistant_set_clickthrough', { enabled });
           return { ok: true, kind, value: enabled };
         }
         default:

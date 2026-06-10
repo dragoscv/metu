@@ -2,18 +2,18 @@ import React from 'react';
 import ReactDOM from 'react-dom/client';
 import { App } from './App';
 import { PresenceHud } from './forms/Hud';
-import { PresencePet } from './forms/Pet';
+import { PresenceAssistant } from './forms/Assistant';
 import { PresenceOverlay } from './forms/Overlay';
 import { attachDeepLinkBridge } from './state/deepLink';
 import './styles.css';
 
 // Tauri loads each window with `index.html#<form>` (see tauri.conf.json
 // windows[].url). We branch on the hash so a single Vite bundle drives the
-// main panel, the HUD overlay, and the desktop pet.
+// main panel, the HUD overlay, and the desktop assistant.
 function pickRoot() {
   const hash = window.location.hash.replace(/^#/, '');
   if (hash === 'hud') return <PresenceHud />;
-  if (hash === 'pet') return <PresencePet />;
+  if (hash === 'assistant') return <PresenceAssistant />;
   if (hash === 'overlay') return <PresenceOverlay />;
   return <App />;
 }

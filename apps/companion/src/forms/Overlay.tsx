@@ -1,6 +1,6 @@
 /**
  * Form E — fullscreen transparent overlay. Click-through always; used by the
- * pet brain to highlight a region of the screen or draw an arrow pointing at
+ * assistant brain to highlight a region of the screen or draw an arrow pointing at
  * an on-screen element. Driven by `metu:overlay` window events carrying a
  * physical-pixel rect; the window itself is positioned to cover the whole
  * virtual desktop by the brain via the `presence_overlay_show` command.
@@ -12,7 +12,7 @@
 import { useEffect, useState } from 'react';
 import { getCurrentWindow } from '@tauri-apps/api/window';
 import { listen } from '@tauri-apps/api/event';
-import { OVERLAY_EVENT, type HighlightRect } from '../pet/overlay-bridge';
+import { OVERLAY_EVENT, type HighlightRect } from '../assistant/overlay-bridge';
 
 export function PresenceOverlay() {
   const [rect, setRect] = useState<HighlightRect | null>(null);

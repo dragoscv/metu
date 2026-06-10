@@ -533,7 +533,7 @@ function CreatePersonaForm({
         sttProvider: 'deepgram-nova3',
         avatarKind: 'orb',
         avatarUrl: null,
-        formPrefs: { panel: true, inWindow: true, hud: true, pet: false },
+        formPrefs: { panel: true, inWindow: true, hud: true, assistant: false },
         defaultForm: 'panel',
         wakeWord: null,
         hotkey: null,

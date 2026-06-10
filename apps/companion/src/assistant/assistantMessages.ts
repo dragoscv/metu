@@ -1,8 +1,9 @@
 /**
- * In-character message strings for the desktop pet, varied by personality.
- * Kept tiny and deterministic-ish (random pick) — the pet's substantive
- * messages come from the Conductor over the hub; these are the ambient,
- * local-reaction lines (greetings, idle nudges, window reactions).
+ * In-character message strings for the desktop assistant, varied by
+ * personality. Kept tiny and deterministic-ish (random pick) — the
+ * assistant's substantive messages come from the Conductor over the hub;
+ * these are the ambient, local-reaction lines (greetings, idle nudges,
+ * window reactions).
  */
 import type { PersonalityId } from '../avatar/personality';
 
@@ -38,7 +39,7 @@ function pick(bank: Bank, p: PersonalityId): string | null {
   return arr[Math.floor(Math.random() * arr.length)] ?? null;
 }
 
-export const petLines = {
+export const assistantLines = {
   greeting: (p: PersonalityId) => pick(GREETING, p),
   idleNudge: (p: PersonalityId) => pick(IDLE_NUDGE, p),
   windowReact: (p: PersonalityId) => pick(WINDOW_REACT, p),

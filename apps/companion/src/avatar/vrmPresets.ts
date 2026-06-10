@@ -23,6 +23,34 @@ export interface VrmPreset {
 const THREE_VRM_SAMPLES =
   'https://raw.githubusercontent.com/pixiv/three-vrm/dev/packages/three-vrm/examples/models';
 
+/**
+ * Bundled character pack — drop CC0/`.vrm` files into
+ * `apps/companion/public/avatars/` and list them here. Vite serves `public/`
+ * at the app root, so the URLs are relative and work offline in the Tauri
+ * webview. See `public/avatars/README.md` for sourcing suggestions
+ * (VRoid Hub CC0 models, pixiv samples, etc).
+ */
+const BUNDLED: VrmPreset[] = [
+  {
+    id: 'pack-sora',
+    name: 'Sora',
+    url: '/avatars/sora.vrm',
+    note: 'bundled — drop sora.vrm in public/avatars',
+  },
+  {
+    id: 'pack-yuki',
+    name: 'Yuki',
+    url: '/avatars/yuki.vrm',
+    note: 'bundled — drop yuki.vrm in public/avatars',
+  },
+  {
+    id: 'pack-kai',
+    name: 'Kai',
+    url: '/avatars/kai.vrm',
+    note: 'bundled — drop kai.vrm in public/avatars',
+  },
+];
+
 export const VRM_PRESETS: VrmPreset[] = [
   { id: 'none', name: 'No model (use orb)', url: null },
   {
@@ -37,6 +65,7 @@ export const VRM_PRESETS: VrmPreset[] = [
     url: `${THREE_VRM_SAMPLES}/three-vrm-girl.vrm`,
     note: 'pixiv three-vrm sample (VRM 0.x)',
   },
+  ...BUNDLED,
   { id: 'env', name: 'From VITE_VRM_MODEL_URL', url: null },
   { id: 'custom', name: 'Custom URL…', url: null },
 ];

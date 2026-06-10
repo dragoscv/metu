@@ -2,19 +2,27 @@
  * AvatarView — inline avatar studio. Replaces the old modal AvatarPicker with
  * a full view: a large live preview on the left, renderer + preset controls on
  * the right. Selection persists via {@link useAvatarSelection} and syncs to the
- * HUD and pet windows automatically.
+ * HUD and assistant windows automatically.
  */
 import { useState } from 'react';
 import { useAvatarSelection } from '../../avatar/useAvatarSelection';
 import { AvatarHost } from '../../avatar/AvatarHost';
 import { ORB_PRESETS } from '../../avatar/orbPresets';
+import { FACE_PRESETS } from '../../avatar/facePresets';
 import { VRM_PRESETS } from '../../avatar/vrmPresets';
 import type { AvatarKind, AvatarState } from '../../avatar/types';
 import { ViewHeader } from '../ViewHeader';
 
 export function AvatarView() {
-  const { selection, customVrmUrl, setKind, setOrbPreset, setVrmPreset, setCustomVrmUrl } =
-    useAvatarSelection();
+  const {
+    selection,
+    customVrmUrl,
+    setKind,
+    setOrbPreset,
+    setFacePreset,
+    setVrmPreset,
+    setCustomVrmUrl,
+  } = useAvatarSelection();
   const [customDraft, setCustomDraft] = useState(customVrmUrl ?? '');
   const [previewState, setPreviewState] = useState<AvatarState>('idle');
 
@@ -55,6 +63,7 @@ export function AvatarView() {
         <div className="avatar-studio__controls">
           <div className="seg-group">
             {tab('orb', '✦ Shader orb')}
+            {tab('face', '☺ Character')}
             {tab('vrm', '☻ 3D avatar')}
           </div>
 
@@ -73,6 +82,29 @@ export function AvatarView() {
                       background: `radial-gradient(circle at 35% 30%, ${p.core}, ${p.accent} 60%, ${p.glow})`,
                     }}
                   />
+                  <span className="orb-chip__name">{p.name}</span>
+                </button>
+              ))}
+            </div>
+          ) : selection.kind === 'face' ? (
+            <div className="orb-grid orb-grid--view">
+              {FACE_PRESETS.map((p) => (
+                <button
+                  key={p.id}
+                  className={`orb-chip ${selection.facePresetId === p.id ? 'orb-chip--on' : ''}`}
+                  onClick={() => setFacePreset(p.id)}
+                  title={p.name}
+                >
+                  <span
+                    className="orb-swatch orb-swatch--face"
+                    style={{
+                      background: `radial-gradient(circle at 38% 30%, ${p.skin}, ${p.skinDeep})`,
+                    }}
+                  >
+                    <span className="orb-swatch__eyes" style={{ color: p.feature }}>
+                      ••
+                    </span>
+                  </span>
                   <span className="orb-chip__name">{p.name}</span>
                 </button>
               ))}

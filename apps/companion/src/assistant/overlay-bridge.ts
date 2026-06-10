@@ -1,8 +1,8 @@
 /**
- * Cross-window bridge for the highlight overlay. The pet brain (in the `pet`
- * window) calls `showHighlight(rect)`, which shows the `overlay` window and
- * emits a Tauri event the overlay view listens for. `hideHighlight()` clears
- * it and hides the window.
+ * Cross-window bridge for the highlight overlay. The assistant brain (in the
+ * `assistant` window) calls `showHighlight(rect)`, which shows the `overlay`
+ * window and emits a Tauri event the overlay view listens for.
+ * `hideHighlight()` clears it and hides the window.
  */
 import { invoke } from '@tauri-apps/api/core';
 import { emit } from '@tauri-apps/api/event';

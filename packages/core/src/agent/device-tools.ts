@@ -388,29 +388,37 @@ export const deviceNotifyTool = bridge(
 /**
  * Pin a different persona on a window. The companion's `usePersonas` module
  * stores the override in process memory and re-renders the form. Pass `slug`
- * (built-in) and the target `form` (defaults to 'pet').
+ * (built-in) and the target `form` (defaults to 'assistant'). The legacy
+ * 'pet' value is still accepted as an alias for 'assistant'.
  */
 export const devicePersonaSetTool = bridge(
   'device.persona_set',
-  'Switch the active persona on a window (pet/hud/panel) by slug.',
+  'Switch the active persona on a window (assistant/hud/panel) by slug.',
   'high_risk',
   z.object({
     slug: z.string().min(1).max(64),
-    form: z.enum(['pet', 'hud', 'panel']).optional(),
+    form: z.enum(['assistant', 'pet', 'hud', 'panel']).optional(),
   }),
 );
 
 /**
- * Mutate a single companion-window setting. Today supports HUD/Pet
- * visibility and Pet click-through; new keys are added one-at-a-time so the
- * planner has a tight contract instead of an open patch object.
+ * Mutate a single companion-window setting. Today supports HUD/Assistant
+ * visibility and Assistant click-through; new keys are added one-at-a-time
+ * so the planner has a tight contract instead of an open patch object.
+ * Legacy pet_* kinds remain accepted as aliases.
  */
 export const deviceSettingsUpdateTool = bridge(
   'device.settings_update',
-  'Update a single window setting (hud_visible, pet_visible, pet_clickthrough).',
+  'Update a single window setting (hud_visible, assistant_visible, assistant_clickthrough).',
   'high_risk',
   z.object({
-    kind: z.enum(['hud_visible', 'pet_visible', 'pet_clickthrough']),
+    kind: z.enum([
+      'hud_visible',
+      'assistant_visible',
+      'assistant_clickthrough',
+      'pet_visible',
+      'pet_clickthrough',
+    ]),
     value: z.boolean(),
   }),
 );

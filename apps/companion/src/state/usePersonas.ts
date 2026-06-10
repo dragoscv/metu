@@ -7,7 +7,7 @@
  * its OWN wake word — not just the built-ins.
  *
  * Cached in module scope per session; cleared on auth change by the
- * caller (Pet/Hud re-mount when accessToken changes, which re-runs the
+ * caller (Assistant/Hud re-mount when accessToken changes, which re-runs the
  * effect and re-fetches).
  */
 import { useEffect, useReducer, useState } from 'react';
@@ -21,7 +21,7 @@ export interface CompanionPersona {
   voiceProvider: string;
   avatarKind: string;
   avatarUrl: string | null;
-  defaultForm: 'panel' | 'in_window' | 'hud' | 'pet';
+  defaultForm: 'panel' | 'in_window' | 'hud' | 'assistant';
   wakeWord: string | null;
   hotkey: string | null;
   language: string;
@@ -96,10 +96,10 @@ export function useBillingTier(): BillingTier {
   return tier;
 }
 
-export function pickPetPersona(personas: CompanionPersona[]): CompanionPersona {
+export function pickAssistantPersona(personas: CompanionPersona[]): CompanionPersona {
   return (
     personas.find((p) => p.slug === 'metu') ??
-    personas.find((p) => p.defaultForm === 'pet' && p.voiceProvider !== 'none') ??
+    personas.find((p) => p.defaultForm === 'assistant' && p.voiceProvider !== 'none') ??
     personas[0]!
   );
 }
@@ -120,7 +120,7 @@ export function pickHudPersona(personas: CompanionPersona[]): CompanionPersona {
 // `useResolvedPersona(form, personas)` and re-render when the override
 // changes. `null` clears the override and the form falls back to its picker.
 // ---------------------------------------------------------------------------
-export type PersonaForm = 'pet' | 'hud' | 'panel';
+export type PersonaForm = 'assistant' | 'hud' | 'panel';
 
 const overrides: Partial<Record<PersonaForm, string>> = {};
 const overrideListeners = new Set<() => void>();
@@ -159,7 +159,7 @@ export function useResolvedPersona(
     const found = personas.find((p) => p.slug === slug);
     if (found) return found;
   }
-  if (form === 'pet') return pickPetPersona(personas);
+  if (form === 'assistant') return pickAssistantPersona(personas);
   if (form === 'hud') return pickHudPersona(personas);
   return personas[0]!;
 }

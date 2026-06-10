@@ -26,7 +26,7 @@ import {
 } from 'drizzle-orm/pg-core';
 import { workspace } from './workspace';
 
-export const personaForm = pgEnum('persona_form', ['panel', 'in_window', 'hud', 'pet']);
+export const personaForm = pgEnum('persona_form', ['panel', 'in_window', 'hud', 'assistant']);
 
 export const personaProactivity = pgEnum('persona_proactivity', ['silent', 'gentle', 'active']);
 
@@ -76,10 +76,10 @@ export const persona = pgTable(
     // Visual
     avatarKind: text('avatar_kind').notNull().default('orb'), // orb | portrait | live2d | vrm | sprite
     avatarUrl: text('avatar_url'),
-    /** { panel, inWindow, hud, pet } booleans — which forms can host this persona. */
+    /** { panel, inWindow, hud, assistant } booleans — which forms can host this persona. */
     formPrefs: jsonb('form_prefs')
       .notNull()
-      .default(sql`'{"panel":true,"inWindow":true,"hud":true,"pet":false}'::jsonb`),
+      .default(sql`'{"panel":true,"inWindow":true,"hud":true,"assistant":false}'::jsonb`),
     defaultForm: personaForm('default_form').notNull().default('panel'),
     // Behaviour
     wakeWord: text('wake_word'),

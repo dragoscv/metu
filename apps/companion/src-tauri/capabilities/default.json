@@ -2,7 +2,7 @@
   "$schema": "../gen/schemas/desktop-schema.json",
   "identifier": "default",
   "description": "Default permissions for METU Companion",
-  "windows": ["main", "hud", "pet", "overlay"],
+  "windows": ["main", "hud", "assistant", "overlay"],
   "permissions": [
     "core:default",
     "core:window:allow-show",
