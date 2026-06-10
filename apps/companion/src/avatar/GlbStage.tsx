@@ -58,6 +58,7 @@ export function GlbStage({
     let activeAction: THREE.AnimationAction | null = null;
     let root: THREE.Object3D | null = null;
     let lastState: AvatarState | null = null;
+    let baseY = 0;
 
     const pickClip = (clips: THREE.AnimationClip[], names?: string[]) => {
       if (!names) return null;
@@ -78,14 +79,6 @@ export function GlbStage({
         // Auto-fit: center the model and pull the camera back so the whole
         // bounding sphere is in frame regardless of model scale (the Fox is
         // ~90 units tall, the Soldier ~1.8).
-        const box = new THREE.Box3().setFromObject(root);
-        const sphere = box.getBoundingSphere(new THREE.Sphere());
-        root.position.sub(sphere.center); // center at origin
-        if (preset.yaw) root.rotation.y = preset.yaw;
-        const margin = preset.fitMargin ?? 1.25;
-        const dist = (sphere.radius * margin) / Math.sin((camera.fov * Math.PI) / 360);
-        camera.position.set(0, sphere.radius * 0.12, dist);
-        camera.lookAt(0, 0, 0);
         scene.add(root);
 
         const clips = gltf.animations ?? [];
@@ -97,6 +90,29 @@ export function GlbStage({
           thinking: pickClip(clips, preset.clips?.thinking) ?? undefined,
         };
         if (clips.length) mixer = new THREE.AnimationMixer(root);
+
+        // Fit the camera AFTER posing the first frame of the idle clip —
+        // the bind-pose bounding box can be wildly different from the
+        // animated pose (T-pose arms, walk cycles), which cropped models.
+        if (mixer) {
+          const first = clipsByState.idle ?? fallbackClip;
+          if (first) {
+            const a = mixer.clipAction(first);
+            a.play();
+            mixer.update(0); // pose frame 0
+            activeAction = a;
+            lastState = driveRef.current.state === 'idle' ? 'idle' : null;
+          }
+        }
+        const box = new THREE.Box3().setFromObject(root);
+        const sphere = box.getBoundingSphere(new THREE.Sphere());
+        root.position.sub(sphere.center); // center at origin
+        if (preset.yaw) root.rotation.y = preset.yaw;
+        baseY = root.position.y;
+        const margin = preset.fitMargin ?? 1.4;
+        const dist = (sphere.radius * margin) / Math.sin((camera.fov * Math.PI) / 360);
+        camera.position.set(0, sphere.radius * 0.1, dist);
+        camera.lookAt(0, 0, 0);
         onStatus?.('ready');
       })
       .catch(() => {
@@ -129,7 +145,8 @@ export function GlbStage({
         // Gentle bob + sway so even single-clip models feel alive; perk up
         // slightly while listening, dip while thinking.
         const lift = s === 'listening' ? 0.015 : s === 'thinking' ? -0.01 : 0;
-        root.position.y += (Math.sin(t * 1.4) * 0.004 + lift - root.position.y) * 0.08;
+        const target = baseY + Math.sin(t * 1.4) * 0.004 + lift;
+        root.position.y += (target - root.position.y) * 0.08;
         root.rotation.y = (preset.yaw ?? 0) + Math.sin(t * 0.4) * (s === 'listening' ? 0.04 : 0.1);
       }
 

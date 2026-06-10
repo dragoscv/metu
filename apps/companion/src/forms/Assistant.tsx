@@ -305,7 +305,12 @@ function AssistantSkin({
     [personality],
   );
 
-  const interactionLocked = chatOpen || dragging || !!ambient?.action;
+  // Lock interactivity whenever ANY clickable surface is on screen: the chat
+  // panel, a drag, ANY bubble (quick-replies/dismiss are clickable even
+  // without a confirm action), or the right-click menu. The native watcher
+  // keeps click-through OFF while locked, so these are always clickable.
+  const interactionLocked =
+    chatOpen || dragging || !!ambient || !!chatBubble || !!voiceBubble || !!menu;
 
   const { hovering, setInteractive } = useAssistantBrain({
     personality,

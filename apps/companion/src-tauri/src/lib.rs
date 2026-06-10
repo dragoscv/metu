@@ -283,6 +283,7 @@ pub fn run() {
         .plugin(tauri_plugin_shell::init())
         .manage(oauth::LoopbackState::default())
         .manage(diag::DiagState::default())
+        .manage(forms::AssistantInput::default())
         .plugin(tauri_plugin_http::init())
         .plugin(tauri_plugin_notification::init())
         .plugin(tauri_plugin_clipboard_manager::init())
@@ -321,6 +322,7 @@ pub fn run() {
             forms::presence_assistant_show,
             forms::presence_assistant_hide,
             forms::presence_assistant_set_clickthrough,
+            forms::presence_assistant_set_interactive_lock,
             forms::presence_overlay_show,
             forms::presence_overlay_hide,
             mdns::mdns_announce,
@@ -345,6 +347,8 @@ pub fn run() {
         .setup(|app| {
             // ── Diagnostics log file ────────────────────────────────────
             diag::init(app);
+            // ── Assistant click-through autopilot (native, single writer) ──
+            forms::start_assistant_input_watcher(app.handle().clone());
             // ── Tray ────────────────────────────────────────────────────
             let show_item = MenuItem::with_id(app, "show", "Show METU", true, None::<&str>)?;
             let backlog_item = MenuItem::with_id(

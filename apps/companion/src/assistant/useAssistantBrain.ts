@@ -18,19 +18,18 @@
  *
  * ── Click-through model (and the drag fix) ─────────────────────────────────
  * Tauri's `set_ignore_cursor_events` is all-or-nothing for the window, so we
- * approximate per-pixel hit-testing. The OLD implementation polled the global
- * cursor against a circle and toggled click-through from that poll — which
- * raced with `data-tauri-drag-region`: mid-press the poll could flip
- * click-through ON and the OS drag died. The new contract:
+ * approximate per-pixel hit-testing. v3 contract (native autopilot):
  *
- *   1. `interactive` (cursor over body/bubble/chat) is reported by the DOM
- *      via `setInteractive()` — exact, no geometry guess.
- *   2. While `interactionLocked` (dragging OR chat open OR bubble shown),
- *      click-through is FORCED OFF and the poll may not touch it.
- *   3. The cursor poll's only job is re-ENABLING interactivity: when the
- *      window is click-through, DOM events can't fire, so the poll detects
- *      the cursor entering the window bounds and turns click-through off so
- *      the DOM can take over again.
+ *   1. A Rust thread (`start_assistant_input_watcher`) is the ONLY writer of
+ *      `set_ignore_cursor_events`. Every 50ms it reads the real cursor and
+ *      the real window rect and decides — no IPC races, no stale JS caches,
+ *      works even while the window is click-through (no DOM events needed).
+ *   2. JS reports a single bit: the interactive LOCK (chat open ∨ dragging ∨
+ *      pointer over body/bubble/menu) via
+ *      `presence_assistant_set_interactive_lock`. While locked the watcher
+ *      keeps the window interactive unconditionally.
+ *   3. The lock is re-reported every ~1s so process restarts / HMR resets
+ *      self-heal.
  */
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { invoke } from '@tauri-apps/api/core';
@@ -38,7 +37,6 @@ import { getCurrentWindow, PhysicalPosition } from '@tauri-apps/api/window';
 import { isTauri } from '../state/runtime';
 import {
   clampToMonitors,
-  getCursor,
   getForeground,
   getMonitors,
   randomWanderTarget,
@@ -84,50 +82,40 @@ interface Options {
 
 const FRAME_MS = 33; // ~30fps stepping
 const HOVER_POLL_MS = 120;
-/** Extra px around the window bounds that still counts as "inside" — makes
- * waking a click-through window forgiving of polling latency. */
-const WAKE_MARGIN_PX = 16;
 
-// ── Click-through management ────────────────────────────────────────────────
-// HARD-LEARNED: never gate re-enabling on a cached "current" value. The cache
-// desyncs from the real window (Vite HMR resets module state; the Conductor's
-// settings_update tool toggles the window directly; an invoke can fail), and
-// a stale `false` cache meant the wake-up poll never ran — the window stayed
-// ignore_cursor_events(true) forever and every click/drag fell through to the
-// desktop. The poll below is the single authority: it recomputes the desired
-// state every tick and force re-applies periodically so any desync self-heals
-// within ~1s.
-//
-// HARD-LEARNED #2: invokes MUST be serialized (single-flight, latest-wins).
-// Two concurrent `set_clickthrough` IPC calls can land on the Rust side in
-// the wrong order — a stale `true` arriving after a fresh `false` makes the
-// chat panel / avatar dead to clicks even though our JS state says
-// interactive. `desired` always holds the newest intent; `pump` applies it
-// one invoke at a time and re-checks after each completion.
-let desired: boolean | null = null;
-let applied: boolean | null = null;
-let inflight = false;
-function pumpClickthrough() {
-  if (inflight || desired === null || desired === applied) return;
-  const next = desired;
-  inflight = true;
-  invoke('presence_assistant_set_clickthrough', { enabled: next })
+// ── Click-through management (v3 — native autopilot) ───────────────────────
+// HARD-LEARNED (v1, v2): every JS-driven approach to `ignore_cursor_events`
+// failed. A click-through window receives no DOM events, so JS works from
+// stale data; concurrent invokes land out of order on the Rust side; Vite
+// HMR resets module caches; the Conductor's settings_update writes the
+// window directly. The fix is structural: a single Rust thread
+// (`start_assistant_input_watcher` in src-tauri/src/forms.rs) is the ONLY
+// writer. It reads the real cursor + the real window rect every 50ms and
+// flips click-through itself. JS's whole job is reporting the *interactive
+// lock* (chat open / drag / pointer on an interactive zone) — latest-wins,
+// serialized, idempotent.
+let lockDesired: boolean | null = null;
+let lockApplied: boolean | null = null;
+let lockInflight = false;
+function pumpLock() {
+  if (lockInflight || lockDesired === null || lockDesired === lockApplied) return;
+  const next = lockDesired;
+  lockInflight = true;
+  invoke('presence_assistant_set_interactive_lock', { locked: next })
     .then(() => {
-      applied = next;
+      lockApplied = next;
     })
     .catch(() => {
-      // Unknown real state — forget so the next tick retries.
-      applied = null;
+      lockApplied = null; // unknown — retry on next report
     })
     .finally(() => {
-      inflight = false;
-      pumpClickthrough(); // desired may have changed while in flight
+      lockInflight = false;
+      pumpLock();
     });
 }
-function applyClickthrough(enabled: boolean, force = false) {
-  desired = enabled;
-  if (force) applied = null; // bypass dedupe — re-assert against the OS
-  pumpClickthrough();
+function reportInteractiveLock(locked: boolean) {
+  lockDesired = locked;
+  pumpLock();
 }
 
 export function useAssistantBrain(opts: Options): AssistantBrainState {
@@ -155,26 +143,26 @@ export function useAssistantBrain(opts: Options): AssistantBrainState {
   }, [paused]);
   useEffect(() => {
     lockedRef.current = !!interactionLocked;
-    // Entering a locked state must immediately guarantee interactivity.
-    // Force: bypass the dedupe cache so the OS state is re-asserted even if
-    // we *think* it's already interactive (the think can be wrong).
-    if (interactionLocked) applyClickthrough(false, true);
+    syncLock();
   }, [interactionLocked]);
 
   // DOM-reported hover over interactive zones (body, bubble, chat).
   const domHoverRef = useRef(false);
 
+  // The native watcher treats "locked" as: explicit interaction lock OR the
+  // pointer being over an interactive DOM zone. Combine both signals here.
+  const syncLock = () => {
+    reportInteractiveLock(lockedRef.current || domHoverRef.current);
+  };
+
   const setInteractive = useCallback((on: boolean) => {
     domHoverRef.current = on;
     setHovering(on);
-    if (on) {
-      lastActivityRef.current = Date.now();
-      // Force: the pointer is *on* an interactive zone right now — re-assert
-      // against the OS even if our cache believes we're already interactive.
-      applyClickthrough(false, true);
-    }
-    // Leaving is handled by the authoritative poll (below) so a missed
-    // pointerleave can never strand the window in the wrong state.
+    if (on) lastActivityRef.current = Date.now();
+    reportInteractiveLock(lockedRef.current || on);
+    // A missed pointerleave can't strand the window: the native watcher
+    // also tracks the real cursor against the real window rect, so leaving
+    // the window always re-enables click-through within ~50ms.
   }, []);
 
   // Allow external (hub) point requests via a window event.
@@ -342,58 +330,20 @@ export function useAssistantBrain(opts: Options): AssistantBrainState {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  // ── Authoritative click-through reconciler ───────────────────────────────
-  // Single source of truth, runs every HOVER_POLL_MS:
-  //   interactive  ⇐ locked ∨ DOM-hover ∨ cursor inside window bounds
-  //   click-through = ¬interactive
-  // The cursor-bounds check is what wakes a click-through window (the DOM
-  // gets no events while ignored); DOM hover + lock keep it interactive with
-  // exact hit-testing once awake. Every ~1s the state is force re-applied so
-  // a desync (failed IPC, HMR module reset, external toggle via the
-  // Conductor's settings_update) self-heals instead of stranding the window
-  // un-clickable forever.
+  // ── Click-through ownership ──────────────────────────────────────────────
+  // Click-through itself is owned by the NATIVE watcher
+  // (start_assistant_input_watcher in src-tauri/src/forms.rs) — see the
+  // module comment at the top. The JS side only keeps the lock signal fresh:
+  // re-report it periodically so a Rust-side restart / HMR module reset
+  // can't leave the watcher with a stale lock bit.
   useEffect(() => {
     if (!isTauri()) return;
-    let ticks = 0;
-    let seq = 0;
-    const win = getCurrentWindow();
     const timer = setInterval(() => {
-      void (async () => {
-        ticks++;
-        const mySeq = ++seq;
-        let inside = false;
-        if (!lockedRef.current && !domHoverRef.current) {
-          // Read the REAL window position — posRef only tracks brain-driven
-          // movement and goes stale after manual drags / external moves,
-          // which made the bounds test check the wrong rectangle ("cursor is
-          // on the character but clicks land behind it").
-          const [cur, realPos] = await Promise.all([
-            getCursor(),
-            win.outerPosition().catch(() => null),
-          ]);
-          // A newer tick (or a lock/hover flip) may have happened while we
-          // awaited the IPC round-trips — never let a stale read win.
-          if (mySeq !== seq) return;
-          if (realPos) posRef.current = { x: realPos.x, y: realPos.y };
-          if (cur) {
-            const pos = posRef.current;
-            inside =
-              cur.x >= pos.x - WAKE_MARGIN_PX &&
-              cur.x <= pos.x + width + WAKE_MARGIN_PX &&
-              cur.y >= pos.y - WAKE_MARGIN_PX &&
-              cur.y <= pos.y + height + WAKE_MARGIN_PX;
-          } else {
-            // Cursor unknown (unsupported platform) — never go click-through,
-            // otherwise the window could become permanently unreachable.
-            inside = true;
-          }
-        }
-        const interactive = lockedRef.current || domHoverRef.current || inside;
-        applyClickthrough(!interactive, ticks % 8 === 0);
-      })();
-    }, HOVER_POLL_MS);
+      lockApplied = null; // force a re-send even if value unchanged
+      reportInteractiveLock(lockedRef.current || domHoverRef.current);
+    }, HOVER_POLL_MS * 8);
     return () => clearInterval(timer);
-  }, [width, height]);
+  }, []);
 
   return { mode, hovering, setInteractive };
 }

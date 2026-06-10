@@ -237,7 +237,12 @@ export async function executeDeviceTool(tool: string, args: DeviceToolArgs): Pro
         case 'assistant_clickthrough':
         case 'pet_clickthrough': {
           const enabled = args.value === true;
-          await invoke('presence_assistant_set_clickthrough', { enabled });
+          // Click-through is owned by the native watcher (forms.rs); a raw
+          // set_clickthrough would be overwritten within 50ms. Map the tool
+          // onto the interactive lock instead: clickthrough=false ⇒ pin the
+          // window interactive; clickthrough=true ⇒ release the pin and let
+          // the watcher's cursor tracking decide.
+          await invoke('presence_assistant_set_interactive_lock', { locked: !enabled });
           return { ok: true, kind, value: enabled };
         }
         default:
