@@ -270,11 +270,16 @@ export function planSteps(plan: ActPlan): ActStep[] {
 export async function executeActPlan(
   plan: ActPlan,
   onProgress?: (done: number, total: number, step: ActStep) => void,
-): Promise<void> {
+): Promise<{ verified: boolean }> {
   const steps = planSteps(plan);
   if (!plan.feasible || steps.length === 0) {
     throw new Error(plan.reason ?? 'Nothing to execute.');
   }
+  // Outcome verification baseline: snapshot the outline BEFORE acting so
+  // we can tell afterwards whether the UI actually responded (a click
+  // that lands on a dead button "succeeds" at the UIA level but changes
+  // nothing — the user deserves to know the difference).
+  const before = await a11yOutline();
   for (let i = 0; i < steps.length; i++) {
     const step = steps[i]!;
     // Verify the target still exists before steps 2+ (the UI may have
@@ -298,4 +303,11 @@ export async function executeActPlan(
     // after the confirm bubble (ask-before-act, one approval per plan).
     await invoke(step.action === 'invoke' ? 'sense_ui_invoke' : 'sense_ui_set_value', { args });
   }
+  // Verify: did the UI change at all? (set_value chains always mutate
+  // state; pure-invoke chains should visibly react.) Best-effort — an
+  // empty outline (a11y hiccup) counts as unverified, not failed.
+  await new Promise((r) => setTimeout(r, 500));
+  const after = await a11yOutline();
+  const verified = !!after && after !== before;
+  return { verified };
 }

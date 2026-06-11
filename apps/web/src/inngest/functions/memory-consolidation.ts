@@ -15,7 +15,7 @@
  * procedural pattern from the agent-memory literature, kept deliberately
  * minimal: one LLM call per active workspace per night.
  */
-import { and, eq, gte, desc } from 'drizzle-orm';
+import { and, eq, gte, lt, desc, sql } from 'drizzle-orm';
 import { generateText } from 'ai';
 import { getDb } from '@metu/db';
 import { agentPolicy, memoryChunk } from '@metu/db/schema';
@@ -104,6 +104,27 @@ export const memoryConsolidation = inngest.createFunction(
       consolidated += inserted;
     }
 
-    return { workspaces: workspaces.length, insights: consolidated };
+    // Decay (Jarvis v3.1): raw ambient-activity chunks older than 14 days
+    // are noise once their day has been consolidated — the insights carry
+    // the signal. Purge them so recall stays sharp and the HNSW index
+    // small. Only 'capture'-kind chunks from the companion distiller;
+    // never preferences/continuity/insights.
+    const decayed = await step.run('decay-raw-activity', async () => {
+      const db = getDb();
+      const cutoffOld = new Date(Date.now() - 14 * 24 * 60 * 60 * 1000);
+      const deleted = await db
+        .delete(memoryChunk)
+        .where(
+          and(
+            eq(memoryChunk.sourceKind, 'capture'),
+            lt(memoryChunk.createdAt, cutoffOld),
+            sql`${memoryChunk.metadata} ->> 'origin' = 'companion-activity'`,
+          ),
+        )
+        .returning();
+      return deleted.length;
+    });
+
+    return { workspaces: workspaces.length, insights: consolidated, decayed };
   },
 );

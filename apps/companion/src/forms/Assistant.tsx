@@ -70,6 +70,7 @@ import {
 } from '../assistant/terminal';
 import {
   maybeLearnFromUtterance,
+  maybeWeeklyReflection,
   recordSuggestionEngaged,
   suggestionCategory,
   type SuggestionCategory,
@@ -596,6 +597,7 @@ function AssistantSkin({
       } catch {
         /* ignore */
       }
+      maybeWeeklyReflection(auth); // piggyback: weekly self-reflection
       playGesture('wave', 1800);
       fireSkill('morning_brief');
     }, 60_000);
@@ -739,9 +741,12 @@ function AssistantSkin({
                     `Step ${done + 1}/${total} — ${step.action === 'invoke' ? 'clicking' : 'filling'} "${step.name}"…`,
                   ),
                 )
-                  .then(() => {
-                    setChatBubble(steps.length > 1 ? `Done — all ${steps.length} steps.` : 'Done.');
-                    playGesture('nod');
+                  .then(({ verified }) => {
+                    const done = steps.length > 1 ? `Done — all ${steps.length} steps.` : 'Done.';
+                    setChatBubble(
+                      verified ? done : `${done} (I couldn't confirm the app reacted — check it.)`,
+                    );
+                    playGesture(verified ? 'nod' : 'shrug');
                   })
                   .catch((err: unknown) =>
                     setChatBubble(err instanceof Error ? err.message : 'That didn’t work.'),

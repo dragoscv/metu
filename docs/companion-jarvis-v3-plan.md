@@ -27,3 +27,16 @@ Decisions (all with Dragos):
 - [x] 3 typed memory metadata + nightly consolidation function
 - [x] 4 morning briefing + end-of-day wrap (companion-side triggers)
 - [x] 5 multi-step act plan schema + sequential executor
+
+## v3.1 — remaining AGI-gap items (2026-06-12, same day)
+
+- [x] Supersession: new preference/correction semantically (≥0.55) deletes
+      contradicting old learning chunks before indexing (memory route).
+- [x] Decay: consolidation cron purges raw companion-activity chunks
+      older than 14 days (insights carry the signal).
+- [x] Outcome verification: executeActPlan snapshots the a11y outline
+      before/after; unverified chains report "check it" + shrug.
+- [x] Self-reflection: weekly engagement stats distilled into a portable
+      preference memory (maybeWeeklyReflection, piggybacks morning brief).
+- [~] Cross-surface: memory/briefs are server-side already — mobile gets
+  them via the same SDK routes; mobile UI wiring is its own slice.

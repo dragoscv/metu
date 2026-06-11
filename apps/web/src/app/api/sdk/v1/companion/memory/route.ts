@@ -13,7 +13,10 @@
  */
 import { type NextRequest, NextResponse } from 'next/server';
 import { z } from 'zod';
-import { indexMemory } from '@metu/core/memory';
+import { indexMemory, recall } from '@metu/core/memory';
+import { getDb } from '@metu/db';
+import { memoryChunk } from '@metu/db/schema';
+import { and, eq, inArray } from 'drizzle-orm';
 import { forbidden, hasScope, resolveSession, unauthorized } from '@/lib/bearer';
 import { rateLimit } from '@/lib/ratelimit';
 
@@ -44,6 +47,45 @@ export async function POST(req: NextRequest) {
     );
   }
   const { kind, statement, surface } = parsed.data;
+
+  // Supersession (Jarvis v3.1): a NEW preference/correction replaces any
+  // strongly-similar older one — otherwise recall surfaces both "always
+  // answer in English" and the later "always answer in Romanian" and the
+  // model has to guess. Semantic match ≥ 0.55 on existing learning chunks
+  // → delete the old rows before indexing the new statement.
+  if (kind === 'preference' || kind === 'correction') {
+    try {
+      const result = await recall({
+        workspaceId: session.workspaceId,
+        query: statement,
+        kinds: ['manual'],
+        minScore: 0.55,
+        mode: 'semantic',
+        dedupe: false,
+        limit: 5,
+      });
+      const rows =
+        ((result as { rows?: Array<{ id: string; content: string }> }).rows ??
+          (result as unknown as Array<{ id: string; content: string }>)) ||
+        [];
+      const superseded = rows
+        .filter((r) => /^User (preference|correction):/.test(r.content))
+        .map((r) => r.id);
+      if (superseded.length > 0) {
+        const db = getDb();
+        await db
+          .delete(memoryChunk)
+          .where(
+            and(
+              eq(memoryChunk.workspaceId, session.workspaceId),
+              inArray(memoryChunk.id, superseded),
+            ),
+          );
+      }
+    } catch {
+      // Supersession is best-effort — never block storing the new statement.
+    }
+  }
 
   const { chunkCount } = await indexMemory({
     workspaceId: session.workspaceId,

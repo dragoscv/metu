@@ -143,3 +143,57 @@ export function cooldownMultiplier(category: SuggestionCategory): number {
   if (rate < 0.4) return 2;
   return 1;
 }
+
+// ── 3. Weekly self-reflection ───────────────────────────────────────────────
+
+const REFLECT_KEY = 'metu.learning.lastReflection';
+
+/**
+ * Once a week, distill the suggestion outcome stats into a short natural-
+ * language insight and persist it as a preference memory — so the server-
+ * side agent ALSO learns what kinds of interruptions this user values
+ * (the local cooldown multiplier only throttles; this makes the knowledge
+ * portable across surfaces, including mobile later).
+ */
+export function maybeWeeklyReflection(auth: AuthState): void {
+  const now = Date.now();
+  try {
+    const last = Number(localStorage.getItem(REFLECT_KEY) ?? 0);
+    if (now - last < 7 * 24 * 60 * 60_000) return;
+    localStorage.setItem(REFLECT_KEY, String(now));
+  } catch {
+    return;
+  }
+  const stats = loadStats();
+  const parts: string[] = [];
+  for (const [cat, s] of Object.entries(stats)) {
+    if (s.shown < 3) continue;
+    const rate = Math.round((s.engaged / s.shown) * 100);
+    const label =
+      cat === 'error'
+        ? 'error-help offers'
+        : cat === 'return'
+          ? 'welcome-back catch-ups'
+          : cat === 'thrash'
+            ? 'context-switching help'
+            : 'misc suggestions';
+    parts.push(`${label}: engages ${rate}% of the time (${s.engaged}/${s.shown})`);
+  }
+  if (parts.length === 0) return;
+  void (async () => {
+    const fresh = await ensureFreshAuth(auth);
+    if (!fresh) return;
+    await fetch(`${fresh.apiBase}/api/sdk/v1/companion/memory`, {
+      method: 'POST',
+      headers: {
+        'content-type': 'application/json',
+        authorization: `Bearer ${fresh.accessToken}`,
+      },
+      body: JSON.stringify({
+        kind: 'preference',
+        statement: `Proactive-suggestion engagement this week — ${parts.join('; ')}. Calibrate proactivity accordingly.`,
+        surface: 'companion',
+      }),
+    });
+  })().catch(() => {});
+}
