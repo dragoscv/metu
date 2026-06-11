@@ -5,6 +5,7 @@
  * HUD and assistant windows automatically.
  */
 import { useState } from 'react';
+import { invoke } from '@tauri-apps/api/core';
 import { useAvatarSelection } from '../../avatar/useAvatarSelection';
 import { AvatarHost } from '../../avatar/AvatarHost';
 import { ORB_PRESETS } from '../../avatar/orbPresets';
@@ -60,6 +61,24 @@ export function AvatarView() {
               </button>
             ))}
           </div>
+          <button
+            className="btn"
+            style={{ marginTop: 10, width: '100%' }}
+            onClick={() => {
+              try {
+                localStorage.setItem('metu.companion.assistantVisible', '1');
+              } catch {
+                /* ignore */
+              }
+              void invoke('presence_assistant_show').catch(() => {});
+            }}
+          >
+            ⬇ Summon to desktop
+          </button>
+          <p className="muted" style={{ fontSize: 11, marginTop: 6 }}>
+            Shows the assistant on screen with this avatar. It walks on the taskbar, climbs windows,
+            and falls with gravity — drag it anywhere and drop it.
+          </p>
         </div>
 
         <div className="avatar-studio__controls">

@@ -75,6 +75,17 @@ async fn sense_ui_outline(args: a11y::A11yArgs) -> Result<a11y::A11yTree, String
         .map_err(|e| format!("join_failed: {e}"))?
 }
 
+/// Ungated window enumeration for the avatar's screen-world model (the
+/// platformer level: window tops = platforms). Geometry only — titles are
+/// already captured by the sense engine; remote callers keep using the
+/// gated `device_list_windows`.
+#[tauri::command]
+async fn sense_window_map() -> Result<Vec<windowing::WindowInfo>, String> {
+    tauri::async_runtime::spawn_blocking(windowing::list_windows)
+        .await
+        .map_err(|e| format!("join_failed: {e}"))?
+}
+
 /// Ungated UIA actions for USER-CONFIRMED local act-skill steps. The
 /// remote-facing `device_a11y_invoke`/`device_a11y_set_value` stay
 /// capability-gated; these run ONLY after the user pressed the confirm
@@ -334,6 +345,7 @@ pub fn run() {
             sense_ui_outline,
             sense_ui_invoke,
             sense_ui_set_value,
+            sense_window_map,
             device_a11y_invoke,
             device_a11y_set_value,
             device_see,

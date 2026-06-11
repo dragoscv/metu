@@ -222,10 +222,31 @@ export function useAssistantBrain(opts: Options): AssistantBrainState {
       monitorsRef.current = mons;
       if (pos) {
         posRef.current = { x: pos.x, y: pos.y };
-        // Seed the physics body's feet from the real window position; it
-        // starts falling so gravity settles it onto the nearest platform.
-        bodyRef.current.x = pos.x + width / 2;
-        bodyRef.current.y = pos.y + height - FOOT_OFFSET;
+        // Rescue: if a previous session's physics flung the window outside
+        // every monitor (the pre-fix free-fall bug persisted the position),
+        // snap back to the primary monitor's bottom-right before seeding.
+        const visible = mons.some(
+          (m) =>
+            pos.x + width / 2 >= m.x &&
+            pos.x + width / 2 <= m.x + m.w &&
+            pos.y + height / 2 >= m.y &&
+            pos.y + height / 2 <= m.y + m.h,
+        );
+        let seedX = pos.x;
+        let seedY = pos.y;
+        if (!visible && mons.length) {
+          const home = mons.find((m) => m.primary) ?? mons[0]!;
+          seedX = home.x + home.w - width - 24;
+          seedY = home.y + home.h - height - 24;
+          posRef.current = { x: seedX, y: seedY };
+          void getCurrentWindow()
+            .setPosition(new PhysicalPosition(seedX, seedY))
+            .catch(() => {});
+        }
+        // Seed the physics body's feet; it starts falling so gravity
+        // settles it onto the nearest platform (taskbar).
+        bodyRef.current.x = seedX + width / 2;
+        bodyRef.current.y = seedY + height - FOOT_OFFSET;
         bodyRef.current.state = 'falling';
       }
     })();

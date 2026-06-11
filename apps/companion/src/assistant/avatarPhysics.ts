@@ -70,6 +70,10 @@ export function step(
 ): AvatarBody {
   dt = Math.min(dt, 0.05); // clamp spiral-of-death frames
 
+  // World not loaded yet (first refresh is async) — don't integrate.
+  // Without this the body free-falls off-screen before platforms exist.
+  if (world.platforms.length === 0 || world.monitors.length === 0) return body;
+
   // Ground vanished beneath us (window closed/moved) → fall.
   if (body.ground && !world.stillExists(body.ground)) {
     body.ground = null;
@@ -163,15 +167,23 @@ export function step(
         body.ground = ground;
         body.state = body.goal ? 'walking' : 'idle';
       }
-      // Hard floor: never fall past the lowest monitor bottom.
-      const floorY = Math.max(
-        ...world.monitors.map((m) => m.y + m.h),
-        body.y, // fallback when monitors unknown
-      );
-      if (body.y > floorY) {
-        body.y = floorY;
-        body.vy = 0;
-        body.state = body.goal ? 'walking' : 'idle';
+      // Hard safety floor: never fall past the bottom of ANY monitor.
+      // (Previous version used Math.max(..., body.y) — the body's own y
+      // as "fallback" meant the floor FOLLOWED the body down, i.e. no
+      // floor at all. That's how the avatar fell off the screen.)
+      if (world.monitors.length) {
+        const floorY = Math.max(...world.monitors.map((m) => m.y + m.h));
+        if (body.y > floorY) {
+          body.y = floorY;
+          body.vy = 0;
+          body.state = body.goal ? 'walking' : 'idle';
+        }
+      }
+      // Horizontal clamp too — air control can't push past the desktop.
+      if (world.monitors.length) {
+        const minX = Math.min(...world.monitors.map((m) => m.x)) + 40;
+        const maxX = Math.max(...world.monitors.map((m) => m.x + m.w)) - 40;
+        body.x = Math.max(minX, Math.min(maxX, body.x));
       }
       break;
     }

@@ -74,7 +74,10 @@ export class ScreenWorld {
   async refresh(): Promise<void> {
     const [mons, wins] = await Promise.all([
       getMonitors(),
-      invoke<RawWindow[]>('device_list_windows').catch(() => [] as RawWindow[]),
+      // sense_window_map is the ungated geometry read — device_list_windows
+      // requires the windows_read capability (unset by default) and would
+      // leave the world empty → no platforms → the character never moves.
+      invoke<RawWindow[]>('sense_window_map').catch(() => [] as RawWindow[]),
     ]);
     if (mons.length) this.monitors = mons;
 
