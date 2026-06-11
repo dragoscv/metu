@@ -221,9 +221,10 @@ html:has(.assistant-stage), body:has(.assistant-stage) { background: transparent
 .assistant-bubblezone { pointer-events: auto; display: flex; justify-content: center; width: 100%; }
 .bubble {
   pointer-events: auto;
+  position: relative;
   max-width: 280px;
   margin-bottom: 8px;
-  padding: 10px 13px;
+  padding: 10px 26px 10px 13px;
   font-size: 13px;
   line-height: 1.45;
   background: rgba(14, 16, 26, 0.94);
@@ -235,6 +236,51 @@ html:has(.assistant-stage), body:has(.assistant-stage) { background: transparent
   backdrop-filter: blur(14px);
   -webkit-backdrop-filter: blur(14px);
 }
+  .bubble__close {
+    position: absolute;
+    top: 5px; right: 6px;
+    appearance: none; border: none; cursor: pointer;
+    width: 18px; height: 18px;
+    display: flex; align-items: center; justify-content: center;
+    font-size: 11px; line-height: 1;
+    color: #93a0bd;
+    background: transparent;
+    border-radius: 50%;
+    transition: background 120ms ease, color 120ms ease;
+  }
+  .bubble__close:hover { background: rgba(255, 255, 255, 0.12); color: #fff; }
+  .bubble__progress {
+    display: flex; align-items: center; gap: 7px;
+    margin-top: 8px;
+    font-size: 11.5px; font-weight: 500;
+    color: #a9b8de;
+  }
+  .bubble__progress-spinner {
+    width: 11px; height: 11px; flex: none;
+    border: 2px solid rgba(124, 140, 255, 0.25);
+    border-top-color: var(--accent, #7c8cff);
+    border-radius: 50%;
+    animation: spin 0.9s linear infinite;
+  }
+  @keyframes spin { to { transform: rotate(360deg); } }
+  /* Unread-reply badge on the avatar */
+  .assistant-unread {
+    position: absolute;
+    top: 6px; right: 6px;
+    appearance: none; cursor: pointer;
+    width: 26px; height: 26px;
+    display: flex; align-items: center; justify-content: center;
+    font-size: 13px;
+    background: rgba(14, 16, 26, 0.95);
+    border: 1px solid rgba(140, 180, 255, 0.4);
+    border-radius: 50%;
+    box-shadow: 0 0 12px rgba(124, 140, 255, 0.45);
+    animation: unreadPulse 2s ease-in-out infinite;
+  }
+  @keyframes unreadPulse {
+    0%, 100% { transform: scale(1); box-shadow: 0 0 10px rgba(124, 140, 255, 0.35); }
+    50% { transform: scale(1.12); box-shadow: 0 0 16px rgba(124, 140, 255, 0.65); }
+  }
   /* Message/bubble text is selectable + copyable (the stage default is
      user-select:none for drag ergonomics; content opts back in). */
   .bubble__text,
@@ -362,6 +408,7 @@ html:has(.overlay-stage), body:has(.overlay-stage) { background: transparent; }
 }
 .assistant-body {
   pointer-events: auto;
+  position: relative;
   width: 200px; height: 200px;
   display: flex; align-items: center; justify-content: center;
   cursor: grab;

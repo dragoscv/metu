@@ -317,13 +317,42 @@ function AssistantSkin({
 
   // Surface the latest assistant chat text as a bubble while collapsed.
   const [chatBubble, setChatBubble] = useState<string | null>(null);
+  // Unread reply: set when a chat bubble auto-expires unseen; hovering the
+  // avatar re-opens it (the badge on the avatar signals there's something
+  // to read).
+  const [unreadReply, setUnreadReply] = useState<string | null>(null);
+  // Human-readable progress stage while a quick-reply/chat turn runs.
+  const [progressLabel, setProgressLabel] = useState<string | null>(null);
   useEffect(() => {
     if (chatOpen) {
       setChatBubble(null);
+      setUnreadReply(null);
       return;
     }
-    if (chat.lastAssistantText) setChatBubble(chat.lastAssistantText);
+    if (chat.lastAssistantText) {
+      setChatBubble(chat.lastAssistantText);
+      setUnreadReply(null);
+    }
   }, [chat.lastAssistantText, chatOpen]);
+
+  // Progress narration: rotate friendly stage lines while the turn runs.
+  useEffect(() => {
+    if (!chatBusy) {
+      setProgressLabel(null);
+      return;
+    }
+    const stages =
+      chat.status === 'thinking'
+        ? ['Reading your screen…', 'Gathering context…', 'Thinking it through…']
+        : ['Writing the answer…'];
+    let i = 0;
+    setProgressLabel(stages[0] ?? null);
+    const t = setInterval(() => {
+      i = Math.min(i + 1, stages.length - 1);
+      setProgressLabel(stages[i] ?? null);
+    }, 2_200);
+    return () => clearInterval(t);
+  }, [chatBusy, chat.status]);
 
   const handlePoint = useCallback((req: PointRequest | null) => {
     if (req?.rect) void showHighlight({ ...req.rect, label: req.label });
@@ -448,22 +477,31 @@ function AssistantSkin({
     thinking || chatBusy ? 'thinking' : speaking ? 'speaking' : listening ? 'listening' : 'idle';
 
   // Priority: live voice transcript > fresh chat reply > ambient remark.
-  const bubbleText = voiceBubble ?? chatBubble ?? ambient?.text;
+  // While a turn is running with no bubble up yet, show a progress bubble
+  // so a quick-reply tap never looks like it swallowed the request.
+  const workingBubble = chatBusy && !chatBubble && !voiceBubble ? (progressLabel ?? '…') : null;
+  const bubbleText = voiceBubble ?? chatBubble ?? workingBubble ?? ambient?.text;
   const bubbleAction = voiceBubble || chatBubble ? undefined : ambient?.action;
   const bubbleIsChat = !voiceBubble && !!chatBubble;
   // One-tap chips: ambient remarks get conversation starters; chat replies
   // get follow-ups. Confirm bubbles + live voice transcripts get none.
   // Suggestion bubbles carry their own context-specific replies.
   const bubbleSuggestions =
-    voiceBubble || bubbleAction || !auth
+    voiceBubble || bubbleAction || !auth || workingBubble
       ? undefined
       : bubbleIsChat
         ? QUICK_REPLIES.followup
         : (ambient?.quickReplies ?? QUICK_REPLIES.ambient);
 
   const dismissBubble = () => {
-    if (bubbleIsChat) setChatBubble(null);
-    else setAmbient(null);
+    if (bubbleIsChat) {
+      // Auto-expiry parks the reply as "unread" — the avatar badge brings
+      // it back on hover. Manual ✕ also parks it (cheap undo).
+      setUnreadReply(chatBubble);
+      setChatBubble(null);
+    } else {
+      setAmbient(null);
+    }
   };
 
   // The assistant window is created with `focus: false` (it must never steal
@@ -566,11 +604,12 @@ function AssistantSkin({
             >
               <SpeechBubble
                 text={bubbleText}
-                ttlMs={cfg.bubbleTtlMs}
+                ttlMs={bubbleIsChat ? Math.max(cfg.bubbleTtlMs * 3, 18_000) : cfg.bubbleTtlMs}
                 action={bubbleAction}
-                pending={bubbleIsChat && chatBusy}
+                pending={chatBusy && (bubbleIsChat || !!workingBubble)}
+                progressLabel={progressLabel}
                 onDismiss={dismissBubble}
-                onQuickReply={quickReply}
+                onQuickReply={workingBubble ? undefined : quickReply}
                 suggestions={bubbleSuggestions}
                 onOpenChat={auth ? () => setChatOpen(true) : undefined}
               />
@@ -578,7 +617,14 @@ function AssistantSkin({
           )}
           <div
             className={`assistant-body ${speaking ? 'assistant-body--speaking' : ''}`}
-            onPointerEnter={() => setInteractive(true)}
+            onPointerEnter={() => {
+              setInteractive(true);
+              // Hovering the avatar re-surfaces an unread reply.
+              if (unreadReply && !bubbleText) {
+                setChatBubble(unreadReply);
+                setUnreadReply(null);
+              }
+            }}
             onPointerLeave={() => setInteractive(false)}
             onPointerDown={onBodyPointerDown}
             onClick={onAvatarClick}
@@ -587,6 +633,23 @@ function AssistantSkin({
             title="Click to chat · drag to move · double-click for voice"
           >
             <AvatarHost state={avatarState} size={180} audioEl={audioEl} />
+            {unreadReply && !bubbleText && (
+              <button
+                type="button"
+                className="assistant-unread"
+                title="Show the last reply"
+                onPointerEnter={() => {
+                  setChatBubble(unreadReply);
+                  setUnreadReply(null);
+                }}
+                onClick={() => {
+                  setChatBubble(unreadReply);
+                  setUnreadReply(null);
+                }}
+              >
+                💬
+              </button>
+            )}
           </div>
         </>
       )}

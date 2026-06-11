@@ -18,6 +18,7 @@ export function SpeechBubble({
   ttlMs,
   action,
   pending,
+  progressLabel,
   onDismiss,
   onQuickReply,
   suggestions,
@@ -28,6 +29,8 @@ export function SpeechBubble({
   action?: BubbleAction;
   /** True while the assistant is thinking/streaming — shows the pulse dots. */
   pending?: boolean;
+  /** Human-readable stage shown while pending ("Reading your screen…"). */
+  progressLabel?: string | null;
   onDismiss?: () => void;
   /** When provided, renders the inline quick-reply input. */
   onQuickReply?: (text: string) => void;
@@ -69,6 +72,14 @@ export function SpeechBubble({
       onPointerEnter={() => setHovered(true)}
       onPointerLeave={() => setHovered(false)}
     >
+      <button
+        type="button"
+        className="bubble__close"
+        aria-label="Dismiss"
+        onClick={() => onDismiss?.()}
+      >
+        ✕
+      </button>
       <span className="bubble__text">
         {text}
         {pending && (
@@ -79,6 +90,13 @@ export function SpeechBubble({
           </span>
         )}
       </span>
+
+      {pending && progressLabel && (
+        <div className="bubble__progress">
+          <span className="bubble__progress-spinner" aria-hidden />
+          {progressLabel}
+        </div>
+      )}
 
       {action && (
         <div className="bubble__actions">
