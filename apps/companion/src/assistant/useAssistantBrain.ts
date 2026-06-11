@@ -45,6 +45,17 @@ import {
 } from './spatial';
 import { PERSONALITIES, type PersonalityId } from '../avatar/personality';
 import { getActivityState } from './activityModel';
+import { screenWorld } from './screenWorld';
+import {
+  cancelNav,
+  createBody,
+  DEFAULT_PHYSICS,
+  FOOT_OFFSET,
+  navigateTo,
+  step,
+  type LocomotionState,
+  type PhysicsConfig,
+} from './avatarPhysics';
 
 /**
  * Director states (Jarvis Slice C — purposeful presence):
@@ -69,6 +80,10 @@ export interface AssistantBrainState {
   hovering: boolean;
   /** Report DOM hover over interactive elements (exact hit-testing). */
   setInteractive: (on: boolean) => void;
+  /** Avatar-world v1: physical locomotion state for the renderer. */
+  locomotion: LocomotionState;
+  /** Travel direction: 1 right, -1 left. */
+  facing: 1 | -1;
 }
 
 interface Options {
@@ -130,6 +145,11 @@ function reportInteractiveLock(locked: boolean) {
 export function useAssistantBrain(opts: Options): AssistantBrainState {
   const { personality, width, height, paused, interactionLocked, onRemark, onPoint } = opts;
   const [mode, setMode] = useState<AssistantMode>('idle');
+  // Avatar-world v1: locomotion + facing surface to the 3D renderer.
+  const [locomotion, setLocomotion] = useState<LocomotionState>('idle');
+  const [facing, setFacing] = useState<1 | -1>(1);
+  const bodyRef = useRef(createBody(200, 200));
+  const physicsRef = useRef<PhysicsConfig>(DEFAULT_PHYSICS);
   const [hovering, setHovering] = useState(false);
 
   // Mutable refs so the long-lived timers always see fresh values without
@@ -200,7 +220,14 @@ export function useAssistantBrain(opts: Options): AssistantBrainState {
       ]);
       if (!alive) return;
       monitorsRef.current = mons;
-      if (pos) posRef.current = { x: pos.x, y: pos.y };
+      if (pos) {
+        posRef.current = { x: pos.x, y: pos.y };
+        // Seed the physics body's feet from the real window position; it
+        // starts falling so gravity settles it onto the nearest platform.
+        bodyRef.current.x = pos.x + width / 2;
+        bodyRef.current.y = pos.y + height - FOOT_OFFSET;
+        bodyRef.current.state = 'falling';
+      }
     })();
     const monTimer = setInterval(() => {
       void getMonitors().then((m) => {
@@ -211,6 +238,7 @@ export function useAssistantBrain(opts: Options): AssistantBrainState {
       alive = false;
       clearInterval(monTimer);
     };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   // ── Director (Slice C): movement only with intent ────────────────────────
@@ -354,52 +382,84 @@ export function useAssistantBrain(opts: Options): AssistantBrainState {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  // ── Movement stepping ────────────────────────────────────────────────────
+  // ── Movement stepping (avatar-world v1: platformer physics) ─────────────
+  // The window IS the body: the integrator owns feet position (bottom-center
+  // of the window, FOOT_OFFSET up); we convert feet → window top-left here.
+  // Targets from the director (dock/approach/point) become nav goals — the
+  // character walks the floor/taskbar, hops gaps, climbs window edges, and
+  // falls (with gravity) when its platform disappears.
   useEffect(() => {
     if (!isTauri()) return;
     const w = getCurrentWindow();
+    screenWorld.start();
+    const body = bodyRef.current;
+    let lastTs = performance.now();
+    let lastLoco: LocomotionState = body.state;
+
     const timer = setInterval(() => {
-      // While paused/locked (user dragging, chatting, or conversing), the user
-      // — not the brain — owns the window position. Keep posRef in sync with
-      // reality and drop any pending target so we never snap back after a
-      // manual move.
+      const now = performance.now();
+      const dt = (now - lastTs) / 1000;
+      lastTs = now;
+
       if (pausedRef.current || lockedRef.current) {
+        // User owns the window. Track reality; feet follow the window.
         targetRef.current = null;
+        cancelNav(body);
         void w
           .outerPosition()
           .then((p) => {
             posRef.current = { x: p.x, y: p.y };
+            body.x = p.x + width / 2;
+            body.y = p.y + height - FOOT_OFFSET;
+            // Dropped from a drag → land on whatever is below.
+            if (body.state !== 'falling') {
+              const ground = screenWorld.groundBelow(body.x, body.y - 1);
+              body.ground = ground && Math.abs(ground.y - body.y) < 8 ? ground : null;
+              if (!body.ground) body.state = 'falling';
+            }
           })
           .catch(() => {});
         return;
       }
+
+      // New director target → navigation goal at feet level.
       const target = targetRef.current;
-      if (!target) return;
-      const cur = posRef.current;
-      const dx = target.x - cur.x;
-      const dy = target.y - cur.y;
-      const dist = Math.hypot(dx, dy);
-      const speed = cfgRef.current.moveSpeed;
-      if (dist <= speed) {
-        posRef.current = { ...target };
+      if (target) {
         targetRef.current = null;
-        void w.setPosition(new PhysicalPosition(target.x, target.y)).catch(() => {});
-        // Arrived: if this was a point, fire the overlay highlight now.
-        if (pointReqRef.current) {
-          onPoint?.(pointReqRef.current);
-          pointReqRef.current = null;
-          setMode('idle');
-        }
-        return;
+        navigateTo(body, target.x + width / 2, target.y + height - FOOT_OFFSET);
       }
-      const nx = Math.round(cur.x + (dx / dist) * speed);
-      const ny = Math.round(cur.y + (dy / dist) * speed);
-      posRef.current = { x: nx, y: ny };
-      void w.setPosition(new PhysicalPosition(nx, ny)).catch(() => {});
+
+      const before = body.goal;
+      step(body, screenWorld, physicsRef.current, dt);
+
+      // Arrived at a point target → fire the highlight.
+      if (before && !body.goal && pointReqRef.current) {
+        onPoint?.(pointReqRef.current);
+        pointReqRef.current = null;
+        setMode('idle');
+      }
+
+      // Surface locomotion to the renderer (clip selection + facing).
+      if (body.state !== lastLoco) {
+        lastLoco = body.state;
+        setLocomotion(body.state);
+      }
+      setFacing(body.facing);
+
+      // Feet → window top-left.
+      const wx = Math.round(body.x - width / 2);
+      const wy = Math.round(body.y - height + FOOT_OFFSET);
+      if (wx !== posRef.current.x || wy !== posRef.current.y) {
+        posRef.current = { x: wx, y: wy };
+        void w.setPosition(new PhysicalPosition(wx, wy)).catch(() => {});
+      }
     }, FRAME_MS);
-    return () => clearInterval(timer);
+    return () => {
+      clearInterval(timer);
+      screenWorld.stop();
+    };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
+  }, [width, height]);
 
   // ── Click-through ownership ──────────────────────────────────────────────
   // Click-through itself is owned by the NATIVE watcher
@@ -416,5 +476,5 @@ export function useAssistantBrain(opts: Options): AssistantBrainState {
     return () => clearInterval(timer);
   }, []);
 
-  return { mode, hovering, setInteractive };
+  return { mode, hovering, setInteractive, locomotion, facing };
 }

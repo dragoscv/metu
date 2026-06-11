@@ -21,12 +21,16 @@ import type { VrmStatus } from './VrmStage';
 export function GlbStage({
   presetId,
   state,
+  locomotion,
+  facing,
   size = 220,
   onStatus,
 }: AvatarDriveProps & { presetId: string; onStatus?: (s: VrmStatus) => void }) {
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
-  const driveRef = useRef({ state });
+  const driveRef = useRef({ state, locomotion, facing });
   driveRef.current.state = state;
+  driveRef.current.locomotion = locomotion;
+  driveRef.current.facing = facing;
 
   useEffect(() => {
     const canvas = canvasRef.current;
@@ -54,10 +58,13 @@ export function GlbStage({
 
     let mixer: THREE.AnimationMixer | null = null;
     let clipsByState: Partial<Record<AvatarState, THREE.AnimationClip>> = {};
+    let locoClips: Partial<
+      Record<'walking' | 'jumping' | 'falling' | 'climbing', THREE.AnimationClip>
+    > = {};
     let fallbackClip: THREE.AnimationClip | null = null;
     let activeAction: THREE.AnimationAction | null = null;
     let root: THREE.Object3D | null = null;
-    let lastState: AvatarState | null = null;
+    let lastClipKey: string | null = null;
     let baseY = 0;
 
     const pickClip = (clips: THREE.AnimationClip[], names?: string[]) => {
@@ -89,6 +96,14 @@ export function GlbStage({
           speaking: pickClip(clips, preset.clips?.speaking) ?? undefined,
           thinking: pickClip(clips, preset.clips?.thinking) ?? undefined,
         };
+        // Locomotion clips by common names (RobotExpressive: Walking/Jump;
+        // Fox: Walk/Run). Climb falls back to walk (vertical via window).
+        locoClips = {
+          walking: pickClip(clips, ['Walking', 'Walk', 'Run', 'Running']) ?? undefined,
+          jumping: pickClip(clips, ['Jump', 'Jumping']) ?? undefined,
+          falling: pickClip(clips, ['Jump', 'Falling', 'Fall']) ?? undefined,
+          climbing: pickClip(clips, ['Climb', 'Climbing', 'Walking', 'Walk']) ?? undefined,
+        };
         if (clips.length) mixer = new THREE.AnimationMixer(root);
 
         // Fit the camera AFTER posing the first frame of the idle clip —
@@ -101,7 +116,7 @@ export function GlbStage({
             a.play();
             mixer.update(0); // pose frame 0
             activeAction = a;
-            lastState = driveRef.current.state === 'idle' ? 'idle' : null;
+            lastClipKey = driveRef.current.state === 'idle' ? 'idle' : null;
           }
         }
         const box = new THREE.Box3().setFromObject(root);
@@ -126,10 +141,19 @@ export function GlbStage({
       const delta = clock.getDelta();
       const t = clock.getElapsedTime();
       const s = driveRef.current.state;
+      const loco = driveRef.current.locomotion ?? 'idle';
 
-      if (mixer && s !== lastState) {
-        lastState = s;
-        const clip = clipsByState[s] ?? clipsByState.idle ?? fallbackClip;
+      // Locomotion takes priority over expressive state: when the body is
+      // walking/jumping/climbing the legs must match the motion; expressive
+      // clips (speak/think) play when stationary.
+      const clipKey = loco !== 'idle' ? loco : s;
+
+      if (mixer && clipKey !== lastClipKey) {
+        lastClipKey = clipKey;
+        const clip =
+          (loco !== 'idle' ? locoClips[loco] : clipsByState[s]) ??
+          clipsByState.idle ??
+          fallbackClip;
         if (clip) {
           const next = mixer.clipAction(clip);
           if (next !== activeAction) {
@@ -143,11 +167,21 @@ export function GlbStage({
 
       if (root) {
         // Gentle bob + sway so even single-clip models feel alive; perk up
-        // slightly while listening, dip while thinking.
+        // slightly while listening, dip while thinking. Suppressed while
+        // moving (the locomotion clip owns the motion).
         const lift = s === 'listening' ? 0.015 : s === 'thinking' ? -0.01 : 0;
-        const target = baseY + Math.sin(t * 1.4) * 0.004 + lift;
+        const target = baseY + (loco === 'idle' ? Math.sin(t * 1.4) * 0.004 + lift : 0);
         root.position.y += (target - root.position.y) * 0.08;
-        root.rotation.y = (preset.yaw ?? 0) + Math.sin(t * 0.4) * (s === 'listening' ? 0.04 : 0.1);
+        // Face the travel direction: profile view while moving, sway idle.
+        const face = driveRef.current.facing ?? 1;
+        const movingYaw = (preset.yaw ?? 0) + (face === 1 ? Math.PI / 2 : -Math.PI / 2);
+        const idleYaw = (preset.yaw ?? 0) + Math.sin(t * 0.4) * (s === 'listening' ? 0.04 : 0.1);
+        const wantYaw = loco === 'walking' || loco === 'climbing' ? movingYaw : idleYaw;
+        // Shortest-path ease toward the desired yaw.
+        let dy = wantYaw - root.rotation.y;
+        while (dy > Math.PI) dy -= Math.PI * 2;
+        while (dy < -Math.PI) dy += Math.PI * 2;
+        root.rotation.y += dy * 0.15;
       }
 
       renderer.render(scene, camera);

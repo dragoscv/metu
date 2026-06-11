@@ -41,4 +41,8 @@ export interface AvatarDriveProps {
   size?: number;
   /** optional <audio> element the renderer can analyse for live amplitude */
   audioEl?: HTMLAudioElement | null;
+  /** Avatar-world v1: physical locomotion state from the platformer physics. */
+  locomotion?: 'idle' | 'walking' | 'jumping' | 'falling' | 'climbing';
+  /** Travel direction: 1 = facing right, -1 = facing left. */
+  facing?: 1 | -1;
 }

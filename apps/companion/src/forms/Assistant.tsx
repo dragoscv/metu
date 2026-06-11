@@ -426,7 +426,7 @@ function AssistantSkin({
   const interactionLocked =
     chatOpen || dragging || !!ambient || !!chatBubble || !!voiceBubble || !!menu;
 
-  const { mode, hovering, setInteractive } = useAssistantBrain({
+  const { mode, hovering, setInteractive, locomotion, facing } = useAssistantBrain({
     personality,
     width: physW,
     height: physH,
@@ -840,7 +840,13 @@ function AssistantSkin({
             onContextMenu={onAvatarContextMenu}
             title="Click for quick actions · double-click to chat · right-click for menu"
           >
-            <AvatarHost state={avatarState} size={180} audioEl={audioEl} />
+            <AvatarHost
+              state={avatarState}
+              size={180}
+              audioEl={audioEl}
+              locomotion={locomotion}
+              facing={facing}
+            />
             {unreadReply && !bubbleText && (
               <button
                 type="button"
