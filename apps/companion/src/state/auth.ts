@@ -59,6 +59,16 @@ const CLIENT_ID = 'metu_app_companion';
 /** Refresh the access token this many ms before it actually expires. */
 const REFRESH_SKEW_MS = 5 * 60 * 1000; // 5 min
 
+/**
+ * Single-flight refresh. Refresh tokens are ONE-TIME-USE with family-revoke
+ * replay protection server-side: if two callers (chat turn + distiller +
+ * voice broker…) refresh concurrently with the same token, the second is
+ * treated as a replay and the WHOLE token family is revoked — the app
+ * silently de-pairs. All concurrent callers must share one in-flight
+ * refresh promise.
+ */
+let refreshInflight: Promise<AuthState | null> | null = null;
+
 interface RefreshedAuth {
   access_token: string;
   refresh_token: string | null;
@@ -77,22 +87,35 @@ interface RefreshedAuth {
 export async function ensureFreshAuth(auth: AuthState): Promise<AuthState | null> {
   if (Date.now() < auth.expiresAt - REFRESH_SKEW_MS) return auth;
   if (!auth.refreshToken) return auth; // nothing to refresh with; let it ride
-  try {
-    const r = await invoke<RefreshedAuth>('oauth_refresh', {
-      apiBase: auth.apiBase,
-      refreshToken: auth.refreshToken,
-      clientId: CLIENT_ID,
-    });
-    const next: AuthState = {
-      ...auth,
-      accessToken: r.access_token,
-      refreshToken: r.refresh_token ?? auth.refreshToken,
-      expiresAt: Date.now() + r.expires_in * 1000,
-    };
-    await saveAuth(next);
-    return next;
-  } catch {
-    await clearAuth();
-    return null;
-  }
+  // Join an in-flight refresh instead of racing it — a concurrent second
+  // refresh with the same one-time token trips the server's replay
+  // detection and revokes the entire family (hard de-pair).
+  if (refreshInflight) return refreshInflight;
+  refreshInflight = (async (): Promise<AuthState | null> => {
+    try {
+      // Re-read the store: another window (HUD, main) may have already
+      // rotated the token while we were queued.
+      const current = (await loadAuth()) ?? auth;
+      if (Date.now() < current.expiresAt - REFRESH_SKEW_MS) return current;
+      const r = await invoke<RefreshedAuth>('oauth_refresh', {
+        apiBase: current.apiBase,
+        refreshToken: current.refreshToken,
+        clientId: CLIENT_ID,
+      });
+      const next: AuthState = {
+        ...current,
+        accessToken: r.access_token,
+        refreshToken: r.refresh_token ?? current.refreshToken,
+        expiresAt: Date.now() + r.expires_in * 1000,
+      };
+      await saveAuth(next);
+      return next;
+    } catch {
+      await clearAuth();
+      return null;
+    } finally {
+      refreshInflight = null;
+    }
+  })();
+  return refreshInflight;
 }
