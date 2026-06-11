@@ -53,6 +53,7 @@ import {
   hop,
   navigateTo,
   step,
+  teleportTo,
   type LocomotionState,
   type PhysicsConfig,
 } from './avatarPhysics';
@@ -462,7 +463,23 @@ export function useAssistantBrain(opts: Options): AssistantBrainState {
       const target = targetRef.current;
       if (target) {
         targetRef.current = null;
-        navigateTo(body, target.x + width / 2, target.y + height - getFootOffsetPhysical());
+        const fx = target.x + width / 2;
+        const fy = target.y + height - getFootOffsetPhysical();
+        // Teleport morph for long hauls / cross-monitor moves (the decided
+        // movement model): walking 2+ monitors looked epic once, silly
+        // always. Threshold: > 1200px horizontal or a different monitor.
+        const bodyMon = monitorsRef.current.find(
+          (m) => body.x >= m.x && body.x < m.x + m.w && body.y >= m.y && body.y <= m.y + m.h,
+        );
+        const goalMon = monitorsRef.current.find(
+          (m) => fx >= m.x && fx < m.x + m.w && fy >= m.y && fy <= m.y + m.h,
+        );
+        const crossMonitor = bodyMon && goalMon && bodyMon !== goalMon;
+        if (crossMonitor || Math.abs(fx - body.x) > 1200) {
+          teleportTo(body, fx, fy);
+        } else {
+          navigateTo(body, fx, fy);
+        }
       }
 
       const before = body.goal;

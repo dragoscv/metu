@@ -42,6 +42,17 @@ pub fn exec(args: ShellExecArgs) -> Result<ShellExecResult, String> {
     if allowlist.is_empty() {
         return Err("shell_allowlist_empty: set METU_SHELL_ALLOWLIST to opt in".into());
     }
+    exec_with_allowlist(args, &allowlist)
+}
+
+/// Local user-initiated lane: the companion UI owns the policy
+/// (allowlist auto-run / ask / denylist) and passes the effective
+/// allowlist per call. Same hard guarantees as `exec`: basename-only,
+/// no shell expansion, arg cap, timeout, output caps.
+pub fn exec_with_allowlist(
+    args: ShellExecArgs,
+    allowlist: &[String],
+) -> Result<ShellExecResult, String> {
     let cmd = args.command.trim();
     if cmd.is_empty() {
         return Err("command_empty".into());

@@ -21,8 +21,11 @@ import {
   disposeMetuRig,
   getMetuPalette,
   poseMetu,
+  applyMetuGesture,
   type MetuMotion,
+  type MetuGesture,
 } from './metuModel';
+import { TELEPORT_OUT_S, TELEPORT_IN_S } from '../assistant/avatarPhysics';
 
 export function MetuStage({
   paletteId,
@@ -121,6 +124,23 @@ export function MetuStage({
     /** Seconds remaining of landing squash (set on fall→ground transition). */
     let squash = 0;
     let lastT = 0;
+    // Gesture playback: one-shot overlays triggered via window event
+    // (e.g. 'wave' on greeting, 'typing' while a terminal command runs).
+    let gesture: { kind: MetuGesture; start: number; dur: number } | null = null;
+    const onGesture = (e: Event) => {
+      if (!anchor) return; // only the main desktop stage gestures
+      const d = (e as CustomEvent<{ gesture: MetuGesture; durationMs?: number }>).detail;
+      if (d?.gesture) {
+        gesture = {
+          kind: d.gesture,
+          start: clock.getElapsedTime(),
+          dur: Math.max(0.4, (d.durationMs ?? 1400) / 1000),
+        };
+      }
+    };
+    window.addEventListener('metu:assistant-gesture', onGesture);
+    // Teleport morph clock: counts seconds inside the 'teleporting' state.
+    let warpT = 0;
     // Cursor curiosity: poll the native cursor at 4Hz while idle and derive
     // a clamped gaze offset relative to the window center.
     let look: { x: number; y: number } | null = null;
@@ -178,7 +198,35 @@ export function MetuStage({
         squash = 0.18;
       }
       lastLoco = loco;
-      if (squash > 0) {
+      // Teleport morph: dissolve-out (shrink + spin + skew), the window
+      // jumps at the midpoint (physics), then materialize-in (overshoot
+      // scale + counter-spin). Pure transform on rig.root — cheap & juicy.
+      if (loco === 'teleporting') {
+        warpT += dt;
+        const total = TELEPORT_OUT_S + TELEPORT_IN_S;
+        if (warpT <= TELEPORT_OUT_S) {
+          const k = warpT / TELEPORT_OUT_S; // 0→1 dissolve out
+          const e = k * k; // ease-in
+          const s = Math.max(0.02, 1 - e);
+          rig.root.scale.set(s * (1 - e * 0.4), s * (1 + e * 1.6), s); // stretch into a beam
+          rig.root.rotation.z = e * 0.9;
+          rig.visorMat.emissiveIntensity = 2 + e * 6;
+          rig.coreMat.emissiveIntensity = 2 + e * 8;
+        } else if (warpT <= total) {
+          const k = (warpT - TELEPORT_OUT_S) / TELEPORT_IN_S; // 0→1 materialize
+          const e = 1 - (1 - k) * (1 - k); // ease-out
+          const over = 1 + Math.sin(k * Math.PI) * 0.18; // overshoot squash
+          const s = Math.max(0.02, e);
+          rig.root.scale.set(s * over, s * (2.6 - e * 1.6), s);
+          rig.root.rotation.z = (1 - e) * -0.9;
+          rig.visorMat.emissiveIntensity = 8 - e * 6;
+          rig.coreMat.emissiveIntensity = 10 - e * 8;
+        }
+      } else if (warpT > 0) {
+        warpT = 0;
+        rig.root.scale.set(1, 1, 1);
+        rig.root.rotation.z = 0;
+      } else if (squash > 0) {
         squash = Math.max(0, squash - dt);
         const k = squash / 0.18; // 1 → 0
         const dip = Math.sin(k * Math.PI) * 0.18; // peak mid-squash
@@ -199,6 +247,19 @@ export function MetuStage({
       }
 
       poseMetu(rig, loco, expr, t, amp, look);
+
+      // poseMetu resets emissive each frame — re-boost during the warp.
+      if (loco === 'teleporting') {
+        rig.visorMat.emissiveIntensity = 6;
+        rig.coreMat.emissiveIntensity = 8;
+      }
+
+      // One-shot gesture overlay (after the base pose).
+      if (gesture) {
+        const k = (t - gesture.start) / gesture.dur;
+        if (k >= 1) gesture = null;
+        else applyMetuGesture(rig, gesture.kind, k, t);
+      }
 
       // Face travel direction while moving; face camera when stationary.
       const face = driveRef.current.facing ?? 1;
@@ -223,6 +284,7 @@ export function MetuStage({
       cancelAnimationFrame(raf);
       if (cursorTimer) clearInterval(cursorTimer);
       clearTimeout(measureTimer);
+      window.removeEventListener('metu:assistant-gesture', onGesture);
       scene.remove(rig.root);
       disposeMetuRig(rig);
       renderer.dispose();

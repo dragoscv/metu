@@ -66,7 +66,10 @@ export function GlbStage({
     let mixer: THREE.AnimationMixer | null = null;
     let clipsByState: Partial<Record<AvatarState, THREE.AnimationClip>> = {};
     let locoClips: Partial<
-      Record<'walking' | 'jumping' | 'falling' | 'climbing' | 'sitting', THREE.AnimationClip>
+      Record<
+        'walking' | 'jumping' | 'falling' | 'climbing' | 'sitting' | 'teleporting',
+        THREE.AnimationClip
+      >
     > = {};
     let fallbackClip: THREE.AnimationClip | null = null;
     let activeAction: THREE.AnimationAction | null = null;

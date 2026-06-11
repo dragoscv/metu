@@ -208,6 +208,33 @@ async fn device_shell_exec(args: shell::ShellExecArgs) -> Result<shell::ShellExe
         .map_err(|e| format!("join_failed: {e}"))?
 }
 
+/// Local user-initiated terminal lane (`sense_` prefix = ungated like the
+/// other local commands): the companion UI enforces the policy (denylist /
+/// confirm) and passes the effective allowlist. Same hardening as the
+/// remote `device_shell_exec`: basename-only, no shell, timeout, caps.
+#[derive(serde::Deserialize)]
+struct LocalShellArgs {
+    command: String,
+    #[serde(default)]
+    args: Vec<String>,
+    allowlist: Vec<String>,
+}
+
+#[tauri::command]
+async fn sense_shell_exec(args: LocalShellArgs) -> Result<shell::ShellExecResult, String> {
+    tauri::async_runtime::spawn_blocking(move || {
+        shell::exec_with_allowlist(
+            shell::ShellExecArgs {
+                command: args.command,
+                args: args.args,
+            },
+            &args.allowlist,
+        )
+    })
+    .await
+    .map_err(|e| format!("join_failed: {e}"))?
+}
+
 // ── Slice 7b — native window focus / move (Windows only for now) ────────
 
 #[derive(serde::Deserialize)]
@@ -357,6 +384,7 @@ pub fn run() {
             device_fs_write,
             device_fs_list_roots,
             device_shell_exec,
+            sense_shell_exec,
             device_focus_window,
             device_move_window,
             device_window_track_start,

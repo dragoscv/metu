@@ -45,7 +45,21 @@ export interface AvatarDriveProps {
   /** optional <audio> element the renderer can analyse for live amplitude */
   audioEl?: HTMLAudioElement | null;
   /** Avatar-world v1: physical locomotion state from the platformer physics. */
-  locomotion?: 'idle' | 'walking' | 'jumping' | 'falling' | 'climbing' | 'sitting';
+  locomotion?: 'idle' | 'walking' | 'jumping' | 'falling' | 'climbing' | 'sitting' | 'teleporting';
   /** Travel direction: 1 = facing right, -1 = facing left. */
   facing?: 1 | -1;
+  /** Posture gesture overlay (one-shot, renderer plays then decays). */
+  gesture?: AvatarGesture | null;
 }
+
+/** One-shot expressive gestures layered over locomotion. */
+export type AvatarGesture =
+  | 'wave'
+  | 'point-left'
+  | 'point-right'
+  | 'point-up'
+  | 'nod'
+  | 'shake'
+  | 'shrug'
+  | 'celebrate'
+  | 'typing';

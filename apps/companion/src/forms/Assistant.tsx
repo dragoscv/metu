@@ -47,6 +47,14 @@ import { showHighlight } from '../assistant/overlay-bridge';
 import { onProposal } from '../assistant/assistantActions';
 import { useAssistantChat } from '../assistant/useAssistantChat';
 import { ChatPanel } from '../assistant/ChatPanel';
+import { CalibrateOverlay } from '../assistant/CalibrateOverlay';
+import { playGesture } from '../avatar/gestures';
+import {
+  classifyCommand,
+  isRiskyInvocation,
+  parseCommandLine,
+  runTerminal,
+} from '../assistant/terminal';
 import {
   loadPersonality,
   onPersonalityChange,
@@ -202,6 +210,7 @@ function AssistantSkin({
   const pointerStillDownRef = useRef(false);
   // Right-click context menu (anchored inside the window).
   const [menu, setMenu] = useState<{ x: number; y: number } | null>(null);
+  const [calibrating, setCalibrating] = useState(false);
   // Proactivity mode (silent/aware/chatty) — gated in the suggestion engine.
   const [proactivity, setProactivity] = useState<ProactivityMode>(() => loadProactivity());
   // Avatar selection (for the "Next avatar" cycler).
@@ -408,13 +417,19 @@ function AssistantSkin({
   }, [chatBusy, chat.status]);
 
   const handlePoint = useCallback((req: PointRequest | null) => {
-    if (req?.rect) void showHighlight({ ...req.rect, label: req.label });
+    if (req?.rect) {
+      void showHighlight({ ...req.rect, label: req.label });
+      // Point AT the highlight: pick the arm matching the target's side.
+      const winX = window.screenX + WIN_W / 2;
+      playGesture(req.rect.x + req.rect.w / 2 < winX ? 'point-left' : 'point-right', 2200);
+    }
   }, []);
 
   const handleRemark = useCallback(
     (kind: 'greeting' | 'idleNudge' | 'windowReact') => {
       const line = assistantLines[kind](personality);
       if (line) setAmbient({ text: line });
+      if (kind === 'greeting') playGesture('wave');
     },
     [personality],
   );
@@ -440,6 +455,7 @@ function AssistantSkin({
   useEffect(() => {
     const line = assistantLines.greeting(personality);
     if (line) setAmbient({ text: line });
+    playGesture('wave', 1800);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
@@ -657,6 +673,60 @@ function AssistantSkin({
     [auth, personaSlug],
   );
 
+  /**
+   * Terminal lane (decided policy): allowlisted commands run on AUTOPILOT,
+   * unknown commands ask via confirm bubble, denylisted never run. The
+   * 'typing' gesture plays while the command executes; output (or error)
+   * lands in the chat bubble.
+   */
+  const fireTerminal = useCallback((line: string) => {
+    const parsed = parseCommandLine(line);
+    if (!parsed) {
+      setChatBubble('I need a command to run.');
+      return;
+    }
+    const { command, args } = parsed;
+    const verdict = classifyCommand(command);
+    if (verdict === 'denied') {
+      setChatBubble(`I won't run "${command}" — it's on the denylist.`);
+      playGesture('shake');
+      return;
+    }
+    const execute = () => {
+      setAmbient(null);
+      setChatBubble(`Running \`${command} ${args.join(' ')}\`…`);
+      playGesture('typing', 4000);
+      runTerminal(command, args)
+        .then((res) => {
+          const out = (res.stdout || res.stderr || '(no output)').trim();
+          const tail = out.length > 900 ? `…${out.slice(-900)}` : out;
+          setChatBubble(res.exitCode === 0 ? tail : `Exit ${res.exitCode ?? '?'}:\n${tail}`);
+          playGesture(res.exitCode === 0 ? 'nod' : 'shrug');
+        })
+        .catch((err: unknown) => {
+          setChatBubble(err instanceof Error ? err.message : 'Command failed.');
+          playGesture('shrug');
+        });
+    };
+    const risky = isRiskyInvocation(command, args);
+    if (verdict === 'auto' && !risky) {
+      execute(); // autopilot — the decided model
+      return;
+    }
+    setChatBubble(null);
+    setAmbient({
+      text: `Run \`${command} ${args.join(' ')}\`?${risky ? ' (looks risky)' : ''}`,
+      action: {
+        label: 'Run it',
+        onConfirm: execute,
+        onDeny: () => {
+          setAmbient(null);
+          setChatBubble('Okay, not running it.');
+        },
+      },
+    });
+  }, []);
+
   // The assistant window is created with `focus: false` (it must never steal
   // focus while ambient). Opening the chat is an explicit user action, so we
   // DO want focus then — otherwise the input can't receive keystrokes and
@@ -747,6 +817,12 @@ function AssistantSkin({
   const quickReply = auth
     ? (text: string) => {
         setAmbient(null);
+        // "run <command…>" / ">cmd" → local terminal lane.
+        const runMatch = /^(?:run|exec|\$|>)\s+(.+)$/i.exec(text.trim());
+        if (runMatch?.[1]) {
+          fireTerminal(runMatch[1]);
+          return;
+        }
         // "do <instruction>" → act skill (plan → confirm → UIA execute).
         const doMatch = /^(?:do|click|press|type|fill|select|open tab)\b/i.test(text.trim());
         if (doMatch) {
@@ -797,7 +873,17 @@ function AssistantSkin({
             messages={chat.messages}
             status={chat.status}
             personaName={personaName}
-            onSend={(t) => void chat.send(t)}
+            onSend={(t) => {
+              // "run <cmd…>" in chat → local terminal lane (closes the
+              // panel so the result bubble is visible at the avatar).
+              const m = /^(?:run|exec|\$|>)\s+(.+)$/i.exec(t.trim());
+              if (m?.[1]) {
+                setChatOpen(false);
+                fireTerminal(m[1]);
+                return;
+              }
+              void chat.send(t);
+            }}
             onStop={chat.stop}
             onClear={chat.clear}
             onClose={() => setChatOpen(false)}
@@ -1068,6 +1154,15 @@ function AssistantSkin({
           >
             📍 Dock to corner
           </button>
+          <button
+            className="assistant-menu__item"
+            onClick={() => {
+              setMenu(null);
+              setCalibrating(true);
+            }}
+          >
+            📐 Calibrate feet
+          </button>
           {auth && (
             <button
               className="assistant-menu__item"
@@ -1090,6 +1185,7 @@ function AssistantSkin({
           </button>
         </div>
       )}
+      {calibrating && <CalibrateOverlay winH={WIN_H} onClose={() => setCalibrating(false)} />}
       <audio ref={handleAudio} autoPlay playsInline />
     </div>
   );

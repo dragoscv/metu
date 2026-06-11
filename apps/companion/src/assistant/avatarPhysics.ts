@@ -15,7 +15,18 @@
  */
 import type { Platform, ScreenWorld } from './screenWorld';
 
-export type LocomotionState = 'idle' | 'walking' | 'jumping' | 'falling' | 'climbing' | 'sitting';
+export type LocomotionState =
+  | 'idle'
+  | 'walking'
+  | 'jumping'
+  | 'falling'
+  | 'climbing'
+  | 'sitting'
+  | 'teleporting';
+
+/** Teleport morph timing (seconds): dissolve-out, then materialize-in. */
+export const TELEPORT_OUT_S = 0.3;
+export const TELEPORT_IN_S = 0.32;
 
 export interface PhysicsConfig {
   walkSpeed: number; // px/s
@@ -57,6 +68,9 @@ export interface AvatarBody {
   /** Jumps attempted for the current goal — prevents infinite bounce
    *  when the goal height is unreachable from this platform. */
   goalJumps: number;
+  /** Teleport morph: destination + elapsed seconds (state==='teleporting'). */
+  teleportTarget: { x: number; y: number } | null;
+  teleportElapsed: number;
 }
 
 export function createBody(x: number, y: number): AvatarBody {
@@ -70,6 +84,8 @@ export function createBody(x: number, y: number): AvatarBody {
     ground: null,
     goal: null,
     goalJumps: 0,
+    teleportTarget: null,
+    teleportElapsed: 0,
   };
 }
 
@@ -98,6 +114,33 @@ export function step(
   }
 
   switch (body.state) {
+    case 'teleporting': {
+      // Dissolve out → snap → materialize in. The window itself jumps at
+      // the midpoint; the renderer carries the visual morph.
+      body.teleportElapsed += dt;
+      if (body.teleportTarget && body.teleportElapsed >= TELEPORT_OUT_S) {
+        body.x = body.teleportTarget.x;
+        body.y = body.teleportTarget.y;
+        body.teleportTarget = null;
+      }
+      if (body.teleportElapsed >= TELEPORT_OUT_S + TELEPORT_IN_S) {
+        body.teleportElapsed = 0;
+        const ground = world.groundBelow(body.x, body.y - 1);
+        if (ground && Math.abs(ground.y - body.y) < 12) {
+          body.y = ground.y;
+          body.ground = ground;
+          body.state = 'idle';
+        } else {
+          body.ground = null;
+          body.state = 'falling';
+        }
+        body.goal = null;
+        body.goalJumps = 0;
+        body.vx = 0;
+        body.vy = 0;
+      }
+      break;
+    }
     case 'sitting': {
       // Sitting is stable: only a new goal or a vanished platform ends it.
       if (body.goal) {
@@ -263,6 +306,7 @@ export function step(
 
 /** Start navigating to a feet-coordinate goal. */
 export function navigateTo(body: AvatarBody, x: number, y: number): void {
+  if (body.state === 'teleporting') return; // mid-warp — let it finish
   // Dedupe 1: settled close enough already (idle or sitting) → ignore.
   // The horizontal tolerance must be comfortably ABOVE the director's
   // re-dock hysteresis floor so the two layers never fight.
@@ -283,6 +327,24 @@ export function navigateTo(body: AvatarBody, x: number, y: number): void {
   body.goal = { x, y };
   body.goalJumps = 0;
   if (body.state === 'idle' || body.state === 'sitting') body.state = 'walking';
+}
+
+/**
+ * Teleport morph to a feet-coordinate destination — used for long hauls
+ * and cross-monitor moves instead of an epic trek (or a hard jump cut).
+ * The renderer plays dissolve-out/materialize-in keyed off 'teleporting'.
+ */
+export function teleportTo(body: AvatarBody, x: number, y: number): void {
+  if (body.state === 'teleporting') return;
+  if (Math.abs(x - body.x) <= 4 && Math.abs(y - body.y) <= 4) return;
+  body.goal = null;
+  body.goalJumps = 0;
+  body.vx = 0;
+  body.vy = 0;
+  body.facing = x >= body.x ? 1 : -1;
+  body.teleportTarget = { x, y };
+  body.teleportElapsed = 0;
+  body.state = 'teleporting';
 }
 
 /** Cancel any navigation (e.g. user grabbed the window). */

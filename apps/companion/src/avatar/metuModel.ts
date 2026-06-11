@@ -233,8 +233,27 @@ export function buildMetuRig(palette: MetuPalette): MetuRig {
   };
 }
 
-export type MetuMotion = 'idle' | 'walking' | 'jumping' | 'falling' | 'climbing' | 'sitting';
+export type MetuMotion =
+  | 'idle'
+  | 'walking'
+  | 'jumping'
+  | 'falling'
+  | 'climbing'
+  | 'sitting'
+  | 'teleporting';
 export type MetuExpression = 'idle' | 'listening' | 'speaking' | 'thinking';
+
+/** One-shot gestures layered over the base pose (k = 0..1 progress). */
+export type MetuGesture =
+  | 'wave'
+  | 'point-left'
+  | 'point-right'
+  | 'point-up'
+  | 'nod'
+  | 'shake'
+  | 'shrug'
+  | 'celebrate'
+  | 'typing';
 
 /**
  * Drive one animation frame. `t` seconds since start, `amp` 0..1 voice
@@ -260,6 +279,24 @@ export function poseMetu(
   torso.rotation.y = 0; // reset gaze-follow twist from previous frames
 
   switch (motion) {
+    case 'teleporting': {
+      // Energy-gather pose while the warp morph plays: arms drawn in,
+      // head down, slight crouch — the renderer adds scale/spin/fade.
+      hipsY = 0.42;
+      legL.rotation.x = -0.2;
+      legR.rotation.x = -0.2;
+      shinL.rotation.x = 0.45;
+      shinR.rotation.x = 0.45;
+      armL.rotation.x = -0.8;
+      armR.rotation.x = -0.8;
+      armL.rotation.z = 0.5;
+      armR.rotation.z = -0.5;
+      forearmL.rotation.x = -1.4;
+      forearmR.rotation.x = -1.4;
+      torsoPitch = 0.18;
+      headPitch = 0.3;
+      break;
+    }
     case 'walking': {
       const w = t * 9; // cadence
       const swing = Math.sin(w);
@@ -412,6 +449,73 @@ export function poseMetu(
   }
   rig.visorMat.emissiveIntensity = visor;
   rig.coreMat.emissiveIntensity = 1.6 + amp * 1.6;
+}
+
+/**
+ * Layer a one-shot gesture OVER the base pose. Call AFTER poseMetu.
+ * `k` is normalized progress 0..1 (caller owns timing); `t` is global
+ * time for cyclic gestures (typing, celebrate).
+ * Envelope: smooth in/out so gestures blend rather than snap.
+ */
+export function applyMetuGesture(rig: MetuRig, gesture: MetuGesture, k: number, t: number): void {
+  const { head, torso, armL, armR, forearmL, forearmR } = rig;
+  // Smooth bell envelope: 0 → 1 → 0 across the gesture's life.
+  const env = Math.sin(Math.min(1, Math.max(0, k)) * Math.PI);
+  switch (gesture) {
+    case 'wave': {
+      armR.rotation.x = -2.6 * env;
+      armR.rotation.z = -0.4 * env;
+      forearmR.rotation.x = (-0.4 + Math.sin(t * 9) * 0.45) * env;
+      break;
+    }
+    case 'point-left':
+    case 'point-right':
+    case 'point-up': {
+      const arm = gesture === 'point-left' ? armL : armR;
+      const fore = gesture === 'point-left' ? forearmL : forearmR;
+      const pitch = gesture === 'point-up' ? -2.9 : -1.55;
+      arm.rotation.x = pitch * env;
+      arm.rotation.z = (gesture === 'point-left' ? 0.25 : -0.25) * env;
+      fore.rotation.x = -0.08 * env;
+      head.rotation.y +=
+        (gesture === 'point-left' ? 0.35 : gesture === 'point-right' ? -0.35 : 0) * env;
+      if (gesture === 'point-up') head.rotation.x += -0.3 * env;
+      break;
+    }
+    case 'nod': {
+      head.rotation.x += Math.sin(k * Math.PI * 4) * 0.28 * env;
+      break;
+    }
+    case 'shake': {
+      head.rotation.y += Math.sin(k * Math.PI * 5) * 0.32 * env;
+      break;
+    }
+    case 'shrug': {
+      armL.rotation.z = 0.85 * env;
+      armR.rotation.z = -0.85 * env;
+      forearmL.rotation.x = -1.5 * env;
+      forearmR.rotation.x = -1.5 * env;
+      head.rotation.z += 0.14 * env;
+      torso.rotation.x += -0.04 * env;
+      break;
+    }
+    case 'celebrate': {
+      const bounce = Math.abs(Math.sin(t * 6));
+      armL.rotation.x = (-2.8 + bounce * 0.3) * env;
+      armR.rotation.x = (-2.8 + (1 - bounce) * 0.3) * env;
+      head.rotation.x += -0.18 * env;
+      break;
+    }
+    case 'typing': {
+      const tap = Math.sin(t * 16);
+      armL.rotation.x = -0.9 * env;
+      armR.rotation.x = -0.9 * env;
+      forearmL.rotation.x = (-0.9 + tap * 0.12) * env;
+      forearmR.rotation.x = (-0.9 - tap * 0.12) * env;
+      head.rotation.x += 0.22 * env;
+      break;
+    }
+  }
 }
 
 /** Dispose all geometries/materials in the rig. */
