@@ -1,13 +1,14 @@
 import { auth } from '@metu/auth';
 import { redirect } from 'next/navigation';
-import { eq } from 'drizzle-orm';
+import { and, eq, isNull, sql } from 'drizzle-orm';
 import { getDb } from '@metu/db';
-import { agentPolicy, integration, toolAcl, workspace } from '@metu/db/schema';
+import { agentPolicy, autonomyGrant, integration, toolAcl, workspace } from '@metu/db/schema';
 import { toolCallAclWarnings } from '@metu/db/queries';
 import { agent } from '@metu/core';
 import { Page, PageHeader } from '@metu/ui';
 import { AutonomyForm, type AutonomyMode } from '@/components/autonomy-form';
 import { ConductorActivityLevelForm } from '@/components/conductor-activity-level-form';
+import { AutonomyGrantsPanel } from '@/components/autonomy-grants-panel';
 import { getConductorActivityLevel } from '@/app/actions/workspace-preferences';
 
 const KIND_DEFAULT: Record<'read' | 'low_risk' | 'high_risk', AutonomyMode> = {
@@ -86,6 +87,18 @@ export default async function AutonomyPage() {
   const tools = agent.listTools();
   const defaultMode = (policyRow?.defaultMode as AutonomyMode | undefined) ?? 'ask';
 
+  // Active session autopilot grants (Conductor v2).
+  const activeGrants = await db
+    .select()
+    .from(autonomyGrant)
+    .where(
+      and(
+        eq(autonomyGrant.workspaceId, wsId),
+        isNull(autonomyGrant.revokedAt),
+        sql`${autonomyGrant.expiresAt} >= now()`,
+      ),
+    );
+
   // Combine real tools with virtual ones (no LLM exposure, ACL-gated routes).
   const allTools = [
     ...tools,
@@ -144,6 +157,16 @@ export default async function AutonomyPage() {
         description="Configure how the Conductor acts on your behalf. Every tool the agent can call is governed by these rules — scoped per-integration when relevant."
       />
       <ConductorActivityLevelForm initial={await getConductorActivityLevel(wsId)} />
+      <AutonomyGrantsPanel
+        grants={activeGrants.map((g) => ({
+          id: g.id,
+          tool: g.tool,
+          note: g.note,
+          expiresAt: g.expiresAt.toISOString(),
+          createdAt: g.createdAt.toISOString(),
+        }))}
+        tools={allTools.filter((t) => t.kind !== 'read').map((t) => t.name)}
+      />
       <AutonomyForm
         initial={{
           defaultMode,

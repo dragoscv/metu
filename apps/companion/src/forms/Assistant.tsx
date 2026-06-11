@@ -37,6 +37,7 @@ import {
   saveProactivity,
   type ProactivityMode,
 } from '../assistant/proactivity';
+import { MetuTtsProxyProvider } from '@metu/voice/tts-proxy';
 import { SpeechBubble, type BubbleAction } from '../assistant/SpeechBubble';
 import { assistantLines, QUICK_REPLIES } from '../assistant/assistantMessages';
 import { showHighlight } from '../assistant/overlay-bridge';
@@ -372,9 +373,26 @@ function AssistantSkin({
     return startSuggestionEngine({
       onSuggest: (s) => {
         setAmbient({ text: s.text, quickReplies: s.quickReplies });
+        // Verbal interjection: chatty mode only, never while a voice
+        // conversation is active (don't talk over the user or yourself).
+        if (auth && audioEl && loadProactivity() === 'chatty' && !speaking && !listening) {
+          void MetuTtsProxyProvider.speakToAudioElement(
+            s.text,
+            {
+              apiBase: auth.apiBase,
+              accessToken: auth.accessToken,
+              personaSlug,
+              voiceId: '',
+            },
+            audioEl,
+          ).catch(() => {
+            /* spoken nudge is best-effort — the bubble already showed */
+          });
+        }
       },
     });
-  }, []);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [auth, audioEl, personaSlug]);
 
   // Ask-before-act: surface a confirm bubble for any proposed window action.
   useEffect(() => {
