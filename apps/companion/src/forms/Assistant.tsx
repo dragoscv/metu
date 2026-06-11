@@ -544,13 +544,43 @@ function AssistantSkin({
     }
   }, [chatOpen]);
 
+  // Single click → conversational bubble with quick actions.
+  // Double click → morph into the chat panel.
+  // Disambiguated with a short timer so a double-click never first flashes
+  // the bubble. Voice toggle lives in the context menu (and hotkey).
+  const clickTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const onAvatarClick = () => {
     if (suppressClickRef.current) return;
     if (speaking) {
       onInterrupt?.();
       return;
     }
-    setChatOpen((v) => !v);
+    if (clickTimerRef.current) return; // 2nd click of a double — let dblclick win
+    clickTimerRef.current = setTimeout(() => {
+      clickTimerRef.current = null;
+      if (chatOpen) return; // panel open: single click does nothing
+      // Surface something useful: unread reply > fresh greeting w/ actions.
+      if (unreadReply) {
+        restoreUnread();
+      } else if (!bubbleText) {
+        const line = assistantLines.greeting(personality) ?? 'Ready when you are.';
+        setAmbient({ text: line });
+      } else {
+        // A bubble is already up — nudge: refresh its TTL by re-setting.
+        setAmbient((a) => (a ? { ...a } : a));
+      }
+    }, 260);
+  };
+  const onAvatarDoubleClick = () => {
+    if (clickTimerRef.current) {
+      clearTimeout(clickTimerRef.current);
+      clickTimerRef.current = null;
+    }
+    // Morph into chat: drop any bubble (its text lives in the thread).
+    setAmbient(null);
+    setChatBubble(null);
+    setUnreadReply(null);
+    setChatOpen(true);
   };
 
   // Right-click: in-window context menu. WebView2 suppresses the native menu
@@ -655,9 +685,9 @@ function AssistantSkin({
             onPointerLeave={() => setInteractive(false)}
             onPointerDown={onBodyPointerDown}
             onClick={onAvatarClick}
-            onDoubleClick={() => onToggleMic?.()}
+            onDoubleClick={onAvatarDoubleClick}
             onContextMenu={onAvatarContextMenu}
-            title="Click to chat · drag to move · double-click for voice"
+            title="Click for quick actions · double-click to chat · right-click for menu"
           >
             <AvatarHost state={avatarState} size={180} audioEl={audioEl} />
             {unreadReply && !bubbleText && (
