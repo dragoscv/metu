@@ -14,9 +14,7 @@
 import { useCallback, useRef, useState } from 'react';
 import type { AuthState } from '../state/auth';
 import { ensureFreshAuth } from '../state/auth';
-import { invoke } from '@tauri-apps/api/core';
-import { isTauri } from '../state/runtime';
-import { getActivityState } from './activityModel';
+import { fetchScreenContext } from './activityModel';
 
 export type ChatRole = 'user' | 'assistant';
 
@@ -103,21 +101,7 @@ export function useAssistantChat(auth: AuthState, personaSlug: string) {
         authRef.current = fresh;
         // Jarvis Slice B — attach live screen context (text-only, already
         // privacy-gated natively) so "what am I looking at?" just works.
-        let screenContext: string | undefined;
-        if (isTauri()) {
-          const act = getActivityState();
-          const recent = await invoke<string>('sense_recent_text', {
-            minutes: 5,
-            maxChars: 3_500,
-          }).catch(() => '');
-          const head = act.app
-            ? `Focused: ${act.app}${act.title ? ` — ${act.title}` : ''} (${act.appClass}${act.projectGuess ? `, project: ${act.projectGuess}` : ''})`
-            : '';
-          screenContext = [head, recent].filter(Boolean).join('\n') || undefined;
-          if (screenContext && screenContext.length > 5_800) {
-            screenContext = screenContext.slice(0, 5_800);
-          }
-        }
+        const screenContext = (await fetchScreenContext().catch(() => '')) || undefined;
         const res = await fetch(
           `${fresh.apiBase.replace(/\/$/, '')}/api/sdk/v1/companion/turn/stream`,
           {

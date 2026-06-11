@@ -264,3 +264,26 @@ export async function catchMeUpContext(): Promise<string> {
     .filter(Boolean)
     .join('\n\n');
 }
+
+/**
+ * Live screen context for a conversation turn (chat OR voice): focused
+ * app/window/project header + last few minutes of on-screen text.
+ * Privacy-gated natively (sense engine pauses on sensitive contexts);
+ * capped to stay well under the server's 6KB screenContext limit.
+ * Returns '' outside Tauri or on any failure.
+ */
+export async function fetchScreenContext(): Promise<string> {
+  if (!isTauri()) return '';
+  const act = getActivityState();
+  const recent = await invoke<string>('sense_recent_text', {
+    minutes: 5,
+    maxChars: 3_500,
+  }).catch(() => '');
+  const head = act.app
+    ? `Focused: ${act.app}${act.title ? ` — ${act.title}` : ''} (${act.appClass}${
+        act.projectGuess ? `, project: ${act.projectGuess}` : ''
+      })`
+    : '';
+  const ctx = [head, recent].filter(Boolean).join('\n');
+  return ctx.length > 5_800 ? ctx.slice(0, 5_800) : ctx;
+}

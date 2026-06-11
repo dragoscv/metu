@@ -17,6 +17,7 @@ import { MetuTtsProxyProvider, registerMetuTtsProxy } from '@metu/voice/tts-prox
 import { createPipelineSession, type PipelineSessionHandle } from '@metu/voice/pipeline';
 import type { RealtimeSession, VoiceSessionEvent } from '@metu/voice';
 import type { AuthState } from './auth';
+import { fetchScreenContext } from '../assistant/activityModel';
 
 registerOpenAiRealtime();
 registerDeepgramNova3();
@@ -201,9 +202,17 @@ export function useVoiceSession(auth: AuthState | null) {
       const minted = await postBroker<RealtimeBrokerOk>(auth, '/api/voice/realtime/session', {
         personaSlug,
       });
+      // Jarvis Slice F — seed the realtime session with the current screen
+      // context. (Realtime sessions can't refresh per-turn without a
+      // session.update round-trip; the start snapshot covers the common
+      // "what am I looking at?" case and the pipeline lane gets per-turn.)
+      const screen = await fetchScreenContext().catch(() => '');
+      const systemPrompt = screen
+        ? `${minted.persona.systemPrompt}\n\n[Live screen context at session start]\n${screen}`
+        : minted.persona.systemPrompt;
       const session = await OpenAiRealtimeProvider.open({
         sessionToken: minted.sessionToken,
-        systemPrompt: minted.persona.systemPrompt,
+        systemPrompt,
         voiceId: minted.voice,
         audioEl: audioRef.current,
       });
@@ -249,6 +258,10 @@ export function useVoiceSession(auth: AuthState | null) {
         } as Parameters<typeof DeepgramNova3Provider.open>[0],
         tts: MetuTtsProxyProvider,
         audioEl: audioRef.current,
+        // Jarvis Slice F — every voice turn carries live screen context
+        // (focused app + recent OCR text, privacy-gated natively) so
+        // "what am I looking at?" works hands-free too.
+        getScreenContext: fetchScreenContext,
       });
       const off = session.on(handleEvent);
       const origStop = session.stop.bind(session);

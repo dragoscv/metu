@@ -27,6 +27,14 @@ export interface PipelineSessionOpts {
   tts: TTSProvider;
   /** Audio sink for spoken output. */
   audioEl: HTMLAudioElement;
+  /**
+   * Optional ambient screen context supplier (Jarvis Slice F). Called at
+   * the start of every turn; the resolved text (focused app + recent
+   * on-screen text, already privacy-gated by the caller) rides along to
+   * the turn endpoint so "what am I looking at?" works by voice too.
+   * Failures/timeouts must be handled by the supplier — return ''.
+   */
+  getScreenContext?: () => Promise<string>;
 }
 
 export interface PipelineSessionHandle {
@@ -98,6 +106,8 @@ export function createPipelineSession(opts: PipelineSessionOpts): PipelineSessio
     let pendingForTts = '';
 
     try {
+      const screenContext = (await opts.getScreenContext?.().catch(() => '')) || undefined;
+      if (ac.signal.aborted) return; // barge-in while fetching context
       const res = await fetch(
         `${opts.apiBase.replace(/\/$/, '')}/api/sdk/v1/companion/turn/stream`,
         {
@@ -111,6 +121,7 @@ export function createPipelineSession(opts: PipelineSessionOpts): PipelineSessio
             utterance: transcript,
             history: history.slice(-12),
             surface: 'companion',
+            screenContext,
           }),
           signal: ac.signal,
         },
