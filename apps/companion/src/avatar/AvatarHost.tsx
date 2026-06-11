@@ -12,6 +12,7 @@ import { ShaderOrb } from './ShaderOrb';
 import { FaceAvatar } from './FaceAvatar';
 import { VrmStage, type VrmStatus } from './VrmStage';
 import { GlbStage } from './GlbStage';
+import { MetuStage } from './MetuStage';
 import { useAvatarSelection } from './useAvatarSelection';
 import { resolveVrmUrl } from './vrmPresets';
 
@@ -34,11 +35,14 @@ export function AvatarHost(props: AvatarDriveProps) {
   const showVrm = wantsVrm && vrmUrl && vrmStatus !== 'error';
   const showGlb = selection.kind === 'glb' && glbStatus !== 'error';
   const showFace = selection.kind === 'face';
+  const showMetu = selection.kind === 'metu';
   const modelLoading = (showVrm && vrmStatus === 'loading') || (showGlb && glbStatus === 'loading');
 
   return (
     <div style={{ position: 'relative', width: props.size, height: props.size }}>
-      {showVrm ? (
+      {showMetu ? (
+        <MetuStage {...props} paletteId={selection.metuPaletteId} />
+      ) : showVrm ? (
         <VrmStage {...props} modelUrl={vrmUrl} onStatus={setVrmStatus} />
       ) : showGlb ? (
         <GlbStage {...props} presetId={selection.glbPresetId} onStatus={setGlbStatus} />

@@ -12,7 +12,7 @@
  */
 export type AvatarState = 'idle' | 'listening' | 'speaking' | 'thinking';
 
-export type AvatarKind = 'orb' | 'face' | 'vrm' | 'glb';
+export type AvatarKind = 'orb' | 'face' | 'vrm' | 'glb' | 'metu';
 
 export interface AvatarSelection {
   kind: AvatarKind;
@@ -24,14 +24,17 @@ export interface AvatarSelection {
   vrmPresetId: string;
   /** id of the active glb preset (when kind==='glb') */
   glbPresetId: string;
+  /** id of the active metu palette (when kind==='metu') */
+  metuPaletteId: string;
 }
 
 export const DEFAULT_AVATAR_SELECTION: AvatarSelection = {
-  kind: 'orb',
+  kind: 'metu',
   orbPresetId: 'aurora',
   facePresetId: 'mochi',
   vrmPresetId: 'none',
   glbPresetId: 'robo',
+  metuPaletteId: 'metu',
 };
 
 export interface AvatarDriveProps {

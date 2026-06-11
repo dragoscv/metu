@@ -12,6 +12,7 @@ import { ORB_PRESETS } from '../../avatar/orbPresets';
 import { FACE_PRESETS } from '../../avatar/facePresets';
 import { VRM_PRESETS } from '../../avatar/vrmPresets';
 import { GLB_PRESETS } from '../../avatar/glbPresets';
+import { METU_PALETTES } from '../../avatar/metuModel';
 import type { AvatarKind, AvatarState } from '../../avatar/types';
 import { ViewHeader } from '../ViewHeader';
 
@@ -24,6 +25,7 @@ export function AvatarView() {
     setFacePreset,
     setVrmPreset,
     setGlbPreset,
+    setMetuPalette,
     setCustomVrmUrl,
   } = useAvatarSelection();
   const [customDraft, setCustomDraft] = useState(customVrmUrl ?? '');
@@ -83,13 +85,34 @@ export function AvatarView() {
 
         <div className="avatar-studio__controls">
           <div className="seg-group">
+            {tab('metu', '🤖 metu')}
             {tab('orb', '✦ Orb')}
             {tab('face', '☺ Character')}
             {tab('vrm', '☻ Anime 3D')}
             {tab('glb', '🎮 Game & pets')}
           </div>
 
-          {selection.kind === 'orb' ? (
+          {selection.kind === 'metu' ? (
+            <div className="orb-grid orb-grid--view">
+              {METU_PALETTES.map((p) => (
+                <button
+                  key={p.id}
+                  className={`orb-chip ${selection.metuPaletteId === p.id ? 'orb-chip--on' : ''}`}
+                  onClick={() => setMetuPalette(p.id)}
+                  title={`${p.name} — the metu unit, native walk/jump/climb`}
+                >
+                  <span
+                    className="orb-swatch"
+                    style={{
+                      background: `radial-gradient(circle at 35% 30%, ${p.shell}, ${p.accent} 70%)`,
+                      boxShadow: `0 0 10px ${p.accent}66`,
+                    }}
+                  />
+                  <span className="orb-chip__name">{p.name}</span>
+                </button>
+              ))}
+            </div>
+          ) : selection.kind === 'orb' ? (
             <div className="orb-grid orb-grid--view">
               {ORB_PRESETS.map((p) => (
                 <button
