@@ -38,10 +38,31 @@ const SKILLS: Record<string, { system: string; maxOutputTokens: number }> = {
     system: `You are the user's desktop assistant. From their recent activity, suggest the single most valuable next action and one alternative. Direct and brief — 2-3 sentences.`,
     maxOutputTokens: 180,
   },
+  anticipate: {
+    system: `You are a proactive desktop assistant deciding whether to speak up UNPROMPTED. You receive the user's current activity context (focused app, recent screen text, recent timeline). Decide whether there is ONE genuinely valuable thing to offer right now (a blocker you can help with, a forgotten thread, an obvious next step, a relevant reminder). If yes: say it in 1-2 short, personal sentences. If there is nothing clearly valuable, reply with exactly: PASS. Never invent urgency. Bias strongly toward PASS — interrupting costs more than silence.`,
+    maxOutputTokens: 160,
+  },
+  morning_brief: {
+    system: `You are the user's desktop assistant giving the morning briefing. From their recent activity summaries and any open threads, write a warm, concise start-of-day brief: 1) one-line recap of where they left off, 2) the most valuable thing to tackle first and why, 3) anything time-sensitive. 3-5 short sentences, personal tone, no headers.`,
+    maxOutputTokens: 260,
+  },
+  eod_wrap: {
+    system: `You are the user's desktop assistant wrapping up the day. From today's activity, write a short wrap: what got done (be concrete), what's left mid-flight, and the single best first step for tomorrow. 3-4 short sentences. End with the tomorrow-step on its own line starting "Tomorrow: ".`,
+    maxOutputTokens: 220,
+  },
 };
 
 const Body = z.object({
-  skill: z.enum(['catch_up', 'analyze_screen', 'explain_error', 'whats_next', 'act']),
+  skill: z.enum([
+    'catch_up',
+    'analyze_screen',
+    'explain_error',
+    'whats_next',
+    'anticipate',
+    'morning_brief',
+    'eod_wrap',
+    'act',
+  ]),
   /** Locally-gathered context (timeline summary, OCR text). Text only. */
   context: z.string().max(12_000).default(''),
   personaSlug: z.string().min(1).max(80).default('atlas'),
@@ -56,6 +77,16 @@ const Body = z.object({
  * after user confirmation. The element is identified by role + exact name
  * from the provided UI outline — the companion re-finds it via a11y_find.
  */
+const actStepSchema = z.object({
+  action: z.enum(['invoke', 'set_value']),
+  /** Control role exactly as it appears in the outline (e.g. "Button"). */
+  role: z.string().max(60),
+  /** Element name exactly as it appears in the outline. */
+  name: z.string().max(120),
+  /** For set_value. */
+  value: z.string().max(2_000).optional(),
+});
+
 const actPlanSchema = z.object({
   feasible: z.boolean(),
   /** When infeasible: why, in one user-facing sentence. */
@@ -67,6 +98,9 @@ const actPlanSchema = z.object({
   name: z.string().max(120).optional(),
   /** For set_value. */
   value: z.string().max(2_000).optional(),
+  /** Multi-step plan (Jarvis v3): up to 3 ordered steps. When present it
+   *  supersedes the single action/role/name fields (kept for compat). */
+  steps: z.array(actStepSchema).max(3).optional(),
   /** Confirmation prompt, e.g. 'Click "Save" in Notepad?' */
   prompt: z.string().max(160).optional(),
 });
@@ -99,10 +133,10 @@ export async function POST(req: NextRequest) {
     if (!parsed.data.instruction) {
       return new Response('instruction required for act', { status: 400 });
     }
-    const ACT_SYSTEM = `You map a user's instruction to ONE action on their focused window. You receive the window's UI outline: lines like "[Button] Save (disabled)" or '[Edit] Email = "x@y.com"'. Pick the single best element and action:
+    const ACT_SYSTEM = `You map a user's instruction to a SHORT plan (1-3 steps) on their focused window. You receive the window's UI outline: lines like "[Button] Save (disabled)" or '[Edit] Email = "x@y.com"'. Each step:
   - invoke: click a Button/MenuItem/TabItem/CheckBox/Hyperlink…
   - set_value: type into an Edit/ComboBox (provide value).
-  Use the role and name EXACTLY as they appear in the outline. Refuse (feasible:false + reason) when: no matching element, the element is disabled, the instruction needs multiple steps, or it is destructive/irreversible (delete, send money, format…). Always write a short confirmation prompt naming the element and app.`;
+  Use roles and names EXACTLY as they appear in the outline. Put steps in execution order in "steps" (max 3). Refuse (feasible:false + reason) when: no matching elements, an element is disabled, it needs more than 3 steps, later steps depend on UI that only appears after earlier steps (you can only see the CURRENT outline), or it is destructive/irreversible (delete, send money, format…). Always write a short confirmation prompt summarizing ALL steps and the app (e.g. 'Fill "Email", then click "Save" in Notepad?').`;
     const actPrompt = `Instruction: ${parsed.data.instruction}\n\n${parsed.data.context || '(no UI outline available)'}`;
     try {
       const { object } = await generateObject({
@@ -110,7 +144,7 @@ export async function POST(req: NextRequest) {
         schema: actPlanSchema,
         system: ACT_SYSTEM,
         prompt: actPrompt,
-        maxOutputTokens: 200,
+        maxOutputTokens: 300,
       });
       return Response.json({ ok: true, plan: object });
     } catch {
@@ -122,9 +156,9 @@ export async function POST(req: NextRequest) {
           model: model as Parameters<typeof generateText>[0]['model'],
           system:
             ACT_SYSTEM +
-            '\n\nRespond with ONLY a JSON object, no prose, matching: {"feasible":boolean,"reason"?:string,"action"?:"invoke"|"set_value","role"?:string,"name"?:string,"value"?:string,"prompt"?:string}',
+            '\n\nRespond with ONLY a JSON object, no prose, matching: {"feasible":boolean,"reason"?:string,"steps"?:[{"action":"invoke"|"set_value","role":string,"name":string,"value"?:string}],"prompt"?:string}',
           prompt: actPrompt,
-          maxOutputTokens: 220,
+          maxOutputTokens: 300,
         });
         const raw = text
           .trim()
@@ -145,11 +179,15 @@ export async function POST(req: NextRequest) {
   const skill = SKILLS[parsed.data.skill]!;
   const langDirective =
     parsed.data.language === 'ro' ? '\n\nIMPORTANT: Reply ONLY in Romanian (limba română).' : '';
+  // Dynamic quick-reply chips (Jarvis v3): the model appends ONE trailer
+  // line the client strips and renders as tap-chips. Same call — zero
+  // extra latency or cost vs a second structured request.
+  const chipsDirective = `\n\nAfter your answer, on a NEW final line, output exactly: CHIPS: ["…","…"] — 2 or 3 SHORT follow-up actions (≤ 5 words each) the user would most plausibly tap next, grounded in YOUR answer and their context. Actionable and specific (e.g. "Fix that import error", "Open the PR", "Continue the draft") — never generic filler like "Tell me more".`;
   const result = streamText({
     model: model as Parameters<typeof streamText>[0]['model'],
-    system: skill.system + langDirective,
+    system: skill.system + langDirective + chipsDirective,
     prompt: parsed.data.context || '(no context available)',
-    maxOutputTokens: skill.maxOutputTokens,
+    maxOutputTokens: skill.maxOutputTokens + 60,
   });
 
   return result.toTextStreamResponse();

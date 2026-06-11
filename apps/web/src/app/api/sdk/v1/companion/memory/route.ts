@@ -21,7 +21,7 @@ export const runtime = 'nodejs';
 export const maxDuration = 30;
 
 const Body = z.object({
-  kind: z.enum(['preference', 'correction']),
+  kind: z.enum(['preference', 'correction', 'continuity']),
   /** The user's own words — stored verbatim for faithful recall. */
   statement: z.string().min(3).max(2_000),
   /** Where it was said (companion chat, voice, …). */
@@ -48,7 +48,10 @@ export async function POST(req: NextRequest) {
   const { chunkCount } = await indexMemory({
     workspaceId: session.workspaceId,
     sourceKind: 'manual',
-    content: `User ${kind === 'preference' ? 'preference' : 'correction'}: ${statement}`,
+    content:
+      kind === 'continuity'
+        ? `End-of-day wrap (${new Date().toISOString().slice(0, 10)}): ${statement}`
+        : `User ${kind === 'preference' ? 'preference' : 'correction'}: ${statement}`,
     metadata: {
       origin: 'companion-learning',
       kind,

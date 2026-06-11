@@ -14,14 +14,43 @@ import { isTauri } from '../state/runtime';
 import { getActivityState } from './activityModel';
 import { loadAssistantLanguage } from '../state/language';
 
-export type SkillId = 'catch_up' | 'analyze_screen' | 'explain_error' | 'whats_next';
+export type SkillId =
+  | 'catch_up'
+  | 'analyze_screen'
+  | 'explain_error'
+  | 'whats_next'
+  | 'anticipate'
+  | 'morning_brief'
+  | 'eod_wrap';
 
 export const SKILL_ACKS: Record<SkillId, string> = {
   catch_up: 'Looking back at what you were doing…',
   analyze_screen: 'Reading your screen…',
   explain_error: 'Looking at that error…',
   whats_next: 'Checking where you left off…',
+  anticipate: '…',
+  morning_brief: 'Putting your morning brief together…',
+  eod_wrap: 'Wrapping up your day…',
 };
+
+/**
+ * Strip the `CHIPS: [...]` trailer the server appends (Jarvis v3 dynamic
+ * quick replies). Returns clean text + parsed chips (possibly empty).
+ */
+export function splitChips(full: string): { text: string; chips: string[] } {
+  const m = /\nCHIPS:\s*(\[[\s\S]*?\])\s*$/.exec(full);
+  if (!m) return { text: full.trim(), chips: [] };
+  let chips: string[] = [];
+  try {
+    const arr: unknown = JSON.parse(m[1]!);
+    if (Array.isArray(arr)) {
+      chips = arr.filter((c): c is string => typeof c === 'string' && c.length <= 60).slice(0, 3);
+    }
+  } catch {
+    /* malformed trailer — drop it */
+  }
+  return { text: full.slice(0, m.index).trim(), chips };
+}
 
 interface TimelineEntry {
   app: string;
@@ -105,10 +134,12 @@ async function gatherContext(skill: SkillId): Promise<string> {
       .join('\n\n');
   }
 
-  // catch_up / whats_next → timeline + a bit of screen text.
+  // catch_up / whats_next / anticipate / briefs → timeline + screen text.
+  // Briefs look back further (the whole day; eod covers since morning).
+  const hours = skill === 'morning_brief' || skill === 'eod_wrap' ? 18 : 6;
   const [timeline, recent] = await Promise.all([
     invoke<TimelineEntry[]>('sense_timeline', {
-      sinceTs: Date.now() - 6 * 3600_000,
+      sinceTs: Date.now() - hours * 3600_000,
       limit: 60,
     }).catch(() => [] as TimelineEntry[]),
     invoke<string>('sense_recent_text', { minutes: 15, maxChars: 3_000 }).catch(() => ''),
@@ -172,6 +203,13 @@ export async function runSkill(
 
 // ── Act skill: instruction → ONE confirmed UIA action ─────────────────────
 
+export interface ActStep {
+  action: 'invoke' | 'set_value';
+  role: string;
+  name: string;
+  value?: string;
+}
+
 export interface ActPlan {
   feasible: boolean;
   reason?: string;
@@ -179,6 +217,8 @@ export interface ActPlan {
   role?: string;
   name?: string;
   value?: string;
+  /** Multi-step plan (max 3). Supersedes action/role/name when present. */
+  steps?: ActStep[];
   prompt?: string;
 }
 
@@ -211,17 +251,51 @@ export async function planAct(
   return json.plan;
 }
 
-/** Execute a confirmed act plan via the native UIA layer. */
-export async function executeActPlan(plan: ActPlan): Promise<void> {
-  if (!plan.feasible || !plan.action || !plan.role || !plan.name) {
+/** Normalize a plan to its ordered step list (compat with single-action). */
+export function planSteps(plan: ActPlan): ActStep[] {
+  if (plan.steps?.length) return plan.steps.slice(0, 3);
+  if (plan.action && plan.role && plan.name) {
+    return [{ action: plan.action, role: plan.role, name: plan.name, value: plan.value }];
+  }
+  return [];
+}
+
+/**
+ * Execute a confirmed act plan via the native UIA layer — sequentially,
+ * verifying between steps (Jarvis v3 multi-step): after each step the
+ * next target must still exist in a FRESH a11y outline, otherwise we
+ * stop and report instead of clicking blind into a changed UI.
+ * One user approval covers the whole chain (steps were shown upfront).
+ */
+export async function executeActPlan(
+  plan: ActPlan,
+  onProgress?: (done: number, total: number, step: ActStep) => void,
+): Promise<void> {
+  const steps = planSteps(plan);
+  if (!plan.feasible || steps.length === 0) {
     throw new Error(plan.reason ?? 'Nothing to execute.');
   }
-  const args = {
-    role: plan.role,
-    name: plan.name,
-    ...(plan.action === 'set_value' ? { value: plan.value ?? '' } : {}),
-  };
-  // sense_ui_* are the ungated user-confirmed variants — only ever called
-  // after the confirm bubble (ask-before-act).
-  await invoke(plan.action === 'invoke' ? 'sense_ui_invoke' : 'sense_ui_set_value', { args });
+  for (let i = 0; i < steps.length; i++) {
+    const step = steps[i]!;
+    // Verify the target still exists before steps 2+ (the UI may have
+    // changed after the previous action — dialogs close, tabs switch).
+    if (i > 0) {
+      await new Promise((r) => setTimeout(r, 450)); // let the UI settle
+      const outline = await a11yOutline();
+      if (outline && !outline.toLowerCase().includes(step.name.toLowerCase().slice(0, 40))) {
+        throw new Error(
+          `Stopped after step ${i}: "${step.name}" is no longer on screen — the UI changed.`,
+        );
+      }
+    }
+    onProgress?.(i, steps.length, step);
+    const args = {
+      role: step.role,
+      name: step.name,
+      ...(step.action === 'set_value' ? { value: step.value ?? '' } : {}),
+    };
+    // sense_ui_* are the ungated user-confirmed variants — only ever called
+    // after the confirm bubble (ask-before-act, one approval per plan).
+    await invoke(step.action === 'invoke' ? 'sense_ui_invoke' : 'sense_ui_set_value', { args });
+  }
 }

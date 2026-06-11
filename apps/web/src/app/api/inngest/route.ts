@@ -35,6 +35,7 @@ import { conductorProactiveCron } from '@/inngest/functions/conductor-proactive'
 import { conductorIdleNudgeCron } from '@/inngest/functions/conductor-idle-nudge';
 import { companionAgentAnticipatory } from '@/inngest/functions/companion-anticipatory';
 import { recentDigestRefresh } from '@/inngest/functions/recent-digest';
+import { memoryConsolidation } from '@/inngest/functions/memory-consolidation';
 import { dailyDigestEmailCron } from '@/inngest/functions/daily-digest-email';
 import { weeklyDigestEmailCron } from '@/inngest/functions/weekly-digest-email';
 import { gcsCleanupCron } from '@/inngest/functions/gcs-cleanup';
@@ -91,6 +92,7 @@ export const { GET, POST, PUT } = serve({
     conductorIdleNudgeCron,
     companionAgentAnticipatory,
     recentDigestRefresh,
+    memoryConsolidation,
     dailyDigestEmailCron,
     weeklyDigestEmailCron,
     gcsCleanupCron,

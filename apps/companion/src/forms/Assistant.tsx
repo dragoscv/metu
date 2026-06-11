@@ -30,8 +30,21 @@ import { playWakeBlip } from '../state/wakeBlip';
 import { AvatarHost } from '../avatar/AvatarHost';
 import type { AvatarState } from '../avatar/types';
 import { useAssistantBrain, type PointRequest } from '../assistant/useAssistantBrain';
-import { onActivityChange, startActivityModel, startDistiller } from '../assistant/activityModel';
-import { executeActPlan, planAct, runSkill, SKILL_ACKS, type SkillId } from '../assistant/skills';
+import {
+  getActivityState,
+  onActivityChange,
+  startActivityModel,
+  startDistiller,
+} from '../assistant/activityModel';
+import {
+  executeActPlan,
+  planAct,
+  planSteps,
+  runSkill,
+  SKILL_ACKS,
+  splitChips,
+  type SkillId,
+} from '../assistant/skills';
 import { applySenseSettings, saveWatchPaused } from '../state/senseSettings';
 import { writeText } from '@tauri-apps/plugin-clipboard-manager';
 import {
@@ -394,6 +407,8 @@ function AssistantSkin({
 
   // Surface the latest assistant chat text as a bubble while collapsed.
   const [chatBubble, setChatBubble] = useState<string | null>(null);
+  /** Jarvis v3 — LLM-suggested follow-up chips for the current reply. */
+  const [dynamicChips, setDynamicChips] = useState<string[]>([]);
   // Unread reply: parked when a chat bubble leaves the screen unseen.
   // 'expired' (TTL) restores on avatar hover; 'dismissed' (explicit ✕)
   // keeps the badge but only restores on CLICK — the user said "not now",
@@ -529,6 +544,65 @@ function AssistantSkin({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [auth, audioEl, personaSlug]);
 
+  // ── Jarvis v3 — anticipation engine + daily rhythm ───────────────────────
+  // Every ~12min of ACTIVE use (not idle, not deep focus, mode≠silent) run
+  // the 'anticipate' skill: live context → 0..1 proactive suggestion. The
+  // model is instructed to PASS by default; we stay quiet on PASS.
+  // Morning brief: first activity of a calendar day. EOD wrap: explicit
+  // via menu (scheduling sunset detection adds noise; menu first).
+  const anticipateBusyRef = useRef(false);
+  useEffect(() => {
+    if (!auth) return;
+    const ANTICIPATE_MS = 12 * 60_000;
+    const timer = setInterval(() => {
+      if (anticipateBusyRef.current || chatOpen || skillBusy) return;
+      if (loadProactivity() === 'silent') return;
+      const act = getActivityState();
+      if (act.focusDepth !== 'normal') return; // deep focus or idle
+      if (Date.now() < suggestionSnoozeUntilRef.current) return;
+      anticipateBusyRef.current = true;
+      runSkill(auth, 'anticipate', personaSlug, () => {})
+        .then((full) => {
+          const { text, chips } = splitChips(full);
+          const clean = text.trim();
+          if (!clean || /^PASS\b/i.test(clean)) return; // nothing valuable
+          setAmbient({ text: clean, quickReplies: chips.length ? chips : undefined });
+        })
+        .catch(() => {})
+        .finally(() => {
+          anticipateBusyRef.current = false;
+        });
+    }, ANTICIPATE_MS);
+    return () => clearInterval(timer);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [auth, personaSlug]);
+
+  // Morning brief: fires once per calendar day, on the first tick where
+  // the user is actually active (so it lands when they sit down).
+  useEffect(() => {
+    if (!auth) return;
+    const KEY = 'metu.lastMorningBrief';
+    const timer = setInterval(() => {
+      const today = new Date().toISOString().slice(0, 10);
+      try {
+        if (localStorage.getItem(KEY) === today) return;
+      } catch {
+        return;
+      }
+      const act = getActivityState();
+      if (act.focusDepth === 'idle' || loadProactivity() === 'silent') return;
+      try {
+        localStorage.setItem(KEY, today);
+      } catch {
+        /* ignore */
+      }
+      playGesture('wave', 1800);
+      fireSkill('morning_brief');
+    }, 60_000);
+    return () => clearInterval(timer);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [auth, personaSlug]);
+
   // Ask-before-act: surface a confirm bubble for any proposed window action.
   useEffect(() => {
     return onProposal((p) => {
@@ -586,7 +660,9 @@ function AssistantSkin({
     voiceBubble || bubbleAction || !auth || workingBubble
       ? undefined
       : bubbleIsChat
-        ? QUICK_REPLIES.followup
+        ? dynamicChips.length
+          ? dynamicChips
+          : QUICK_REPLIES.followup
         : (ambient?.quickReplies ?? QUICK_REPLIES.ambient);
 
   const dismissBubble = () => {
@@ -642,22 +718,31 @@ function AssistantSkin({
       planAct(auth, instruction, personaSlug)
         .then((plan) => {
           setSkillBusy(false);
-          if (!plan.feasible || !plan.action) {
+          const steps = planSteps(plan);
+          if (!plan.feasible || steps.length === 0) {
             setChatBubble(plan.reason ?? "I couldn't find a safe way to do that.");
             return;
           }
           setChatBubble(null);
+          const stepDesc = steps
+            .map((s, i) => `${i + 1}. ${s.action === 'invoke' ? 'click' : 'fill'} "${s.name}"`)
+            .join(', ');
           setAmbient({
-            text: plan.prompt ?? `Do this: ${plan.action} "${plan.name}"?`,
+            text: plan.prompt ?? `Do this: ${stepDesc}?`,
             action: {
               label: 'Do it',
               onConfirm: () => {
                 setAmbient(null);
-                setChatBubble(
-                  `On it — ${plan.action === 'invoke' ? 'clicking' : 'filling'} "${plan.name}"…`,
-                );
-                executeActPlan(plan)
-                  .then(() => setChatBubble(`Done — ${plan.name}.`))
+                playGesture('typing', steps.length * 1500);
+                executeActPlan(plan, (done, total, step) =>
+                  setChatBubble(
+                    `Step ${done + 1}/${total} — ${step.action === 'invoke' ? 'clicking' : 'filling'} "${step.name}"…`,
+                  ),
+                )
+                  .then(() => {
+                    setChatBubble(steps.length > 1 ? `Done — all ${steps.length} steps.` : 'Done.');
+                    playGesture('nod');
+                  })
                   .catch((err: unknown) =>
                     setChatBubble(err instanceof Error ? err.message : 'That didn’t work.'),
                   );
@@ -685,16 +770,37 @@ function AssistantSkin({
       setSkillBusy(true);
       // Instant ack — the bubble appears before any network round-trip.
       setUnreadReply(null);
+      setDynamicChips([]);
       setChatBubble(SKILL_ACKS[skill]);
       runSkill(
         auth,
         skill,
         personaSlug,
         (full) => {
-          if (!ctrl.signal.aborted) setChatBubble(full);
+          if (ctrl.signal.aborted) return;
+          // Hide the (possibly partial) CHIPS trailer while streaming.
+          setChatBubble(splitChips(full).text);
         },
         ctrl.signal,
       )
+        .then((full) => {
+          if (ctrl.signal.aborted) return;
+          const { text, chips } = splitChips(full);
+          setChatBubble(text);
+          setDynamicChips(chips);
+          // EOD wrap doubles as continuity memory: tomorrow-me (and the
+          // morning brief) recalls exactly where today ended.
+          if (skill === 'eod_wrap' && text) {
+            void fetch(`${auth.apiBase}/api/sdk/v1/companion/memory`, {
+              method: 'POST',
+              headers: {
+                'content-type': 'application/json',
+                authorization: `Bearer ${auth.accessToken}`,
+              },
+              body: JSON.stringify({ kind: 'continuity', statement: text.slice(0, 2_000) }),
+            }).catch(() => {});
+          }
+        })
         .catch((err: unknown) => {
           if (ctrl.signal.aborted) return;
           setChatBubble(err instanceof Error ? err.message : 'Something went wrong.');
@@ -1050,6 +1156,17 @@ function AssistantSkin({
               }}
             >
               👀 Analyze my screen
+            </button>
+          )}
+          {auth && (
+            <button
+              className="assistant-menu__item"
+              onClick={() => {
+                setMenu(null);
+                fireSkill('eod_wrap');
+              }}
+            >
+              🌙 Wrap up my day
             </button>
           )}
           {auth && (
