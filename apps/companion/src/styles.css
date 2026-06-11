@@ -357,6 +357,21 @@ html:has(.overlay-stage), body:has(.overlay-stage) { background: transparent; }
   cursor: grab;
 }
 .assistant-body:active { cursor: grabbing; }
+/* Retreat (deep-focus): tuck in — smaller, calmer, translucent. Hover
+   restores full presence instantly so it never feels unreachable. */
+.assistant-stage[data-mode='retreat'] .assistant-body {
+  transform: scale(0.55) translateY(18%);
+  opacity: 0.55;
+  transition: transform 280ms cubic-bezier(0.22, 1, 0.36, 1), opacity 280ms ease;
+}
+.assistant-stage[data-mode='retreat'][data-hovering='true'] .assistant-body,
+.assistant-stage[data-mode='retreat'] .assistant-body:hover {
+  transform: scale(1) translateY(0);
+  opacity: 1;
+}
+.assistant-stage .assistant-body {
+  transition: transform 280ms cubic-bezier(0.22, 1, 0.36, 1), opacity 280ms ease;
+}
 
 /* ── Context menu ────────────────────────────────────────────────── */
 .assistant-menu {

@@ -321,7 +321,7 @@ function AssistantSkin({
   const interactionLocked =
     chatOpen || dragging || !!ambient || !!chatBubble || !!voiceBubble || !!menu;
 
-  const { hovering, setInteractive } = useAssistantBrain({
+  const { mode, hovering, setInteractive } = useAssistantBrain({
     personality,
     width: physW,
     height: physH,
@@ -472,6 +472,7 @@ function AssistantSkin({
       data-persona={personaSlug}
       data-speaking={speaking}
       data-hovering={hovering}
+      data-mode={mode}
     >
       {chatOpen && auth ? (
         <div

@@ -39,14 +39,23 @@ import {
   clampToMonitors,
   getForeground,
   getMonitors,
-  randomWanderTarget,
   type ForegroundWindow,
   type MonitorInfo,
   type Point,
 } from './spatial';
 import { PERSONALITIES, type PersonalityId } from '../avatar/personality';
+import { getActivityState } from './activityModel';
 
-export type AssistantMode = 'idle' | 'wander' | 'perch' | 'point' | 'follow';
+/**
+ * Director states (Jarvis Slice C — purposeful presence):
+ *   docked   → resting at the home corner of the active monitor
+ *   approach → moving beside the active window because it has something to say
+ *   point    → walking toward a target then signalling the overlay highlight
+ *   retreat  → user is in deep focus; tucked into the corner, small + quiet
+ * 'idle' is retained as the initial/none state. Movement happens ONLY on a
+ * director intent — never randomly.
+ */
+export type AssistantMode = 'idle' | 'docked' | 'approach' | 'point' | 'retreat';
 
 export interface PointRequest {
   /** Target rect to highlight (physical px). */
@@ -204,19 +213,46 @@ export function useAssistantBrain(opts: Options): AssistantBrainState {
     };
   }, []);
 
-  // ── Decision loop: pick a target on a personality cadence ────────────────
+  // ── Director (Slice C): movement only with intent ────────────────────────
+  // The avatar lives DOCKED at the home corner of the monitor the user is
+  // working on. It moves only when:
+  //   • a point request arrives (walk to the target, highlight),
+  //   • the user enters deep focus (RETREAT — same dock, signals quiet), or
+  //   • the active monitor changes (re-dock so it stays near the action).
+  // APPROACH (walking beside the active window) is reserved for the
+  // suggestion engine (Slice D) via `metu:assistant-approach` events.
+  const dockTarget = useCallback(
+    (fg: ForegroundWindow | null): Point => {
+      // Bottom-right corner of the monitor hosting the active window (or
+      // primary). 16px margin keeps it off taskbar edges.
+      const mons = monitorsRef.current;
+      const margin = 16;
+      let mon = mons.find((m) => m.primary) ?? mons[0];
+      if (fg && mons.length > 1) {
+        const cx = fg.x + fg.w / 2;
+        const cy = fg.y + fg.h / 2;
+        mon = mons.find((m) => cx >= m.x && cx < m.x + m.w && cy >= m.y && cy < m.y + m.h) ?? mon;
+      }
+      if (!mon) return { x: 100, y: 100 };
+      return {
+        x: mon.x + mon.w - width - margin,
+        y: mon.y + mon.h - height - margin,
+      };
+    },
+    [width, height],
+  );
+
   useEffect(() => {
     let cancelled = false;
     let timer: ReturnType<typeof setTimeout>;
+    let lastDockKey = '';
 
     const decide = async () => {
       if (cancelled) return;
-      const cfg = cfgRef.current;
       if (!pausedRef.current && !lockedRef.current) {
-        // Active point request wins.
+        const act = getActivityState();
         if (pointReqRef.current) {
           const r = pointReqRef.current.rect;
-          // Park beside the target's top-right corner.
           targetRef.current = clampToMonitors(
             r.x + r.w + 8,
             r.y,
@@ -225,31 +261,22 @@ export function useAssistantBrain(opts: Options): AssistantBrainState {
             monitorsRef.current,
           );
           setMode('point');
-          onPoint?.(pointReqRef.current);
         } else {
           const fg = await getForeground().catch(() => null);
           reactToForeground(fg);
-          const roll = Math.random();
-          if (fg && roll < cfg.perchBias) {
-            // Perch beside the active window.
-            targetRef.current = clampToMonitors(
-              fg.x + fg.w - width - 8,
-              Math.max(fg.y - height + 24, 0),
-              width,
-              height,
-              monitorsRef.current,
-            );
-            setMode('perch');
-          } else {
-            targetRef.current = randomWanderTarget(width, height, monitorsRef.current);
-            setMode('wander');
+          const dock = dockTarget(fg);
+          const dockKey = `${dock.x},${dock.y}`;
+          const atDock = Math.hypot(posRef.current.x - dock.x, posRef.current.y - dock.y) < 24;
+          if (dockKey !== lastDockKey || !atDock) {
+            // Re-dock only when the dock actually moved (monitor change)
+            // or we're away from it (e.g. after a point/approach).
+            lastDockKey = dockKey;
+            targetRef.current = dock;
           }
+          setMode(act.focusDepth === 'deep' ? 'retreat' : 'docked');
         }
       }
-      // Schedule next decision with jitter.
-      const base = cfgRef.current.wanderIntervalMs;
-      const next = base * (0.5 + Math.random());
-      timer = setTimeout(decide, next);
+      timer = setTimeout(decide, 5_000);
     };
 
     const reactToForeground = (fg: ForegroundWindow | null) => {
@@ -257,7 +284,11 @@ export function useAssistantBrain(opts: Options): AssistantBrainState {
       if (id && id !== lastForegroundRef.current) {
         lastForegroundRef.current = id;
         lastActivityRef.current = Date.now();
-        if (Math.random() < cfgRef.current.chattiness) onRemark?.('windowReact');
+        // Remark only outside deep focus, and rarely — purposeful, not chatty.
+        const act = getActivityState();
+        if (act.focusDepth !== 'deep' && Math.random() < cfgRef.current.chattiness * 0.4) {
+          onRemark?.('windowReact');
+        }
       }
     };
 
@@ -267,6 +298,28 @@ export function useAssistantBrain(opts: Options): AssistantBrainState {
       clearTimeout(timer);
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [width, height, dockTarget]);
+
+  // Approach intents from the suggestion engine (Slice D): walk beside the
+  // active window to deliver a suggestion, then the next decide() re-docks.
+  useEffect(() => {
+    const handler = () => {
+      void getForeground()
+        .then((fg) => {
+          if (!fg) return;
+          targetRef.current = clampToMonitors(
+            fg.x + fg.w - width - 8,
+            Math.max(fg.y + 48, 0),
+            width,
+            height,
+            monitorsRef.current,
+          );
+          setMode('approach');
+        })
+        .catch(() => {});
+    };
+    window.addEventListener('metu:assistant-approach', handler);
+    return () => window.removeEventListener('metu:assistant-approach', handler);
   }, [width, height]);
 
   // ── Idle nudge loop ──────────────────────────────────────────────────────
