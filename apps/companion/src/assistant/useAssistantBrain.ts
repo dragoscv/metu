@@ -51,6 +51,7 @@ import {
   createBody,
   DEFAULT_PHYSICS,
   FOOT_OFFSET,
+  hop,
   navigateTo,
   step,
   type LocomotionState,
@@ -337,6 +338,8 @@ export function useAssistantBrain(opts: Options): AssistantBrainState {
         const act = getActivityState();
         if (act.focusDepth !== 'deep' && Math.random() < cfgRef.current.chattiness * 0.4) {
           onRemark?.('windowReact');
+          // A small excited hop when it pipes up — body language sells it.
+          hop(bodyRef.current, physicsRef.current);
         }
       }
     };

@@ -11,6 +11,9 @@
  */
 import { useEffect, useRef } from 'react';
 import * as THREE from 'three';
+import { getCurrentWindow } from '@tauri-apps/api/window';
+import { isTauri } from '../state/runtime';
+import { getCursor } from '../assistant/spatial';
 import type { AvatarDriveProps } from './types';
 import {
   buildMetuRig,
@@ -85,6 +88,40 @@ export function MetuStage({
     let raf = 0;
     let lastFrame = 0;
     let yaw = 0;
+    let lastLoco: MetuMotion = 'idle';
+    /** Seconds remaining of landing squash (set on fall→ground transition). */
+    let squash = 0;
+    let lastT = 0;
+    // Cursor curiosity: poll the native cursor at 4Hz while idle and derive
+    // a clamped gaze offset relative to the window center.
+    let look: { x: number; y: number } | null = null;
+    let cursorTimer: ReturnType<typeof setInterval> | null = null;
+    if (isTauri()) {
+      cursorTimer = setInterval(() => {
+        const loco = (driveRef.current.locomotion ?? 'idle') as MetuMotion;
+        if (loco !== 'idle' || driveRef.current.state !== 'idle') {
+          look = null;
+          return;
+        }
+        void Promise.all([getCursor(), getCurrentWindow().outerPosition()])
+          .then(([cur, pos]) => {
+            if (!cur) {
+              look = null;
+              return;
+            }
+            const cx = pos.x + (size * (window.devicePixelRatio || 1)) / 2;
+            const cy = pos.y + (size * (window.devicePixelRatio || 1)) / 2;
+            // Normalize by ~a half-monitor of distance; clamp to [-1, 1].
+            look = {
+              x: Math.max(-1, Math.min(1, (cur.x - cx) / 900)),
+              y: Math.max(-1, Math.min(1, (cur.y - cy) / 700)),
+            };
+          })
+          .catch(() => {
+            look = null;
+          });
+      }, 250);
+    }
 
     const tick = (now: number) => {
       if (disposed) return;
@@ -99,6 +136,27 @@ export function MetuStage({
       lastFrame = now;
 
       const t = clock.getElapsedTime();
+      const dt = Math.min(t - lastT, 0.1);
+      lastT = t;
+
+      // Landing squash: falling/jumping → grounded triggers a brief
+      // squash-and-stretch (scaleY dip + scaleX bulge, 180ms recover).
+      if (
+        (lastLoco === 'falling' || lastLoco === 'jumping') &&
+        (loco === 'idle' || loco === 'walking')
+      ) {
+        squash = 0.18;
+      }
+      lastLoco = loco;
+      if (squash > 0) {
+        squash = Math.max(0, squash - dt);
+        const k = squash / 0.18; // 1 → 0
+        const dip = Math.sin(k * Math.PI) * 0.18; // peak mid-squash
+        rig.root.scale.set(1 + dip * 0.6, 1 - dip, 1 + dip * 0.6);
+      } else {
+        rig.root.scale.set(1, 1, 1);
+      }
+
       let amp = 0;
       if (expr === 'speaking') {
         tryAttachAudio();
@@ -110,7 +168,7 @@ export function MetuStage({
         }
       }
 
-      poseMetu(rig, loco, expr, t, amp);
+      poseMetu(rig, loco, expr, t, amp, look);
 
       // Face travel direction while moving; face camera when stationary.
       const face = driveRef.current.facing ?? 1;
@@ -133,6 +191,7 @@ export function MetuStage({
     return () => {
       disposed = true;
       cancelAnimationFrame(raf);
+      if (cursorTimer) clearInterval(cursorTimer);
       scene.remove(rig.root);
       disposeMetuRig(rig);
       renderer.dispose();

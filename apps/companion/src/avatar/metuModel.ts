@@ -246,6 +246,8 @@ export function poseMetu(
   expression: MetuExpression,
   t: number,
   amp = 0,
+  /** Optional gaze target in [-1..1] screen-relative offsets (idle only). */
+  look?: { x: number; y: number } | null,
 ): void {
   const { hips, torso, head, armL, armR, forearmL, forearmR, legL, legR, shinL, shinR } = rig;
 
@@ -255,6 +257,7 @@ export function poseMetu(
   let headPitch = 0;
   let headYaw = 0;
   let headRoll = 0;
+  torso.rotation.y = 0; // reset gaze-follow twist from previous frames
 
   switch (motion) {
     case 'walking': {
@@ -343,6 +346,12 @@ export function poseMetu(
         torsoPitch = Math.sin(t * 2.4) * 0.02;
         armR.rotation.x = 0.2 + Math.sin(t * 3.1) * 0.18;
         forearmR.rotation.x = -0.6 + Math.sin(t * 3.7) * 0.2;
+      } else if (look) {
+        // Cursor curiosity: follow the user's mouse with head (and a hint
+        // of torso). look.x/y are clamped screen-relative offsets.
+        headYaw = look.x * 0.55;
+        headPitch = look.y * 0.3;
+        torso.rotation.y = look.x * 0.12;
       } else {
         headYaw = Math.sin(t * 0.35) * 0.1; // slow curious look-around
       }
@@ -357,8 +366,26 @@ export function poseMetu(
   head.rotation.z = headRoll;
 
   // Voice-reactive glow: visor + chest core pulse with amplitude.
-  const glow = 1.2 + amp * 2.2 + (expression === 'speaking' ? Math.sin(t * 10) * 0.25 : 0);
-  rig.visorMat.emissiveIntensity = glow;
+  // Visor patterns per expression:
+  //   speaking  → amplitude-driven pulse
+  //   thinking  → slow scan (saw-tooth sweep, like processing)
+  //   listening → steady bright (full attention)
+  //   idle      → soft breathing glow
+  let visor: number;
+  switch (expression) {
+    case 'speaking':
+      visor = 1.2 + amp * 2.2 + Math.sin(t * 10) * 0.25;
+      break;
+    case 'thinking':
+      visor = 0.8 + ((t * 1.4) % 1) * 1.2; // rising sweep, snaps back
+      break;
+    case 'listening':
+      visor = 2.2;
+      break;
+    default:
+      visor = 1.1 + (Math.sin(t * 1.6) * 0.5 + 0.5) * 0.3;
+  }
+  rig.visorMat.emissiveIntensity = visor;
   rig.coreMat.emissiveIntensity = 1.6 + amp * 1.6;
 }
 
