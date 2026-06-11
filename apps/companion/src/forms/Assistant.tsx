@@ -21,7 +21,7 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import { invoke } from '@tauri-apps/api/core';
 import { listen } from '@tauri-apps/api/event';
 import { getCurrentWindow, PhysicalPosition } from '@tauri-apps/api/window';
-import { loadAuth, type AuthState } from '../state/auth';
+import { ensureFreshAuth, loadAuth, type AuthState } from '../state/auth';
 import { isTauri } from '../state/runtime';
 import { useVoiceSession } from '../state/useVoiceSession';
 import { useWakeWord } from '../state/useWakeWord';
@@ -797,14 +797,19 @@ function AssistantSkin({
           // EOD wrap doubles as continuity memory: tomorrow-me (and the
           // morning brief) recalls exactly where today ended.
           if (skill === 'eod_wrap' && text) {
-            void fetch(`${auth.apiBase}/api/sdk/v1/companion/memory`, {
-              method: 'POST',
-              headers: {
-                'content-type': 'application/json',
-                authorization: `Bearer ${auth.accessToken}`,
-              },
-              body: JSON.stringify({ kind: 'continuity', statement: text.slice(0, 2_000) }),
-            }).catch(() => {});
+            void ensureFreshAuth(auth)
+              .then((fresh) => {
+                const a = fresh ?? auth;
+                return fetch(`${a.apiBase}/api/sdk/v1/companion/memory`, {
+                  method: 'POST',
+                  headers: {
+                    'content-type': 'application/json',
+                    authorization: `Bearer ${a.accessToken}`,
+                  },
+                  body: JSON.stringify({ kind: 'continuity', statement: text.slice(0, 2_000) }),
+                });
+              })
+              .catch(() => {});
           }
         })
         .catch((err: unknown) => {

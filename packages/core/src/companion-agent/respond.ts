@@ -114,6 +114,11 @@ export interface RespondLocalResult {
   toolCallNames: string[];
 }
 
+/** Strip the CHIPS trailer for consumers that don't render chips. */
+function stripChipsTrailer(text: string): string {
+  return text.replace(/\n?CHIPS:\s*\[[\s\S]*?\]\s*$/, '').trimEnd();
+}
+
 export async function respondLocal(input: CompanionTurnInput): Promise<RespondLocalResult> {
   const { model } = await getModel({
     workspaceId: input.workspaceId,
@@ -137,7 +142,7 @@ export async function respondLocal(input: CompanionTurnInput): Promise<RespondLo
   });
 
   return {
-    text: result.text.trim() || 'Mm-hm.',
+    text: stripChipsTrailer(result.text.trim()) || 'Mm-hm.',
     toolCallNames,
   };
 }

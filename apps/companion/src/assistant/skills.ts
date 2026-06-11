@@ -39,7 +39,13 @@ export const SKILL_ACKS: Record<SkillId, string> = {
  */
 export function splitChips(full: string): { text: string; chips: string[] } {
   const m = /\nCHIPS:\s*(\[[\s\S]*?\])\s*$/.exec(full);
-  if (!m) return { text: full.trim(), chips: [] };
+  if (!m) {
+    // Mid-stream: a partially-arrived trailer ("\nCHIPS: [\"Fi…") must not
+    // flash raw JSON in the bubble — hide the incomplete line.
+    const partial = /\nCHIPS:[\s\S]*$/.exec(full);
+    if (partial) return { text: full.slice(0, partial.index).trim(), chips: [] };
+    return { text: full.trim(), chips: [] };
+  }
   let chips: string[] = [];
   try {
     const arr: unknown = JSON.parse(m[1]!);

@@ -36,6 +36,19 @@ const DEFAULT_ALLOWLIST = [
 
 /** Never executable through metu, even if the user allowlists them. */
 const DENYLIST = new Set([
+  // Shell interpreters: running these would nest ARBITRARY commands and
+  // make the rest of this denylist meaningless (`cmd /c del …`). The
+  // terminal lane is for direct tools (git/pnpm/docker), not shells.
+  'cmd',
+  'powershell',
+  'pwsh',
+  'bash',
+  'sh',
+  'zsh',
+  'wsl',
+  'cscript',
+  'wscript',
+  'mshta',
   'format',
   'diskpart',
   'cipher',

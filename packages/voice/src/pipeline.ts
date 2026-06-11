@@ -16,6 +16,11 @@
 import type { Off, STTProvider, TTSProvider, VoiceSessionEvent } from './types';
 import type { MetuTtsProxyOpts } from './tts-proxy';
 
+/** Strip the Jarvis v3 `CHIPS: [...]` trailer — UI affordance, never spoken. */
+function stripChips(text: string): string {
+  return text.replace(/\n?CHIPS:\s*\[[\s\S]*?\]\s*$/, '').trimEnd();
+}
+
 export interface PipelineSessionOpts {
   apiBase: string;
   accessToken: string;
@@ -178,17 +183,17 @@ export function createPipelineSession(opts: PipelineSessionOpts): PipelineSessio
           } else if (parsed.type === 'delta' && parsed.text) {
             accumulated += parsed.text;
             pendingForTts += parsed.text;
-            emit({ type: 'partial', text: accumulated });
+            emit({ type: 'partial', text: stripChips(accumulated) });
             const flush = takeSentenceBoundary(pendingForTts);
             if (flush.flushed) {
               pendingForTts = flush.tail;
-              void speak(flush.flushed);
+              void speak(stripChips(flush.flushed));
             }
           } else if (parsed.type === 'final') {
-            const tail = (parsed.text ?? '').slice(accumulated.length) + pendingForTts;
+            const tail = stripChips((parsed.text ?? '').slice(accumulated.length) + pendingForTts);
             if (tail.trim()) void speak(tail);
             pendingForTts = '';
-            const finalText = parsed.text ?? accumulated;
+            const finalText = stripChips(parsed.text ?? accumulated);
             history.push({ role: 'user', content: transcript });
             history.push({ role: 'assistant', content: finalText });
             while (history.length > 24) history.shift();

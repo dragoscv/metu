@@ -112,6 +112,8 @@ export const memoryConsolidation = inngest.createFunction(
     const decayed = await step.run('decay-raw-activity', async () => {
       const db = getDb();
       const cutoffOld = new Date(Date.now() - 14 * 24 * 60 * 60 * 1000);
+      // workspace-scope-ignore: tenant-wide cron purge by design (same
+      // pattern as memory-janitor); filtered to distiller-origin chunks.
       const deleted = await db
         .delete(memoryChunk)
         .where(
