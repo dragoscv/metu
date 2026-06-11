@@ -14,10 +14,11 @@
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
+    "@metu/presence": "workspace:*",
     "@metu/protocol": "workspace:*",
     "@metu/sdk": "workspace:*",
     "@metu/voice": "workspace:*",
-    "@metu/presence": "workspace:*",
+    "@pixiv/three-vrm": "catalog:",
     "@tauri-apps/api": "^2.1.1",
     "@tauri-apps/plugin-clipboard-manager": "^2.2.0",
     "@tauri-apps/plugin-deep-link": "^2.2.0",
@@ -28,11 +29,12 @@
     "@tauri-apps/plugin-shell": "^2.2.0",
     "@tauri-apps/plugin-store": "^2.2.0",
     "@tauri-apps/plugin-updater": "^2.2.0",
-    "@pixiv/three-vrm": "catalog:",
     "framer-motion": "catalog:",
-    "three": "catalog:",
     "react": "catalog:",
-    "react-dom": "catalog:"
+    "react-dom": "catalog:",
+    "react-markdown": "^10.1.0",
+    "remark-gfm": "^4.0.1",
+    "three": "catalog:"
   },
   "devDependencies": {
     "@metu/config": "workspace:*",

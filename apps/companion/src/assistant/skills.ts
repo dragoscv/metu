@@ -207,6 +207,40 @@ export async function runSkill(
   return full;
 }
 
+// ── Image generation (Jarvis v4): "draw/imagine …" → inline image card ────
+
+export async function generateImage(auth: AuthState, prompt: string): Promise<{ src: string }> {
+  const fresh = (await ensureFreshAuth(auth)) ?? auth;
+  const res = await fetch(`${fresh.apiBase.replace(/\/$/, '')}/api/sdk/v1/companion/image`, {
+    method: 'POST',
+    headers: {
+      'content-type': 'application/json',
+      authorization: `Bearer ${fresh.accessToken}`,
+    },
+    body: JSON.stringify({ prompt }),
+  });
+  const json = (await res.json().catch(() => null)) as {
+    ok?: boolean;
+    dataUri?: string;
+    url?: string;
+    message?: string;
+    error?: string;
+  } | null;
+  if (!res.ok || !json?.ok) {
+    throw new Error(
+      json?.message ??
+        (res.status === 402
+          ? 'Budget reached.'
+          : res.status === 409
+            ? 'No codai key configured for images.'
+            : `Image generation failed (${res.status}).`),
+    );
+  }
+  const src = json.dataUri ?? json.url;
+  if (!src) throw new Error('Empty image response.');
+  return { src };
+}
+
 // ── Act skill: instruction → ONE confirmed UIA action ─────────────────────
 
 export interface ActStep {

@@ -12,6 +12,7 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import { writeText, readText } from '@tauri-apps/plugin-clipboard-manager';
 import { isTauri } from '../state/runtime';
 import type { ChatMessage, ChatStatus } from './useAssistantChat';
+import { RichMessage } from './RichMessage';
 
 /** Clipboard write that works in both Tauri (plugin) and browser dev. */
 async function copyText(text: string): Promise<void> {
@@ -52,6 +53,7 @@ export function ChatPanel({
   onClear,
   onClose,
   onDragPointerDown,
+  apiBase,
 }: {
   messages: ChatMessage[];
   status: ChatStatus;
@@ -62,6 +64,8 @@ export function ChatPanel({
   onClose: () => void;
   /** Press-and-drag on the header repositions the assistant window. */
   onDragPointerDown?: (e: React.PointerEvent) => void;
+  /** Console base URL for entity/link cards in rich messages. */
+  apiBase?: string;
 }) {
   const [draft, setDraft] = useState('');
   const threadRef = useRef<HTMLDivElement | null>(null);
@@ -162,14 +166,20 @@ export function ChatPanel({
             className={`msg msg--${m.role}${m.error ? 'msg--error' : ''}`}
             onContextMenu={(e) => openMenu(e, m)}
           >
-            {m.content && <div className="msg__body">{m.content}</div>}
-            {m.pending && !m.content && (
+            {m.content && (
               <div className="msg__body">
-                <span className="bubble__dots" aria-label="thinking">
-                  <i />
-                  <i />
-                  <i />
-                </span>
+                {m.role === 'assistant' ? (
+                  <RichMessage text={m.content} apiBase={apiBase} />
+                ) : (
+                  m.content
+                )}
+              </div>
+            )}
+            {m.pending && !m.content && (
+              <div className="msg__body msg__body--skeleton" aria-label="thinking">
+                <span className="msg__skel" style={{ width: '82%' }} />
+                <span className="msg__skel" style={{ width: '64%' }} />
+                <span className="msg__skel" style={{ width: '45%' }} />
               </div>
             )}
             {m.error && <div className="msg__error">{m.error}</div>}

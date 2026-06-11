@@ -38,6 +38,7 @@ import {
 } from '../assistant/activityModel';
 import {
   executeActPlan,
+  generateImage,
   planAct,
   planSteps,
   runSkill,
@@ -94,7 +95,10 @@ import { open as openUrl } from '@tauri-apps/plugin-shell';
 
 /** Logical window size — must match the `assistant` window in tauri.conf.json. */
 const WIN_W = 380;
-const WIN_H = 560;
+// 720 gives the bubble real headroom above the ~220px avatar — replies
+// GROW instead of scrolling (the transparent click-through window makes
+// the extra height free; the avatar stays planted by the feet math).
+const WIN_H = 720;
 const DRAG_THRESHOLD_PX = 6;
 
 export function PresenceAssistant() {
@@ -738,8 +742,17 @@ function AssistantSkin({
                 setAmbient(null);
                 playGesture('typing', steps.length * 1500);
                 executeActPlan(plan, (done, total, step) =>
+                  // Live checklist — RichMessage renders GFM task lists.
                   setChatBubble(
-                    `Step ${done + 1}/${total} — ${step.action === 'invoke' ? 'clicking' : 'filling'} "${step.name}"…`,
+                    steps
+                      .map((s, j) =>
+                        j < done
+                          ? `- [x] ${s.action === 'invoke' ? 'click' : 'fill'} "${s.name}"`
+                          : j === done
+                            ? `- [ ] **${step.action === 'invoke' ? 'clicking' : 'filling'} "${step.name}"…**`
+                            : `- [ ] ${s.action === 'invoke' ? 'click' : 'fill'} "${s.name}"`,
+                      )
+                      .join('\n'),
                   ),
                 )
                   .then(({ verified }) => {
@@ -853,7 +866,9 @@ function AssistantSkin({
         .then((res) => {
           const out = (res.stdout || res.stderr || '(no output)').trim();
           const tail = out.length > 900 ? `…${out.slice(-900)}` : out;
-          setChatBubble(res.exitCode === 0 ? tail : `Exit ${res.exitCode ?? '?'}:\n${tail}`);
+          // Render as a code card (RichMessage) — monospace + copy button.
+          const fenced = `\`\`\`shell\n${tail}\n\`\`\``;
+          setChatBubble(res.exitCode === 0 ? fenced : `**Exit ${res.exitCode ?? '?'}**\n${fenced}`);
           playGesture(res.exitCode === 0 ? 'nod' : 'shrug');
         })
         .catch((err: unknown) => {
@@ -879,6 +894,31 @@ function AssistantSkin({
       },
     });
   }, []);
+
+  /** Image generation lane: "draw/imagine <prompt>" → inline image card. */
+  const fireImage = useCallback(
+    (prompt: string) => {
+      if (!auth) return;
+      setUnreadReply(null);
+      setDynamicChips([]);
+      setSkillBusy(true);
+      setChatBubble(`Imagining "${prompt.slice(0, 60)}"…`);
+      playGesture('typing', 6000);
+      generateImage(auth, prompt)
+        .then(({ src }) => {
+          // RichMessage renders the markdown image as a card w/ shimmer+zoom.
+          setChatBubble(`![${prompt.slice(0, 80)}](${src})`);
+          setDynamicChips(['Draw another variation', 'Make it more detailed']);
+          playGesture('celebrate');
+        })
+        .catch((err: unknown) => {
+          setChatBubble(err instanceof Error ? err.message : 'Image generation failed.');
+          playGesture('shrug');
+        })
+        .finally(() => setSkillBusy(false));
+    },
+    [auth],
+  );
 
   // The assistant window is created with `focus: false` (it must never steal
   // focus while ambient). Opening the chat is an explicit user action, so we
@@ -987,6 +1027,15 @@ function AssistantSkin({
           fireTerminal(runMatch[1]);
           return;
         }
+        // "draw/imagine/generate an image of …" → image lane.
+        const drawMatch =
+          /^(?:draw|imagine|generate (?:an? )?(?:image|picture|photo)(?: of)?)\s+(.+)$/i.exec(
+            text.trim(),
+          );
+        if (drawMatch?.[1]) {
+          fireImage(drawMatch[1]);
+          return;
+        }
         // "do <instruction>" → act skill (plan → confirm → UIA execute).
         const doMatch = /^(?:do|click|press|type|fill|select|open tab)\b/i.test(text.trim());
         if (doMatch) {
@@ -1053,12 +1102,23 @@ function AssistantSkin({
                 fireTerminal(m[1]);
                 return;
               }
+              // "draw …" → image lane (closes panel; result is a bubble card).
+              const d =
+                /^(?:draw|imagine|generate (?:an? )?(?:image|picture|photo)(?: of)?)\s+(.+)$/i.exec(
+                  t.trim(),
+                );
+              if (d?.[1]) {
+                setChatOpen(false);
+                fireImage(d[1]);
+                return;
+              }
               void chat.send(t);
             }}
             onStop={chat.stop}
             onClear={chat.clear}
             onClose={() => setChatOpen(false)}
             onDragPointerDown={onBodyPointerDown}
+            apiBase={auth?.apiBase}
           />
         </div>
       ) : (
@@ -1080,6 +1140,7 @@ function AssistantSkin({
                 onQuickReply={workingBubble ? undefined : quickReply}
                 suggestions={bubbleSuggestions}
                 onOpenChat={auth ? () => setChatOpen(true) : undefined}
+                apiBase={auth?.apiBase}
               />
             </div>
           )}

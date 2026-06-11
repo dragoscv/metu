@@ -6,6 +6,7 @@
  *                      without opening the full chat panel.
  */
 import { useEffect, useRef, useState } from 'react';
+import { RichMessage } from './RichMessage';
 
 export interface BubbleAction {
   label: string;
@@ -24,6 +25,7 @@ export function SpeechBubble({
   onQuickReply,
   suggestions,
   onOpenChat,
+  apiBase,
 }: {
   text: string;
   ttlMs: number;
@@ -41,6 +43,8 @@ export function SpeechBubble({
   suggestions?: string[];
   /** Expand to the full chat panel. */
   onOpenChat?: () => void;
+  /** Console base URL — enables markdown entity/link cards. */
+  apiBase?: string;
 }) {
   const [draft, setDraft] = useState('');
   const [replying, setReplying] = useState(false);
@@ -86,7 +90,7 @@ export function SpeechBubble({
         ✕
       </button>
       <span className="bubble__text">
-        {text}
+        <RichMessage text={text} apiBase={apiBase} />
         {pending && (
           <span className="bubble__dots" aria-label="thinking">
             <i />
