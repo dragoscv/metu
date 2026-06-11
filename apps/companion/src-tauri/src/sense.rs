@@ -516,9 +516,23 @@ pub async fn sense_search<R: Runtime>(
     app: AppHandle<R>,
     args: SenseSearchArgs,
 ) -> Result<Vec<SenseHit>, String> {
-    crate::caps::require("screenshot")?;
+    // No capability gate: this reads back text the sense engine itself
+    // captured under the user's privacy gates (pause/blocklist/password
+    // detection). Gating on "screenshot" made the whole history dead by
+    // default because METU_CAPABILITIES is unset in normal installs.
     let conn = open_db(&app)?;
     let limit = args.limit.unwrap_or(20).min(100);
+    // FTS5 MATCH has operator syntax ('-', NEAR, quotes…) that errors on
+    // raw user text. Quote each term so any input is a plain AND query.
+    let fts_query = args
+        .query
+        .split_whitespace()
+        .map(|t| format!("\"{}\"", t.replace('"', "")))
+        .collect::<Vec<_>>()
+        .join(" ");
+    if fts_query.is_empty() {
+        return Ok(vec![]);
+    }
     let mut stmt = conn
         .prepare(
             "SELECT f.ts, f.app, f.title,
@@ -530,7 +544,7 @@ pub async fn sense_search<R: Runtime>(
         )
         .map_err(|e| format!("search_prepare: {e}"))?;
     let rows = stmt
-        .query_map(rusqlite::params![args.query, limit], |r| {
+        .query_map(rusqlite::params![fts_query, limit], |r| {
             Ok(SenseHit {
                 ts: r.get(0)?,
                 app: r.get(1)?,

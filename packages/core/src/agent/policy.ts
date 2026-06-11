@@ -140,6 +140,22 @@ async function approvalStreak(workspaceId: string, toolName: string): Promise<nu
 }
 
 /**
+ * Apply the session-grant softening to an EXPLICIT tool_acl `ask` row.
+ * A user-set ask is intentional, so earned-autonomy does NOT apply here —
+ * only an explicit time-boxed grant ("act freely for 4h") overrides it.
+ * FORCE_ASK tools never soften.
+ */
+async function softenExplicitAsk(
+  workspaceId: string,
+  toolName: string,
+  mode: AutonomyMode,
+): Promise<AutonomyMode> {
+  if (mode !== 'ask' || FORCE_ASK_TOOLS.has(toolName)) return mode;
+  if (await hasActiveGrant(workspaceId, toolName)) return 'auto_with_undo';
+  return mode;
+}
+
+/**
  * Once MTD spend crosses this fraction of `workspace.monthlyCostCapUsd`,
  * autopilot/auto_with_undo on mutating tools is bumped down to `ask`.
  * Read-only tools are unaffected.
@@ -177,7 +193,7 @@ export async function resolveAcl(
         ),
       )
       .limit(1);
-    if (scoped) return scoped.mode as AutonomyMode;
+    if (scoped) return softenExplicitAsk(workspaceId, toolName, scoped.mode as AutonomyMode);
   }
 
   const [override] = await db
@@ -191,7 +207,7 @@ export async function resolveAcl(
       ),
     )
     .limit(1);
-  if (override) return override.mode as AutonomyMode;
+  if (override) return softenExplicitAsk(workspaceId, toolName, override.mode as AutonomyMode);
 
   const [policy] = await db
     .select({ defaultMode: agentPolicy.defaultMode })

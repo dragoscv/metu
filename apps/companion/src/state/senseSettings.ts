@@ -30,6 +30,7 @@ export async function loadBlocklist(): Promise<string[]> {
 }
 
 export async function saveBlocklist(apps: string[]): Promise<void> {
+  if (!isTauri()) return;
   const s = await getStore();
   await s.set(BLOCKLIST_KEY, apps);
   await s.save();
@@ -43,6 +44,7 @@ export async function loadWatchPaused(): Promise<boolean> {
 }
 
 export async function saveWatchPaused(paused: boolean): Promise<void> {
+  if (!isTauri()) return;
   const s = await getStore();
   await s.set(PAUSED_KEY, paused);
   await s.save();
