@@ -31,7 +31,16 @@ export function MetuStage({
   facing,
   size = 220,
   audioEl,
-}: AvatarDriveProps & { paletteId: string }) {
+  anchor = false,
+}: AvatarDriveProps & {
+  paletteId: string;
+  /**
+   * Only the MAIN desktop stage reports the foot anchor. Previews (chat
+   * panel 72px, Avatar studio 220px in another window) must NOT — their
+   * measurements would corrupt the physics alignment.
+   */
+  anchor?: boolean;
+}) {
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
   const driveRef = useRef({ state, locomotion, facing, audioEl });
   driveRef.current.state = state;
@@ -65,14 +74,16 @@ export function MetuStage({
     const rig = buildMetuRig(getMetuPalette(paletteId));
     scene.add(rig.root);
 
-    // Measure the foot anchor: project the model's feet (y=0 in rig space)
-    // to canvas coordinates, then convert to "distance from the window
-    // bottom" in logical px. Re-measured on mount (layout/canvas/camera
-    // are stable afterwards; squash scaling never moves the feet).
+    // Measure the foot anchor from the ACTUAL mesh bottom (Box3 min in the
+    // neutral pose) — NOT rig y=0: the foot boxes bottom out at y≈0.057 in
+    // rig space, so projecting y=0 made the whole character hover. Only
+    // the main desktop stage reports (previews would corrupt the value).
     const measureFeet = () => {
-      const v = new THREE.Vector3(0, 0, 0); // feet in world space
+      if (!anchor) return;
+      poseMetu(rig, 'idle', 'idle', 0, 0); // deterministic neutral pose
+      const box = new THREE.Box3().setFromObject(rig.root);
+      const v = new THREE.Vector3(0, box.min.y, 0);
       v.project(camera);
-      // NDC y → canvas px (top-left origin).
       const feetCanvasY = ((1 - v.y) / 2) * size;
       const rect = canvas.getBoundingClientRect();
       const feetViewportY = rect.top + (feetCanvasY / size) * rect.height;
@@ -80,7 +91,7 @@ export function MetuStage({
       reportFootOffset(offset);
     };
     // Layout settles a tick after mount.
-    const measureTimer = setTimeout(measureFeet, 100);
+    const measureTimer = setTimeout(measureFeet, 120);
 
     // Voice amplitude via WebAudio analyser on the shared element.
     let analyser: AnalyserNode | null = null;
@@ -217,6 +228,8 @@ export function MetuStage({
       renderer.dispose();
       void audioCtx?.close().catch(() => {});
     };
+    // `anchor` is static per mount — intentionally omitted from deps.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [paletteId, size]);
 
   return <canvas ref={canvasRef} style={{ display: 'block', width: size, height: size }} />;

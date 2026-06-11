@@ -16,7 +16,7 @@ import { MetuStage } from './MetuStage';
 import { useAvatarSelection } from './useAvatarSelection';
 import { resolveVrmUrl } from './vrmPresets';
 
-export function AvatarHost(props: AvatarDriveProps) {
+export function AvatarHost(props: AvatarDriveProps & { anchor?: boolean }) {
   const { selection, customVrmUrl } = useAvatarSelection();
   const [vrmStatus, setVrmStatus] = useState<VrmStatus>('loading');
   const [glbStatus, setGlbStatus] = useState<VrmStatus>('loading');
@@ -41,11 +41,16 @@ export function AvatarHost(props: AvatarDriveProps) {
   return (
     <div style={{ position: 'relative', width: props.size, height: props.size }}>
       {showMetu ? (
-        <MetuStage {...props} paletteId={selection.metuPaletteId} />
+        <MetuStage {...props} paletteId={selection.metuPaletteId} anchor={props.anchor} />
       ) : showVrm ? (
         <VrmStage {...props} modelUrl={vrmUrl} onStatus={setVrmStatus} />
       ) : showGlb ? (
-        <GlbStage {...props} presetId={selection.glbPresetId} onStatus={setGlbStatus} />
+        <GlbStage
+          {...props}
+          presetId={selection.glbPresetId}
+          onStatus={setGlbStatus}
+          anchor={props.anchor}
+        />
       ) : showFace ? (
         <FaceAvatar {...props} presetId={selection.facePresetId} />
       ) : (

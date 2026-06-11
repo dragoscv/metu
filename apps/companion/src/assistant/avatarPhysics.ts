@@ -171,9 +171,13 @@ export function step(
       // catch us on whatever is below; classic platformer).
       const support = world.groundBelow(nextX, body.y - 4);
       if (!support || support.y > body.y + 6) {
-        // Try a hop first if the goal is roughly level/above and the gap
-        // is small — feels livelier than always falling.
-        if (goal.y <= body.y + 40) {
+        // Hop the gap ONLY when a landing platform verifiably exists at
+        // roughly this height within hop range — blind edge-hops with no
+        // landing looked like nervous bouncing at platform edges.
+        const hopRange = 160;
+        const landing = world.groundBelow(body.x + dir * hopRange, body.y + 24);
+        const canHop = !!landing && Math.abs(landing.y - body.y) <= 48;
+        if (canHop && goal.y <= body.y + 40) {
           body.vy = -cfg.jumpVelocity * 0.7;
           body.state = 'jumping';
           body.ground = null;
@@ -259,19 +263,26 @@ export function step(
 
 /** Start navigating to a feet-coordinate goal. */
 export function navigateTo(body: AvatarBody, x: number, y: number): void {
-  // Ignore goals that are (within tolerance) where we already stand —
-  // re-issued dock targets otherwise cause twitchy micro-walks.
+  // Dedupe 1: settled close enough already (idle or sitting) → ignore.
+  // The horizontal tolerance must be comfortably ABOVE the director's
+  // re-dock hysteresis floor so the two layers never fight.
   if (
     body.goal === null &&
-    body.state === 'idle' &&
-    Math.abs(x - body.x) <= 28 &&
-    Math.abs(y - body.y) <= 60
+    (body.state === 'idle' || body.state === 'sitting') &&
+    Math.abs(x - body.x) <= 48 &&
+    Math.abs(y - body.y) <= 80
   ) {
+    return;
+  }
+  // Dedupe 2: already navigating to (almost) the same place → keep the
+  // current goal object; replacing it re-triggered arrival logic and
+  // caused direction flips mid-walk.
+  if (body.goal && Math.abs(body.goal.x - x) <= 8 && Math.abs(body.goal.y - y) <= 8) {
     return;
   }
   body.goal = { x, y };
   body.goalJumps = 0;
-  if (body.state === 'idle') body.state = 'walking';
+  if (body.state === 'idle' || body.state === 'sitting') body.state = 'walking';
 }
 
 /** Cancel any navigation (e.g. user grabbed the window). */

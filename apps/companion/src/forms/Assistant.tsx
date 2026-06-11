@@ -846,6 +846,7 @@ function AssistantSkin({
               audioEl={audioEl}
               locomotion={locomotion}
               facing={facing}
+              anchor
             />
             {unreadReply && !bubbleText && (
               <button

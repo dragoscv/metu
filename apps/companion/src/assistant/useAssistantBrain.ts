@@ -322,12 +322,17 @@ export function useAssistantBrain(opts: Options): AssistantBrainState {
           const fg = await getForeground().catch(() => null);
           reactToForeground(fg);
           const dock = dockTarget(fg);
-          const dockKey = `${dock.x},${dock.y}`;
-          const atDock = Math.hypot(posRef.current.x - dock.x, posRef.current.y - dock.y) < 24;
-          if (dockKey !== lastDockKey || !atDock) {
-            // Re-dock only when the dock actually moved (monitor change)
-            // or we're away from it (e.g. after a point/approach).
-            lastDockKey = dockKey;
+          // Hysteresis: the physics ARRIVE_EPS is 24px, so a 24px re-dock
+          // threshold made the director and the integrator fight forever
+          // (settle 25px off → re-dock → micro-walk → tiny hop → repeat:
+          // THE idle wiggle). Re-dock only when meaningfully away (>90px)
+          // or the dock itself moved (>40px: monitor switch / taskbar
+          // change / foot-anchor re-measure).
+          const distToDock = Math.hypot(posRef.current.x - dock.x, posRef.current.y - dock.y);
+          const [lx, ly] = lastDockKey.split(',').map(Number);
+          const dockMoved = !lastDockKey || Math.hypot(dock.x - (lx || 0), dock.y - (ly || 0)) > 40;
+          if (dockMoved || distToDock > 90) {
+            lastDockKey = `${dock.x},${dock.y}`;
             targetRef.current = dock;
           }
           setMode(act.focusDepth === 'deep' ? 'retreat' : 'docked');

@@ -26,7 +26,13 @@ export function GlbStage({
   facing,
   size = 220,
   onStatus,
-}: AvatarDriveProps & { presetId: string; onStatus?: (s: VrmStatus) => void }) {
+  anchor = false,
+}: AvatarDriveProps & {
+  presetId: string;
+  onStatus?: (s: VrmStatus) => void;
+  /** Only the main desktop stage reports the foot anchor (see footAnchor.ts). */
+  anchor?: boolean;
+}) {
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
   const driveRef = useRef({ state, locomotion, facing });
   driveRef.current.state = state;
@@ -134,7 +140,7 @@ export function GlbStage({
         // canvas, convert to distance-from-window-bottom (logical px) so
         // the physics puts these feet exactly on platforms.
         setTimeout(() => {
-          if (disposed || !root) return;
+          if (disposed || !root || !anchor) return;
           const fitBox = new THREE.Box3().setFromObject(root);
           const feet = new THREE.Vector3(0, fitBox.min.y, 0);
           feet.project(camera);
