@@ -21,9 +21,11 @@ import {
   disposeMetuRig,
   getMetuPalette,
   poseMetu,
+  poseMetuFace,
   applyMetuGesture,
   type MetuMotion,
   type MetuGesture,
+  type MetuEmotion,
 } from './metuModel';
 import { TELEPORT_OUT_S, TELEPORT_IN_S } from '../assistant/avatarPhysics';
 
@@ -136,19 +138,29 @@ export function MetuStage({
           start: clock.getElapsedTime(),
           dur: Math.max(0.4, (d.durationMs ?? 1400) / 1000),
         };
+        const ge = GESTURE_EMOTION[d.gesture];
+        if (ge) setEmotion(ge, d.durationMs ?? 2200);
       }
     };
     window.addEventListener('metu:assistant-gesture', onGesture);
     // Idle variety: every 25–60s of uninterrupted idle, play a subtle
-    // life-sign gesture (stretch or look-around). Main stage only.
+    // life-sign (stretch, look-around, or — rarely — the antenna-spin
+    // party trick with a mischievous face). Main stage only.
+    let antennaSpin = 0; // seconds remaining of the spin trick
     let idleVarietyTimer: ReturnType<typeof setTimeout> | null = null;
     const scheduleIdleVariety = () => {
       idleVarietyTimer = setTimeout(
         () => {
           const loco = (driveRef.current.locomotion ?? 'idle') as MetuMotion;
           if (anchor && loco === 'idle' && driveRef.current.state === 'idle' && !gesture) {
-            const pick: MetuGesture = Math.random() < 0.5 ? 'stretch' : 'look-around';
-            gesture = { kind: pick, start: clock.getElapsedTime(), dur: 2.6 };
+            const r = Math.random();
+            if (r < 0.15) {
+              antennaSpin = 1.8;
+              setEmotion('mischievous', 2200);
+            } else {
+              const pick: MetuGesture = r < 0.55 ? 'stretch' : 'look-around';
+              gesture = { kind: pick, start: clock.getElapsedTime(), dur: 2.6 };
+            }
           }
           scheduleIdleVariety();
         },
@@ -165,6 +177,49 @@ export function MetuStage({
     let gaitPhase = 0;
     let gaitSpeed = 0; // current cadence (rad/s), eased toward the target
     const GAIT_CADENCE = 5.5; // rad/s ≈ 0.9 strides/s
+
+    // ── Face life (v4.2) ──────────────────────────────────────────────
+    // Blink scheduler: natural blinks every 3-7s, 12% double-blinks.
+    let blink = 0; // 0 open → 1 closed
+    let nextBlinkAt = clock.getElapsedTime() + 2 + Math.random() * 4;
+    let blinkPhase = -1; // -1 idle, else seconds into the blink
+    // Emotion: event-driven overlay decaying back to neutral.
+    let emotion: MetuEmotion = 'neutral';
+    let emotionUntil = 0;
+    const setEmotion = (e: MetuEmotion, ms: number) => {
+      emotion = e;
+      emotionUntil = clock.getElapsedTime() + ms / 1000;
+    };
+    const onEmotion = (ev: Event) => {
+      const d = (ev as CustomEvent<{ emotion: MetuEmotion; durationMs?: number }>).detail;
+      if (d?.emotion) setEmotion(d.emotion, d.durationMs ?? 3000);
+    };
+    window.addEventListener('metu:assistant-emotion', onEmotion);
+    // Gestures imply emotions — body and face agree without extra wiring.
+    const GESTURE_EMOTION: Partial<Record<MetuGesture, MetuEmotion>> = {
+      wave: 'happy',
+      celebrate: 'excited',
+      nod: 'happy',
+      shake: 'sad',
+      shrug: 'sad',
+      facepalm: 'sad',
+      dance: 'excited',
+      'look-around': 'curious',
+      salute: 'focused',
+      typing: 'focused',
+    };
+    // Sleep cycle: sitting long → sleepy → nod-off; any gesture/state wakes.
+    let sittingSince = 0;
+    // Micro-fidgets: tiny weight shifts / foot taps between the big idles.
+    let nextFidgetAt = clock.getElapsedTime() + 8 + Math.random() * 12;
+    let fidget: { kind: 'shift' | 'tap' | 'roll'; start: number } | null = null;
+    // Antenna spring: lags behind head motion (cheap verlet on 2 axes).
+    let antVx = 0;
+    let antVz = 0;
+    let antX = 0;
+    let antZ = 0;
+    let lastHeadX = 0;
+    let lastYaw = 0;
     // Cursor curiosity: poll the native cursor at 4Hz while idle and derive
     // a clamped gaze offset relative to the window center.
     let look: { x: number; y: number } | null = null;
@@ -277,6 +332,108 @@ export function MetuStage({
 
       poseMetu(rig, loco, expr, t, amp, look, gaitPhase);
 
+      // ── Face life (v4.2) ────────────────────────────────────────────
+      // Blink scheduler: triangular close→open over 140ms.
+      if (blinkPhase < 0 && t >= nextBlinkAt) blinkPhase = 0;
+      if (blinkPhase >= 0) {
+        blinkPhase += dt;
+        const D = 0.14;
+        blink = blinkPhase < D ? Math.sin((blinkPhase / D) * Math.PI) : 0;
+        if (blinkPhase >= D) {
+          blinkPhase = -1;
+          // 12% double-blink; otherwise 3-7s until the next.
+          nextBlinkAt = t + (Math.random() < 0.12 ? 0.22 : 3 + Math.random() * 4);
+        }
+      }
+      // Emotion decay + state-derived defaults when no event override.
+      if (emotion !== 'neutral' && t > emotionUntil) emotion = 'neutral';
+      let faceEmotion = emotion;
+      if (faceEmotion === 'neutral') {
+        if (expr === 'listening') faceEmotion = 'curious';
+        else if (expr === 'thinking') faceEmotion = 'focused';
+        else if (loco === 'sitting' && sittingSince > 0 && t - sittingSince > 40) {
+          faceEmotion = 'sleepy';
+        }
+      }
+      // Sleep cycle bookkeeping (sitting timer + nod-off head dip).
+      if (loco === 'sitting') {
+        if (sittingSince === 0) sittingSince = t;
+        if (t - sittingSince > 60) {
+          // Nod-off: slow dip, occasional snap back up.
+          const nod = Math.max(0, Math.sin(t * 0.35));
+          rig.head.rotation.x += nod * 0.22;
+        }
+      } else {
+        sittingSince = 0;
+      }
+      poseMetuFace(rig, faceEmotion, t, blink, amp, look);
+
+      // Micro-fidgets: subtle life between the big idle gestures.
+      if (loco === 'idle' && expr === 'idle' && !gesture) {
+        if (!fidget && t >= nextFidgetAt) {
+          const kinds = ['shift', 'tap', 'roll'] as const;
+          fidget = { kind: kinds[Math.floor(Math.random() * kinds.length)]!, start: t };
+        }
+        if (fidget) {
+          const k = (t - fidget.start) / 1.6;
+          if (k >= 1) {
+            fidget = null;
+            nextFidgetAt = t + 8 + Math.random() * 12;
+          } else {
+            const env = Math.sin(k * Math.PI);
+            if (fidget.kind === 'shift') {
+              rig.hips.position.x = env * 0.015;
+              rig.torso.rotation.z = env * 0.04;
+            } else if (fidget.kind === 'tap') {
+              rig.shinR.rotation.x += Math.abs(Math.sin(k * Math.PI * 6)) * 0.12 * env;
+            } else {
+              rig.armL.rotation.z += env * 0.12;
+              rig.armR.rotation.z -= env * 0.12;
+              rig.torso.rotation.x += env * -0.02;
+            }
+          }
+        }
+      } else {
+        fidget = null;
+        rig.hips.position.x = 0;
+      }
+
+      // Antenna spring: lag behind head yaw + horizontal motion.
+      const headX = rig.root.position.x + yaw; // proxy for travel+turn
+      const dHead = (headX - lastHeadX) / Math.max(dt, 0.001);
+      const dYaw = (yaw - lastYaw) / Math.max(dt, 0.001);
+      lastHeadX = headX;
+      lastYaw = yaw;
+      antVx += (-antX * 60 - antVx * 8 - dYaw * 0.05) * dt;
+      antVz += (-antZ * 60 - antVz * 8 - dHead * 0.02) * dt;
+      antX += antVx * dt;
+      antZ += antVz * dt;
+      rig.antenna.rotation.x = Math.max(-0.6, Math.min(0.6, antZ));
+      rig.antenna.rotation.z = Math.max(-0.6, Math.min(0.6, antX));
+      // Antenna-spin party trick (rare idle).
+      if (antennaSpin > 0) {
+        antennaSpin = Math.max(0, antennaSpin - dt);
+        rig.antenna.rotation.y += dt * 14 * Math.sin((antennaSpin / 1.8) * Math.PI);
+      } else {
+        rig.antenna.rotation.y *= 0.9;
+      }
+
+      // Thruster: flare while airborne / warping, ember otherwise.
+      const airborne = loco === 'jumping' || loco === 'falling' || loco === 'teleporting';
+      rig.thrusterMat.emissiveIntensity +=
+        ((airborne ? 4.5 + Math.sin(t * 30) * 1.2 : 0.25) - rig.thrusterMat.emissiveIntensity) *
+        Math.min(1, dt * 10);
+
+      // Fingers: point gestures extend; everything else relaxed half-curl.
+      const pointing =
+        gesture &&
+        (gesture.kind === 'point-left' ||
+          gesture.kind === 'point-right' ||
+          gesture.kind === 'point-up');
+      const wantCurl = pointing ? -0.05 : -0.5;
+      rig.fingersL.rotation.x += (wantCurl - rig.fingersL.rotation.x) * Math.min(1, dt * 8);
+      rig.fingersR.rotation.x += (wantCurl - rig.fingersR.rotation.x) * Math.min(1, dt * 8);
+
       // poseMetu resets emissive each frame — re-boost during the warp.
       if (loco === 'teleporting') {
         rig.visorMat.emissiveIntensity = 6;
@@ -318,6 +475,7 @@ export function MetuStage({
       if (cursorTimer) clearInterval(cursorTimer);
       clearTimeout(measureTimer);
       window.removeEventListener('metu:assistant-gesture', onGesture);
+      window.removeEventListener('metu:assistant-emotion', onEmotion);
       if (idleVarietyTimer) clearTimeout(idleVarietyTimer);
       scene.remove(rig.root);
       disposeMetuRig(rig);

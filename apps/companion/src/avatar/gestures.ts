@@ -3,10 +3,18 @@
  * The main MetuStage (anchor) listens for 'metu:assistant-gesture'.
  */
 import type { AvatarGesture } from './types';
+import type { MetuEmotion } from './metuModel';
 
 export function playGesture(gesture: AvatarGesture, durationMs?: number): void {
   window.dispatchEvent(
     new CustomEvent('metu:assistant-gesture', { detail: { gesture, durationMs } }),
+  );
+}
+
+/** Fire a face emotion on the desktop avatar (decays back to neutral). */
+export function playEmotion(emotion: MetuEmotion, durationMs?: number): void {
+  window.dispatchEvent(
+    new CustomEvent('metu:assistant-emotion', { detail: { emotion, durationMs } }),
   );
 }
 

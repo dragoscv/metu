@@ -85,6 +85,18 @@ export interface MetuRig {
   legR: THREE.Group;
   shinL: THREE.Group;
   shinR: THREE.Group;
+  /** Face (v4.2): eye groups each contain 'ball' + happy 'arc' variants. */
+  eyeL: THREE.Group;
+  eyeR: THREE.Group;
+  /** Mouth LED segments: [left, center, right]. */
+  mouth: [THREE.Mesh, THREE.Mesh, THREE.Mesh];
+  /** Finger groups (curl via rotation.x): pointing reads properly now. */
+  fingersL: THREE.Group;
+  fingersR: THREE.Group;
+  /** Springy antenna (physics lag applied by the stage). */
+  antenna: THREE.Group;
+  /** Back thruster — glows during jump/fall/teleport. */
+  thrusterMat: THREE.MeshStandardMaterial;
   /** Emissive materials for amplitude-driven glow. */
   visorMat: THREE.MeshStandardMaterial;
   coreMat: THREE.MeshStandardMaterial;
@@ -154,22 +166,80 @@ export function buildMetuRig(palette: MetuPalette): MetuRig {
   const core = sphere(0.035, coreMat);
   core.position.set(0, 0.13, 0.095);
   torso.add(core);
+  // Seam glow lines (v4.2): thin emissive strips that pulse with the
+  // chest core (shared coreMat — zero extra material cost).
+  const mkSeam = (x: number) => {
+    const seam = new THREE.Mesh(new THREE.BoxGeometry(0.003, 0.1, 0.004), coreMat);
+    seam.position.set(x, 0.12, 0.1);
+    torso.add(seam);
+  };
+  mkSeam(-0.055);
+  mkSeam(0.055);
+  // Back thruster — flares during jump/fall/teleport.
+  const thrusterMat = glowMat(palette, 0.25);
+  const thruster = new THREE.Mesh(new THREE.ConeGeometry(0.035, 0.06, 10), thrusterMat);
+  thruster.rotation.x = Math.PI;
+  thruster.position.set(0, 0.08, -0.115);
+  torso.add(thruster);
 
-  // Head: rounded helmet + visor bar.
+  // Head: rounded helmet + visor screen with a FACE (v4.2).
   const head = new THREE.Group();
   head.position.y = 0.31;
   torso.add(head);
   const helmet = sphere(0.105, shell);
   helmet.scale.set(1, 0.92, 0.95);
   head.add(helmet);
-  const visor = new THREE.Mesh(new THREE.CapsuleGeometry(0.032, 0.07, 4, 10), visorMat);
-  visor.rotation.z = Math.PI / 2;
-  visor.position.set(0, 0.01, 0.085);
-  head.add(visor);
-  // Antenna nub — personality.
-  const nub = sphere(0.018, accent);
-  nub.position.set(0.06, 0.1, 0);
-  head.add(nub);
+  // Visor glass: dark screen plate the eyes/mouth live on.
+  const visorGlass = new THREE.Mesh(
+    new THREE.CapsuleGeometry(0.046, 0.085, 4, 10),
+    new THREE.MeshStandardMaterial({
+      color: new THREE.Color(palette.visor),
+      roughness: 0.15,
+      metalness: 0.4,
+    }),
+  );
+  visorGlass.rotation.z = Math.PI / 2;
+  visorGlass.position.set(0, 0.012, 0.078);
+  visorGlass.scale.set(1, 1, 0.55);
+  head.add(visorGlass);
+  // Eyes: emissive ball (round) + happy torus-arc variant per eye.
+  // Group scale.y = lid (blink/squint); position nudges = gaze.
+  const mkEye = (side: 1 | -1) => {
+    const eye = new THREE.Group();
+    eye.position.set(0.034 * side, 0.02, 0.1);
+    head.add(eye);
+    const ball = sphere(0.017, visorMat);
+    ball.scale.z = 0.45;
+    ball.name = 'ball';
+    eye.add(ball);
+    const arc = new THREE.Mesh(new THREE.TorusGeometry(0.016, 0.0055, 6, 12, Math.PI), visorMat);
+    arc.name = 'arc';
+    arc.position.z = 0.004;
+    arc.scale.set(1, 1, 0.5);
+    arc.visible = false;
+    eye.add(arc);
+    return eye;
+  };
+  const eyeL = mkEye(-1);
+  const eyeR = mkEye(1);
+  // Mouth: 3 LED segments — outer tilt up = smile, down = frown.
+  const mkSeg = (x: number) => {
+    const seg = new THREE.Mesh(new THREE.BoxGeometry(0.015, 0.005, 0.004), visorMat);
+    seg.position.set(x, -0.028, 0.1);
+    head.add(seg);
+    return seg;
+  };
+  const mouth: [THREE.Mesh, THREE.Mesh, THREE.Mesh] = [mkSeg(-0.017), mkSeg(0), mkSeg(0.017)];
+  // Springy antenna — stage applies lag to rotation.
+  const antenna = new THREE.Group();
+  antenna.position.set(0.05, 0.09, 0);
+  head.add(antenna);
+  const stalk = capsule(0.006, 0.045, joints);
+  stalk.position.y = 0.028;
+  antenna.add(stalk);
+  const nub = sphere(0.016, accent);
+  nub.position.y = 0.06;
+  antenna.add(nub);
 
   // Arms (shoulder pivot at torso top corners).
   const mkArm = (side: 1 | -1) => {
@@ -185,13 +255,25 @@ export function buildMetuRig(palette: MetuPalette): MetuRig {
     const lower = capsule(0.03, 0.09, joints);
     lower.position.y = -0.06;
     forearm.add(lower);
-    const hand = sphere(0.035, shell);
-    hand.position.y = -0.13;
-    forearm.add(hand);
-    return { arm, forearm };
+    // Hand (v4.2): palm + 3 simple fingers that curl (fingers.rotation.x).
+    // An open pointing hand reads far better than the old ball.
+    const palm = sphere(0.028, shell);
+    palm.scale.set(1, 0.8, 0.6);
+    palm.position.y = -0.125;
+    forearm.add(palm);
+    const fingers = new THREE.Group();
+    fingers.position.y = -0.145;
+    forearm.add(fingers);
+    for (let f = 0; f < 3; f++) {
+      const digit = capsule(0.0085, 0.03, shell);
+      digit.position.set((f - 1) * 0.017, -0.022, 0.004);
+      fingers.add(digit);
+    }
+    fingers.rotation.x = -0.5; // relaxed half-curl
+    return { arm, forearm, fingers };
   };
-  const { arm: armL, forearm: forearmL } = mkArm(-1);
-  const { arm: armR, forearm: forearmR } = mkArm(1);
+  const { arm: armL, forearm: forearmL, fingers: fingersL } = mkArm(-1);
+  const { arm: armR, forearm: forearmR, fingers: fingersR } = mkArm(1);
 
   // Legs (hip pivot).
   const mkLeg = (side: 1 | -1) => {
@@ -228,6 +310,13 @@ export function buildMetuRig(palette: MetuPalette): MetuRig {
     legR,
     shinL,
     shinR,
+    eyeL,
+    eyeR,
+    mouth,
+    fingersL,
+    fingersR,
+    antenna,
+    thrusterMat,
     visorMat,
     coreMat,
   };
@@ -242,6 +331,114 @@ export type MetuMotion =
   | 'sitting'
   | 'teleporting';
 export type MetuExpression = 'idle' | 'listening' | 'speaking' | 'thinking';
+
+/** Emotional face overlays (v4.2) — driven by events, decay back to neutral. */
+export type MetuEmotion =
+  | 'neutral'
+  | 'happy'
+  | 'excited'
+  | 'curious'
+  | 'focused'
+  | 'sad'
+  | 'sleepy'
+  | 'surprised'
+  | 'mischievous';
+
+/**
+ * Drive the FACE for one frame. Call after poseMetu (which sets head
+ * orientation); this only touches eyes/mouth/antenna-independent parts.
+ *
+ * `blink` 0..1 (1 = closed) is owned by the stage's blink scheduler.
+ * `talk` 0..1 voice amplitude animates the center mouth segment.
+ */
+export function poseMetuFace(
+  rig: MetuRig,
+  emotion: MetuEmotion,
+  t: number,
+  blink: number,
+  talk = 0,
+  gaze?: { x: number; y: number } | null,
+): void {
+  const { eyeL, eyeR, mouth } = rig;
+  const [mL, mC, mR] = mouth;
+
+  // Eye style per emotion: lid (scale.y), size (scale.x), arc swap,
+  // asymmetry for mischief.
+  let lid = 1; // 1 = fully open
+  let size = 1;
+  let arcs = false; // happy arc eyes
+  let lidL = -1; // per-eye override (-1 = use `lid`)
+  let mouthCurve = 0; // +up smile, -down frown (radians of outer tilt)
+  let mouthGap = 0; // vertical spread of outer segments
+  switch (emotion) {
+    case 'happy':
+      arcs = true;
+      mouthCurve = 0.5;
+      break;
+    case 'excited':
+      arcs = true;
+      size = 1.2;
+      mouthCurve = 0.7;
+      mouthGap = 0.004;
+      break;
+    case 'curious':
+      size = 1.15;
+      lid = 1.05;
+      mouthCurve = 0.15;
+      break;
+    case 'focused':
+      lid = 0.45; // squint
+      mouthCurve = -0.05;
+      break;
+    case 'sad':
+      lid = 0.7;
+      mouthCurve = -0.5;
+      break;
+    case 'sleepy':
+      lid = 0.35 + Math.sin(t * 0.8) * 0.1; // heavy, slowly drooping
+      mouthCurve = -0.1;
+      break;
+    case 'surprised':
+      size = 1.35;
+      lid = 1.15;
+      mouthGap = 0.006;
+      break;
+    case 'mischievous':
+      lidL = 0.35; // asymmetric squint/wink
+      lid = 0.95;
+      mouthCurve = 0.35;
+      break;
+    default:
+      mouthCurve = 0.12; // faint resting smile — approachable
+  }
+
+  // Blink multiplies the lid (snaps eyes shut over everything).
+  const open = Math.max(0.06, lid * (1 - blink));
+  const openL = Math.max(0.06, (lidL >= 0 ? lidL : lid) * (1 - blink));
+  for (const [eye, o] of [
+    [eyeL, openL],
+    [eyeR, open],
+  ] as const) {
+    eye.scale.set(size, o, 1);
+    const ball = eye.getObjectByName('ball');
+    const arc = eye.getObjectByName('arc');
+    if (ball) ball.visible = !arcs;
+    if (arc) arc.visible = arcs;
+    // Gaze: tiny eye offsets sell look direction even with head still.
+    eye.position.z = 0.1;
+    eye.position.x = (eye === eyeL ? -0.034 : 0.034) + (gaze?.x ?? 0) * 0.008;
+    eye.position.y = 0.02 + (gaze?.y ?? 0) * -0.006;
+  }
+
+  // Mouth: outer segments tilt for smile/frown; center pulses when talking.
+  mL.rotation.z = mouthCurve;
+  mR.rotation.z = -mouthCurve;
+  mL.position.y = -0.028 + mouthGap + mouthCurve * 0.006;
+  mR.position.y = -0.028 + mouthGap + mouthCurve * 0.006;
+  const talkPulse = talk > 0.02 ? 1 + Math.sin(t * 18) * 0.6 * Math.min(1, talk * 2) : 1;
+  mC.scale.set(1, talkPulse, 1);
+  mC.position.y = -0.028 - mouthGap * 0.5;
+}
 
 /** One-shot gestures layered over the base pose (k = 0..1 progress). */
 export type MetuGesture =
