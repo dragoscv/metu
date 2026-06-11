@@ -15,7 +15,7 @@
  */
 import type { Platform, ScreenWorld } from './screenWorld';
 
-export type LocomotionState = 'idle' | 'walking' | 'jumping' | 'falling' | 'climbing';
+export type LocomotionState = 'idle' | 'walking' | 'jumping' | 'falling' | 'climbing' | 'sitting';
 
 export interface PhysicsConfig {
   walkSpeed: number; // px/s
@@ -50,10 +50,23 @@ export interface AvatarBody {
   ground: Platform | null;
   /** Navigation goal, or null when content. */
   goal: { x: number; y: number } | null;
+  /** Jumps attempted for the current goal — prevents infinite bounce
+   *  when the goal height is unreachable from this platform. */
+  goalJumps: number;
 }
 
 export function createBody(x: number, y: number): AvatarBody {
-  return { x, y, vx: 0, vy: 0, state: 'falling', facing: 1, ground: null, goal: null };
+  return {
+    x,
+    y,
+    vx: 0,
+    vy: 0,
+    state: 'falling',
+    facing: 1,
+    ground: null,
+    goal: null,
+    goalJumps: 0,
+  };
 }
 
 const ARRIVE_EPS = 24;
@@ -81,6 +94,14 @@ export function step(
   }
 
   switch (body.state) {
+    case 'sitting': {
+      // Sitting is stable: only a new goal or a vanished platform ends it.
+      if (body.goal) {
+        body.state = 'walking';
+        break;
+      }
+      break;
+    }
     case 'idle':
     case 'walking': {
       const goal = body.goal;
@@ -96,18 +117,33 @@ export function step(
       // Arrived horizontally?
       if (Math.abs(dx) <= ARRIVE_EPS) {
         // Need to go UP to reach the goal (it sits on a higher platform)?
-        if (body.y - goal.y > ARRIVE_EPS) {
-          // Jump if within jump reach, else we're done (good enough).
-          if (body.y - goal.y <= cfg.maxJumpHeight) {
-            body.vy = -cfg.jumpVelocity;
-            body.state = 'jumping';
-            body.ground = null;
-          } else {
-            body.goal = null;
-            body.state = 'idle';
-          }
+        // Only jump when a PLATFORM actually exists at goal height above
+        // us, and give up after 2 attempts — jumping into empty air just
+        // lands back on the same spot and loops forever (the idle-bounce
+        // bug: dock targets are window-TOP coordinates, so goal.y was
+        // always 'above' even when standing at the right place).
+        const rise = body.y - goal.y;
+        const reachable =
+          rise > ARRIVE_EPS &&
+          rise <= cfg.maxJumpHeight &&
+          body.goalJumps < 2 &&
+          world.platforms.some(
+            (p) =>
+              goal.x >= p.x1 &&
+              goal.x <= p.x2 &&
+              Math.abs(p.y - goal.y) < 40 &&
+              p.y < body.y - ARRIVE_EPS,
+          );
+        if (reachable) {
+          body.goalJumps++;
+          body.vy = -cfg.jumpVelocity;
+          body.state = 'jumping';
+          body.ground = null;
         } else {
+          // Horizontally there = arrived. Height mismatch without a real
+          // platform means the goal was an approximate anchor — done.
           body.goal = null;
+          body.goalJumps = 0;
           body.state = 'idle';
           body.vx = 0;
         }
@@ -219,7 +255,18 @@ export function step(
 
 /** Start navigating to a feet-coordinate goal. */
 export function navigateTo(body: AvatarBody, x: number, y: number): void {
+  // Ignore goals that are (within tolerance) where we already stand —
+  // re-issued dock targets otherwise cause twitchy micro-walks.
+  if (
+    body.goal === null &&
+    body.state === 'idle' &&
+    Math.abs(x - body.x) <= 28 &&
+    Math.abs(y - body.y) <= 60
+  ) {
+    return;
+  }
   body.goal = { x, y };
+  body.goalJumps = 0;
   if (body.state === 'idle') body.state = 'walking';
 }
 

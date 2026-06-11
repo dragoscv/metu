@@ -233,7 +233,7 @@ export function buildMetuRig(palette: MetuPalette): MetuRig {
   };
 }
 
-export type MetuMotion = 'idle' | 'walking' | 'jumping' | 'falling' | 'climbing';
+export type MetuMotion = 'idle' | 'walking' | 'jumping' | 'falling' | 'climbing' | 'sitting';
 export type MetuExpression = 'idle' | 'listening' | 'speaking' | 'thinking';
 
 /**
@@ -314,6 +314,31 @@ export function poseMetu(
       shinR.rotation.x = 0.9;
       torsoPitch = -0.25;
       headPitch = -0.35;
+      break;
+    }
+    case 'sitting': {
+      // Sitting on an edge, legs dangling — long-idle charm pose.
+      hipsY = 0.36;
+      legL.rotation.x = -1.5;
+      legR.rotation.x = -1.5;
+      const dangle = Math.sin(t * 1.1);
+      shinL.rotation.x = 1.25 + dangle * 0.12;
+      shinR.rotation.x = 1.25 - dangle * 0.12;
+      armL.rotation.x = -0.25;
+      armR.rotation.x = -0.25;
+      armL.rotation.z = 0.22;
+      armR.rotation.z = -0.22;
+      forearmL.rotation.x = -0.3;
+      forearmR.rotation.x = -0.3;
+      torsoPitch = 0.1;
+      headPitch = 0.02;
+      // Watch the cursor if available, else relaxed look-around.
+      if (look) {
+        headYaw = look.x * 0.45;
+        headPitch = 0.02 + look.y * 0.25;
+      } else {
+        headYaw = Math.sin(t * 0.3) * 0.18;
+      }
       break;
     }
     case 'idle':

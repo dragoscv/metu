@@ -99,7 +99,8 @@ export function MetuStage({
     if (isTauri()) {
       cursorTimer = setInterval(() => {
         const loco = (driveRef.current.locomotion ?? 'idle') as MetuMotion;
-        if (loco !== 'idle' || driveRef.current.state !== 'idle') {
+        // Gaze-follow while idle OR sitting (relaxed but attentive).
+        if ((loco !== 'idle' && loco !== 'sitting') || driveRef.current.state !== 'idle') {
           look = null;
           return;
         }
@@ -129,8 +130,8 @@ export function MetuStage({
 
       const loco = (driveRef.current.locomotion ?? 'idle') as MetuMotion;
       const expr = driveRef.current.state;
-      // Adaptive budget: 60fps active, 20fps idle.
-      const active = loco !== 'idle' || expr !== 'idle';
+      // Adaptive budget: 60fps active, 20fps idle/sitting.
+      const active = (loco !== 'idle' && loco !== 'sitting') || expr !== 'idle';
       const minInterval = active ? 0 : 50 - 16; // ~20fps when idle
       if (now - lastFrame < minInterval) return;
       lastFrame = now;

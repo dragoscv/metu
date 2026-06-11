@@ -151,6 +151,7 @@ export function useAssistantBrain(opts: Options): AssistantBrainState {
   const [facing, setFacing] = useState<1 | -1>(1);
   const bodyRef = useRef(createBody(200, 200));
   const physicsRef = useRef<PhysicsConfig>(DEFAULT_PHYSICS);
+  const idleSinceRef = useRef(0);
   const [hovering, setHovering] = useState(false);
 
   // Mutable refs so the long-lived timers always see fresh values without
@@ -455,6 +456,16 @@ export function useAssistantBrain(opts: Options): AssistantBrainState {
 
       const before = body.goal;
       step(body, screenWorld, physicsRef.current, dt);
+
+      // Long-idle charm: after ~75s standing still, sit down (legs
+      // dangling off the platform edge). Any new goal stands it back up
+      // (handled inside step), and conversation states keep it standing.
+      if (body.state === 'idle' && !body.goal) {
+        if (idleSinceRef.current === 0) idleSinceRef.current = now;
+        else if (now - idleSinceRef.current > 75_000) body.state = 'sitting';
+      } else if (body.state !== 'sitting') {
+        idleSinceRef.current = 0;
+      }
 
       // Arrived at a point target → fire the highlight.
       if (before && !body.goal && pointReqRef.current) {

@@ -59,7 +59,7 @@ export function GlbStage({
     let mixer: THREE.AnimationMixer | null = null;
     let clipsByState: Partial<Record<AvatarState, THREE.AnimationClip>> = {};
     let locoClips: Partial<
-      Record<'walking' | 'jumping' | 'falling' | 'climbing', THREE.AnimationClip>
+      Record<'walking' | 'jumping' | 'falling' | 'climbing' | 'sitting', THREE.AnimationClip>
     > = {};
     let fallbackClip: THREE.AnimationClip | null = null;
     let activeAction: THREE.AnimationAction | null = null;
@@ -103,6 +103,7 @@ export function GlbStage({
           jumping: pickClip(clips, ['Jump', 'Jumping']) ?? undefined,
           falling: pickClip(clips, ['Jump', 'Falling', 'Fall']) ?? undefined,
           climbing: pickClip(clips, ['Climb', 'Climbing', 'Walking', 'Walk']) ?? undefined,
+          sitting: pickClip(clips, ['Sitting', 'Sit', 'Idle']) ?? undefined,
         };
         if (clips.length) mixer = new THREE.AnimationMixer(root);
 
