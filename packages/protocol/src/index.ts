@@ -276,3 +276,7 @@ export type CaptureCreate = z.infer<typeof CaptureCreateSchema>;
 export type RecallQuery = z.infer<typeof RecallQuerySchema>;
 export type NotifyCreate = z.infer<typeof NotifyCreateSchema>;
 export type IntentCreate = z.infer<typeof IntentCreateSchema>;
+
+// ─── Feature modules ──────────────────────────────────────────────────────
+
+export * from './activity';

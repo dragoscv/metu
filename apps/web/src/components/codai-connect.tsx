@@ -12,9 +12,11 @@ export function CodaiConnect({ connected }: Props) {
   const [apiKey, setApiKey] = useState('');
   const [pending, start] = useTransition();
   const [testing, setTesting] = useState(false);
-  const [testResult, setTestResult] = useState<
-    { ok: boolean; latencyMs?: number; message?: string } | null
-  >(null);
+  const [testResult, setTestResult] = useState<{
+    ok: boolean;
+    latencyMs?: number;
+    message?: string;
+  } | null>(null);
 
   // Surface the OAuth callback result (set as ?codai_connected / ?codai_error)
   // then strip the query param so a refresh doesn't re-toast.
@@ -94,9 +96,7 @@ export function CodaiConnect({ connected }: Props) {
           {testResult ? (
             <p
               className={`mt-1 text-xs ${
-                testResult.ok
-                  ? 'text-[var(--color-success)]'
-                  : 'text-[var(--color-danger,#ef4444)]'
+                testResult.ok ? 'text-[var(--color-success)]' : 'text-[var(--color-danger,#ef4444)]'
               }`}
             >
               {testResult.ok

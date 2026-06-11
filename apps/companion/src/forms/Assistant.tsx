@@ -30,6 +30,7 @@ import { playWakeBlip } from '../state/wakeBlip';
 import { AvatarHost } from '../avatar/AvatarHost';
 import type { AvatarState } from '../avatar/types';
 import { useAssistantBrain, type PointRequest } from '../assistant/useAssistantBrain';
+import { startActivityModel, startDistiller } from '../assistant/activityModel';
 import { SpeechBubble, type BubbleAction } from '../assistant/SpeechBubble';
 import { assistantLines, QUICK_REPLIES } from '../assistant/assistantMessages';
 import { showHighlight } from '../assistant/overlay-bridge';
@@ -53,6 +54,14 @@ export function PresenceAssistant() {
   useEffect(() => {
     loadAuth().then(setAuth);
   }, []);
+
+  // Jarvis Slice B — live activity model (sense-event reducer) runs for the
+  // window's lifetime; the distiller needs auth and follows it.
+  useEffect(() => startActivityModel(), []);
+  useEffect(() => {
+    if (!auth) return;
+    return startDistiller(auth);
+  }, [auth]);
 
   if (!auth) {
     return (

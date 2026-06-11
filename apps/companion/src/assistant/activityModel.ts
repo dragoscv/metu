@@ -1,0 +1,266 @@
+/**
+ * Jarvis Slice B — ActivityModel + distiller.
+ *
+ * Listens to `metu://sense` events from the native sense engine and keeps a
+ * live, queryable picture of what the user is doing:
+ *
+ *   { app, title, appClass, projectGuess, focusDepth, idle, watching }
+ *
+ * Every DISTILL_MS (and on demand) it reduces the local activity timeline
+ * to a compact text summary and ships it to
+ * `POST /api/sdk/v1/companion/activity` — summaries only, never raw OCR.
+ * The first version distills heuristically (app times + titles + top
+ * screen-text keywords); a codai-polished pass can replace `summarize()`
+ * later without touching callers.
+ */
+import { invoke } from '@tauri-apps/api/core';
+import { listen } from '@tauri-apps/api/event';
+import { ensureFreshAuth, type AuthState } from '../state/auth';
+import { isTauri } from '../state/runtime';
+
+export type AppClass =
+  | 'coding'
+  | 'browsing'
+  | 'writing'
+  | 'comms'
+  | 'media'
+  | 'design'
+  | 'mixed'
+  | 'idle';
+
+export type FocusDepth = 'deep' | 'normal' | 'idle';
+
+export interface ActivityState {
+  app: string;
+  title: string;
+  appClass: AppClass;
+  projectGuess: string | null;
+  focusDepth: FocusDepth;
+  /** Sense engine watching (false = user paused or privacy gate). */
+  watching: boolean;
+  /** Epoch ms of the last focus change — how long current context held. */
+  sinceTs: number;
+}
+
+const APP_CLASSES: Array<[RegExp, AppClass]> = [
+  [/code|cursor|webstorm|rider|idea|pycharm|visual studio|zed|sublime/i, 'coding'],
+  [/chrome|edge|firefox|brave|arc|opera/i, 'browsing'],
+  [/word|notion|obsidian|typora|onenote|notepad/i, 'writing'],
+  [/slack|discord|teams|telegram|whatsapp|signal|outlook|thunderbird|mail/i, 'comms'],
+  [/spotify|vlc|youtube music|netflix|mpv/i, 'media'],
+  [/figma|photoshop|illustrator|blender|krita|gimp|affinity/i, 'design'],
+];
+
+/** Window-title fragments that suggest a repo/project (e.g. "file — metu — VS Code"). */
+const PROJECT_HINTS = /[-—·|]\s*([a-z0-9_.-]{2,40})\s*[-—·|]/i;
+
+function classify(app: string, title: string): AppClass {
+  for (const [re, cls] of APP_CLASSES) {
+    if (re.test(app) || re.test(title)) return cls;
+  }
+  return 'mixed';
+}
+
+function guessProject(title: string): string | null {
+  // VS Code style: "<file> - <folder> - Visual Studio Code"
+  const parts = title.split(/\s[-—]\s/);
+  if (parts.length >= 3) return parts[parts.length - 2]?.trim().slice(0, 60) ?? null;
+  const m = PROJECT_HINTS.exec(title);
+  return m?.[1]?.trim() ?? null;
+}
+
+// ── Live model ─────────────────────────────────────────────────────────────
+
+type SenseEvent =
+  | {
+      kind: 'focus';
+      ts: number;
+      app: string;
+      title: string;
+      x: number;
+      y: number;
+      w: number;
+      h: number;
+    }
+  | { kind: 'frame'; ts: number; app: string; chars: number; deduped: boolean }
+  | { kind: 'privacy'; ts: number; paused: boolean; reason: string }
+  | { kind: 'idle'; ts: number; idle: boolean; idleMs: number };
+
+const state: ActivityState = {
+  app: '',
+  title: '',
+  appClass: 'mixed',
+  projectGuess: null,
+  focusDepth: 'normal',
+  watching: true,
+  sinceTs: Date.now(),
+};
+
+const listeners = new Set<(s: ActivityState) => void>();
+
+export function getActivityState(): ActivityState {
+  return { ...state };
+}
+
+export function onActivityChange(fn: (s: ActivityState) => void): () => void {
+  listeners.add(fn);
+  return () => listeners.delete(fn);
+}
+
+function emit() {
+  const snapshot = getActivityState();
+  for (const fn of listeners) fn(snapshot);
+}
+
+/** Focus-switch counter for deep-focus detection (few switches = deep). */
+let switchTimestamps: number[] = [];
+
+export function startActivityModel(): () => void {
+  if (!isTauri()) return () => {};
+  let unlisten: (() => void) | undefined;
+  void listen<SenseEvent>('metu://sense', (e) => {
+    const ev = e.payload;
+    switch (ev.kind) {
+      case 'focus': {
+        state.app = ev.app;
+        state.title = ev.title;
+        state.appClass = classify(ev.app, ev.title);
+        state.projectGuess = guessProject(ev.title) ?? state.projectGuess;
+        state.sinceTs = ev.ts;
+        switchTimestamps.push(ev.ts);
+        const cutoff = Date.now() - 5 * 60_000;
+        switchTimestamps = switchTimestamps.filter((t) => t >= cutoff);
+        // Deep focus: same context ≥5min with ≤2 switches in the window.
+        state.focusDepth = switchTimestamps.length <= 2 ? 'deep' : 'normal';
+        emit();
+        break;
+      }
+      case 'idle': {
+        state.focusDepth = ev.idle ? 'idle' : 'normal';
+        emit();
+        break;
+      }
+      case 'privacy': {
+        state.watching = !ev.paused;
+        emit();
+        break;
+      }
+      case 'frame':
+        // Frames update nothing visible; the store accumulates silently.
+        break;
+    }
+  }).then((fn) => {
+    unlisten = fn;
+  });
+  return () => unlisten?.();
+}
+
+// ── Distiller ──────────────────────────────────────────────────────────────
+
+const DISTILL_MS = 15 * 60_000;
+
+interface TimelineEntry {
+  app: string;
+  title: string;
+  startedTs: number;
+  endedTs: number | null;
+}
+
+/** Heuristic local distillation — no LLM, no cost, good enough to recall. */
+function summarize(entries: TimelineEntry[], startTs: number, endTs: number) {
+  if (entries.length === 0) return null;
+  const byApp = new Map<string, number>();
+  const titles = new Map<string, number>();
+  for (const e of entries) {
+    const dur = (e.endedTs ?? endTs) - e.startedTs;
+    if (dur <= 0) continue;
+    byApp.set(e.app, (byApp.get(e.app) ?? 0) + dur);
+    if (e.title) titles.set(e.title, (titles.get(e.title) ?? 0) + dur);
+  }
+  const apps = [...byApp.entries()].sort((a, b) => b[1] - a[1]).map(([a]) => a);
+  const topTitles = [...titles.entries()]
+    .sort((a, b) => b[1] - a[1])
+    .slice(0, 6)
+    .map(([t]) => t.slice(0, 120));
+  if (apps.length === 0) return null;
+
+  const cls = classify(apps[0] ?? '', topTitles[0] ?? '');
+  const project = topTitles.map(guessProject).find(Boolean) ?? null;
+  const minutes = Math.round((endTs - startTs) / 60_000);
+  const summary = [
+    `${minutes}min mostly in ${apps.slice(0, 3).join(', ')}.`,
+    topTitles.length ? `Contexts: ${topTitles.join(' | ')}` : '',
+  ]
+    .filter(Boolean)
+    .join('\n');
+
+  return {
+    startTs,
+    endTs,
+    kind: 'periodic' as const,
+    summary: summary.slice(0, 2_000),
+    apps: apps.slice(0, 12),
+    projectGuess: project,
+    activityClass: cls,
+  };
+}
+
+async function distillOnce(auth: AuthState): Promise<void> {
+  const endTs = Date.now();
+  const startTs = endTs - DISTILL_MS;
+  const entries = await invoke<TimelineEntry[]>('sense_timeline', {
+    sinceTs: startTs,
+    limit: 500,
+  }).catch(() => [] as TimelineEntry[]);
+  const payload = summarize(entries, startTs, endTs);
+  if (!payload) return;
+
+  // Persist locally regardless of sync result.
+  const fresh = (await ensureFreshAuth(auth).catch(() => null)) ?? auth;
+  let synced = false;
+  try {
+    const res = await fetch(`${fresh.apiBase}/api/sdk/v1/companion/activity`, {
+      method: 'POST',
+      headers: {
+        'content-type': 'application/json',
+        authorization: `Bearer ${fresh.accessToken}`,
+      },
+      body: JSON.stringify(payload),
+    });
+    synced = res.ok;
+  } catch {
+    synced = false;
+  }
+  await invoke('sense_store_summary', {
+    kind: payload.kind,
+    summary: payload.summary,
+    synced,
+  }).catch(() => {});
+}
+
+/** Start the periodic distiller. Returns a stop function. */
+export function startDistiller(auth: AuthState): () => void {
+  if (!isTauri()) return () => {};
+  const timer = setInterval(() => {
+    void distillOnce(auth);
+  }, DISTILL_MS);
+  return () => clearInterval(timer);
+}
+
+/** On-demand "catch me up" context: recent screen text + timeline. */
+export async function catchMeUpContext(): Promise<string> {
+  const [recent, timeline] = await Promise.all([
+    invoke<string>('sense_recent_text', { minutes: 30, maxChars: 3000 }).catch(() => ''),
+    invoke<TimelineEntry[]>('sense_timeline', {
+      sinceTs: Date.now() - 4 * 3600_000,
+      limit: 100,
+    }).catch(() => [] as TimelineEntry[]),
+  ]);
+  const apps = [...new Set(timeline.map((t) => t.app))].slice(0, 8);
+  return [
+    apps.length ? `Recent apps: ${apps.join(', ')}` : '',
+    recent ? `Recent screen text:\n${recent}` : '',
+  ]
+    .filter(Boolean)
+    .join('\n\n');
+}

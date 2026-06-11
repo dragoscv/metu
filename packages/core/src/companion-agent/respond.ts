@@ -68,8 +68,11 @@ voice response.`;
 }
 
 function buildLocalContext(input: CompanionTurnInput) {
+  const screen = input.screenContext
+    ? `\n\n[Live screen context — what the user can currently see]\n${input.screenContext}`
+    : '';
   return {
-    system: buildSystemPrompt(input),
+    system: buildSystemPrompt(input) + screen,
     messages: [
       ...input.history.map((m): ModelMessage => ({ role: m.role, content: m.content })),
       { role: 'user' as const, content: input.utterance },

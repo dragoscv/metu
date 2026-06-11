@@ -38,6 +38,8 @@ const Body = z.object({
     .optional(),
   eagerness: z.number().int().min(0).max(100).optional(),
   surface: z.enum(['companion', 'mobile', 'web', 'vscode', 'browser', 'telegram']).optional(),
+  /** Ambient on-screen context from the companion sense engine (text only). */
+  screenContext: z.string().max(6_000).optional(),
 });
 
 export async function POST(req: NextRequest) {
@@ -85,6 +87,7 @@ export async function POST(req: NextRequest) {
             history: parsed.data.history ?? [],
             eagerness: parsed.data.eagerness ?? 50,
             surface: parsed.data.surface ?? 'companion',
+            screenContext: parsed.data.screenContext,
           },
           {
             onEscalate: async (input, reason) => {

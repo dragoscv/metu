@@ -48,6 +48,13 @@ export const companionTurnInputSchema = z.object({
       recentDigest: z.string().max(2_000).optional(),
     })
     .optional(),
+  /**
+   * Ambient screen context from the companion's sense engine (Jarvis
+   * Slice B): what app/window has focus and recent on-screen text. Lets
+   * "what am I looking at?" turns answer correctly. Text-only, already
+   * privacy-gated on the device.
+   */
+  screenContext: z.string().max(6_000).optional(),
 });
 
 export type CompanionTurnInput = z.infer<typeof companionTurnInputSchema>;
