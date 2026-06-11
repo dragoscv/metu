@@ -262,9 +262,11 @@ export function MetuStage({
       }
 
       // Face travel direction while moving; face camera when stationary.
+      // Jump/fall keep the travel yaw too — flipping to camera mid-hop and
+      // back on landing read as a fast wiggle on every bounce.
       const face = driveRef.current.facing ?? 1;
       const wantYaw =
-        loco === 'walking' || loco === 'climbing'
+        loco === 'walking' || loco === 'climbing' || loco === 'jumping' || loco === 'falling'
           ? face === 1
             ? Math.PI / 2
             : -Math.PI / 2
@@ -272,7 +274,9 @@ export function MetuStage({
       let dy = wantYaw - yaw;
       while (dy > Math.PI) dy -= Math.PI * 2;
       while (dy < -Math.PI) dy += Math.PI * 2;
-      yaw += dy * 0.16;
+      // Frame-rate-independent smoothing (~7%/frame at 60fps equivalent);
+      // the old 16%/frame snap was half the "too fast" feel.
+      yaw += dy * Math.min(1, dt * 4.5);
       rig.root.rotation.y = yaw;
 
       renderer.render(scene, camera);

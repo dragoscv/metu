@@ -298,17 +298,19 @@ export function poseMetu(
       break;
     }
     case 'walking': {
-      const w = t * 9; // cadence
+      // Cadence ~0.9 strides/sec — anything faster reads as frantic
+      // vibration at the avatar's small on-screen size.
+      const w = t * 5.5;
       const swing = Math.sin(w);
-      legL.rotation.x = swing * 0.7;
-      legR.rotation.x = -swing * 0.7;
-      shinL.rotation.x = Math.max(0, -Math.sin(w - 0.5)) * 0.9;
-      shinR.rotation.x = Math.max(0, Math.sin(w - 0.5)) * 0.9;
-      armL.rotation.x = -swing * 0.5;
-      armR.rotation.x = swing * 0.5;
+      legL.rotation.x = swing * 0.55;
+      legR.rotation.x = -swing * 0.55;
+      shinL.rotation.x = Math.max(0, -Math.sin(w - 0.5)) * 0.7;
+      shinR.rotation.x = Math.max(0, Math.sin(w - 0.5)) * 0.7;
+      armL.rotation.x = -swing * 0.35;
+      armR.rotation.x = swing * 0.35;
       forearmL.rotation.x = -0.35;
       forearmR.rotation.x = -0.35;
-      hipsY = 0.46 + Math.abs(Math.cos(w)) * 0.02;
+      hipsY = 0.46 + Math.abs(Math.cos(w)) * 0.012;
       torsoPitch = 0.08;
       headPitch = -0.04;
       break;
@@ -331,7 +333,7 @@ export function poseMetu(
       legR.rotation.x = 0.15;
       shinL.rotation.x = 0.4;
       shinR.rotation.x = 0.25;
-      const flail = Math.sin(t * 14) * 0.25;
+      const flail = Math.sin(t * 6) * 0.18; // gentle, not panicked
       armL.rotation.x = -2.6 + flail;
       armR.rotation.x = -2.6 - flail;
       torsoPitch = 0.15;
@@ -339,7 +341,7 @@ export function poseMetu(
       break;
     }
     case 'climbing': {
-      const c = t * 6;
+      const c = t * 4;
       const reach = Math.sin(c);
       armL.rotation.x = -2.2 - reach * 0.5;
       armR.rotation.x = -2.2 + reach * 0.5;

@@ -4,7 +4,7 @@
     {
       "label": "⚡ start everything",
       "dependsOrder": "sequence",
-      "dependsOn": ["infra up", "dev (web + worker + inngest)"],
+      "dependsOn": ["infra up", "dev (web + worker + inngest)", "companion dev"],
       "group": { "kind": "build", "isDefault": true },
       "problemMatcher": []
     },
@@ -105,6 +105,22 @@
       "isBackground": true,
       "presentation": { "reveal": "always", "panel": "dedicated" },
       "problemMatcher": []
+    },
+    {
+      "label": "companion dev",
+      "type": "shell",
+      "command": "Get-Process metu-companion -ErrorAction SilentlyContinue | Stop-Process -Force -ErrorAction SilentlyContinue; Get-NetTCPConnection -LocalPort 5173 -State Listen -ErrorAction SilentlyContinue | ForEach-Object { Stop-Process -Id $_.OwningProcess -Force -ErrorAction SilentlyContinue }; pnpm --filter @metu/companion tauri:dev",
+      "isBackground": true,
+      "presentation": { "reveal": "always", "panel": "dedicated", "group": "dev" },
+      "problemMatcher": {
+        "owner": "tauri",
+        "pattern": [{ "regexp": "." }],
+        "background": {
+          "activeOnStart": true,
+          "beginsPattern": ".",
+          "endsPattern": "Finished|ready in|Local:"
+        }
+      }
     },
     {
       "label": "clean web cache",
