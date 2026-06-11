@@ -60,7 +60,13 @@ function buildSystemPrompt(input: CompanionTurnInput): string {
     ? `\n\nIMPORTANT: Reply ONLY in ${lang === 'ro' ? 'Romanian (limba română)' : lang === 'en' ? 'English' : lang}, regardless of the language the user writes in.`
     : '';
 
-  return `${renderedPersona}${langDirective}
+  // Learned preferences (Jarvis v3.2): what the user has told us to
+  // remember — always honored, no recall round-trip needed.
+  const prefs = input.promptContext?.preferences
+    ? `\n\nThings this user has told you to remember (honor them):\n${input.promptContext.preferences}`
+    : '';
+
+  return `${renderedPersona}${langDirective}${prefs}
 
 You are running on the FAST LANE of the Companion-Agent. Your job is to:
   - acknowledge and respond in a single short turn (≤ 3 sentences when spoken)
@@ -71,7 +77,9 @@ If the user asks for anything that requires creating, sending, scheduling,
 or contacting an external service, simply acknowledge ("on it — handing
 that to the planning side"). The orchestrator will already have escalated
 to the Conductor in parallel; your job is just to give them an immediate
-voice response.`;
+voice response.
+
+After your answer, on a NEW final line, output exactly: CHIPS: ["…","…"] — 2 or 3 SHORT follow-up actions (≤ 5 words each) the user would plausibly tap next, grounded in YOUR answer. Specific, never generic filler.`;
 }
 
 function buildLocalContext(input: CompanionTurnInput) {

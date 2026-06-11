@@ -16,6 +16,7 @@ import type { AuthState } from '../state/auth';
 import { ensureFreshAuth } from '../state/auth';
 import { fetchScreenContext } from './activityModel';
 import { loadAssistantLanguage } from '../state/language';
+import { splitChips } from './skills';
 
 export type ChatRole = 'user' | 'assistant';
 
@@ -40,6 +41,8 @@ export interface AssistantChatState {
   status: ChatStatus;
   /** The most recent assistant text — handy for the compact speech bubble. */
   lastAssistantText: string | null;
+  /** LLM-suggested follow-up chips from the last reply (Jarvis v3.2). */
+  lastChips: string[];
 }
 
 interface TurnEvent {
@@ -64,6 +67,7 @@ function uid(): string {
 export function useAssistantChat(auth: AuthState, personaSlug: string) {
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [status, setStatus] = useState<ChatStatus>('idle');
+  const [lastChips, setLastChips] = useState<string[]>([]);
   const abortRef = useRef<AbortController | null>(null);
   const authRef = useRef(auth);
   authRef.current = auth;
@@ -158,7 +162,11 @@ export function useAssistantChat(auth: AuthState, personaSlug: string) {
                 if (ev.text) {
                   gotDelta = true;
                   setStatus('streaming');
-                  patch(assistantId, (m) => ({ ...m, content: m.content + ev.text }));
+                  // Hide a (possibly partial) CHIPS trailer while streaming.
+                  patch(assistantId, (m) => ({
+                    ...m,
+                    content: splitChips(m.content + ev.text!).text,
+                  }));
                 }
                 break;
               case 'ack':
@@ -179,12 +187,16 @@ export function useAssistantChat(auth: AuthState, personaSlug: string) {
                 setStatus('escalated');
                 break;
               case 'final':
-                patch(assistantId, (m) => ({
-                  ...m,
-                  pending: false,
-                  content: ev.text ?? m.content,
-                  tools: ev.toolCallNames && ev.toolCallNames.length ? ev.toolCallNames : m.tools,
-                }));
+                patch(assistantId, (m) => {
+                  const { text, chips } = splitChips(ev.text ?? m.content);
+                  setLastChips(chips);
+                  return {
+                    ...m,
+                    pending: false,
+                    content: text,
+                    tools: ev.toolCallNames && ev.toolCallNames.length ? ev.toolCallNames : m.tools,
+                  };
+                });
                 setStatus('idle');
                 break;
               case 'error':
@@ -238,6 +250,7 @@ export function useAssistantChat(auth: AuthState, personaSlug: string) {
     messages,
     status,
     lastAssistantText: lastAssistant?.error ?? lastAssistant?.content ?? null,
+    lastChips,
   };
 
   return { ...state, send, stop, clear };

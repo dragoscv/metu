@@ -434,6 +434,7 @@ function AssistantSkin({
     if (chat.lastAssistantText) {
       bubbleReadRef.current = false; // fresh reply — unread until seen
       setChatBubble(chat.lastAssistantText);
+      setDynamicChips(chat.lastChips);
       setUnreadReply(null);
     }
   }, [chat.lastAssistantText, chatOpen]);

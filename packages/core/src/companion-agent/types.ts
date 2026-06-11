@@ -46,6 +46,8 @@ export const companionTurnInputSchema = z.object({
       userName: z.string().max(120).optional(),
       language: z.string().max(20).optional(),
       recentDigest: z.string().max(2_000).optional(),
+      /** Learned preferences/corrections (newline bullet list). */
+      preferences: z.string().max(3_000).optional(),
     })
     .optional(),
   /**

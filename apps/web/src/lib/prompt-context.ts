@@ -16,13 +16,16 @@
  */
 import { getDb } from '@metu/db';
 import { user as userTable, persona as personaTable, workspaceRecentDigest } from '@metu/db/schema';
-import { and, eq } from 'drizzle-orm';
+import { memoryChunk } from '@metu/db/schema';
+import { and, desc, eq, like, sql } from 'drizzle-orm';
 import { getBuiltInPersona } from '@metu/presence';
 
 export interface PromptContext {
   userName?: string;
   language?: string;
   recentDigest?: string;
+  /** Learned user preferences/corrections — injected into every turn. */
+  preferences?: string;
 }
 
 export async function loadPromptContext(args: {
@@ -31,7 +34,7 @@ export async function loadPromptContext(args: {
   personaSlug: string;
 }): Promise<PromptContext> {
   const db = getDb();
-  const [userRow, personaRow, digestRow] = await Promise.all([
+  const [userRow, personaRow, digestRow, prefRows] = await Promise.all([
     db
       .select({ name: userTable.name })
       .from(userTable)
@@ -52,6 +55,22 @@ export async function loadPromptContext(args: {
       .from(workspaceRecentDigest)
       .where(eq(workspaceRecentDigest.workspaceId, args.workspaceId))
       .limit(1),
+    // Learned preferences (Jarvis v3.2): cheap indexed prefix query — no
+    // embedding call. Newest 6 keep the prompt bounded; supersession in
+    // the memory route already prunes contradictions.
+    db
+      .select({ content: memoryChunk.content })
+      .from(memoryChunk)
+      .where(
+        and(
+          eq(memoryChunk.workspaceId, args.workspaceId),
+          eq(memoryChunk.sourceKind, 'manual'),
+          like(memoryChunk.content, 'User %'),
+          sql`${memoryChunk.metadata} ->> 'origin' = 'companion-learning'`,
+        ),
+      )
+      .orderBy(desc(memoryChunk.createdAt))
+      .limit(6),
   ]);
 
   const builtIn = getBuiltInPersona(args.personaSlug);
@@ -62,5 +81,6 @@ export async function loadPromptContext(args: {
     userName: userRow[0]?.name ?? undefined,
     language: language ?? undefined,
     recentDigest: digestRow[0]?.digest || undefined,
+    preferences: prefRows.length ? prefRows.map((r) => `- ${r.content}`).join('\n') : undefined,
   };
 }
