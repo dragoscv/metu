@@ -17,7 +17,7 @@
  * Click-through is owned by the brain via DOM-exact `setInteractive` — see
  * useAssistantBrain for the contract.
  */
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { invoke } from '@tauri-apps/api/core';
 import { listen } from '@tauri-apps/api/event';
 import { getCurrentWindow, PhysicalPosition } from '@tauri-apps/api/window';
@@ -56,7 +56,8 @@ import {
 } from '../assistant/proactivity';
 import { MetuTtsProxyProvider } from '@metu/voice/tts-proxy';
 import { SpeechBubble, type BubbleAction } from '../assistant/SpeechBubble';
-import { assistantLines, QUICK_REPLIES } from '../assistant/assistantMessages';
+import { assistantLines } from '../assistant/assistantMessages';
+import { getSmartChips } from '../assistant/smartChips';
 import { showHighlight } from '../assistant/overlay-bridge';
 import { onProposal } from '../assistant/assistantActions';
 import { useAssistantChat } from '../assistant/useAssistantChat';
@@ -660,17 +661,26 @@ function AssistantSkin({
   const bubbleText = voiceBubble ?? chatBubble ?? workingBubble ?? ambient?.text;
   const bubbleAction = voiceBubble || chatBubble ? undefined : ambient?.action;
   const bubbleIsChat = !voiceBubble && !!chatBubble;
-  // One-tap chips: ambient remarks get conversation starters; chat replies
-  // get follow-ups. Confirm bubbles + live voice transcripts get none.
-  // Suggestion bubbles carry their own context-specific replies.
+  // One-tap chips (Jarvis v4.1 — ALL dynamic now):
+  //   chat replies     → LLM CHIPS trailer (grounded in the reply)
+  //   suggestion bubbles → their own context-specific replies
+  //   ambient/greeting  → getSmartChips(): live activity + time-of-day +
+  //                       project continuity (recomputed per bubble)
+  // Confirm bubbles + live voice transcripts get none.
+  const smartChips = useMemo(
+    () => getSmartChips(),
+    // Recompute per bubble appearance — ambient text is the trigger.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [ambient?.text],
+  );
   const bubbleSuggestions =
     voiceBubble || bubbleAction || !auth || workingBubble
       ? undefined
       : bubbleIsChat
         ? dynamicChips.length
           ? dynamicChips
-          : QUICK_REPLIES.followup
-        : (ambient?.quickReplies ?? QUICK_REPLIES.ambient);
+          : smartChips
+        : (ambient?.quickReplies ?? smartChips);
 
   const dismissBubble = () => {
     if (bubbleIsChat) {
