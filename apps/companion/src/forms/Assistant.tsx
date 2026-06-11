@@ -32,6 +32,7 @@ import type { AvatarState } from '../avatar/types';
 import { useAssistantBrain, type PointRequest } from '../assistant/useAssistantBrain';
 import { onActivityChange, startActivityModel, startDistiller } from '../assistant/activityModel';
 import { applySenseSettings, saveWatchPaused } from '../state/senseSettings';
+import { writeText } from '@tauri-apps/plugin-clipboard-manager';
 import {
   startSuggestionEngine,
   loadProactivity,
@@ -606,6 +607,17 @@ function AssistantSkin({
               }}
             >
               💬 Open chat
+            </button>
+          )}
+          {bubbleText && (
+            <button
+              className="assistant-menu__item"
+              onClick={() => {
+                void writeText(bubbleText).catch(() => {});
+                setMenu(null);
+              }}
+            >
+              📋 Copy bubble text
             </button>
           )}
           <button

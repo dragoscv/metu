@@ -235,6 +235,16 @@ html:has(.assistant-stage), body:has(.assistant-stage) { background: transparent
   backdrop-filter: blur(14px);
   -webkit-backdrop-filter: blur(14px);
 }
+  /* Message/bubble text is selectable + copyable (the stage default is
+     user-select:none for drag ergonomics; content opts back in). */
+  .bubble__text,
+  .msg__body,
+  .msg__error,
+  .chat__thread {
+    user-select: text;
+    -webkit-user-select: text;
+    cursor: text;
+  }
 @keyframes bubbleIn {
   from { transform: translateY(4px); opacity: 0; }
   to { transform: translateY(0); opacity: 1; }
@@ -417,6 +427,39 @@ html:has(.overlay-stage), body:has(.overlay-stage) { background: transparent; }
 .assistant-menu__item:last-child { border-radius: 0 0 11px 11px; }
 .assistant-menu__item:hover { background: rgba(124, 140, 255, 0.25); }
 
+/* ── Chat context menu (copy/paste/select) ────────────────────────── */
+.ctxmenu {
+  position: absolute;
+  z-index: 1200;
+  min-width: 180px;
+  background: rgba(14, 16, 26, 0.97);
+  border: 1px solid rgba(140, 180, 255, 0.28);
+  border-radius: 10px;
+  box-shadow: 0 12px 32px rgba(0, 0, 0, 0.55);
+  backdrop-filter: blur(14px);
+  -webkit-backdrop-filter: blur(14px);
+  padding: 4px;
+  user-select: none;
+  -webkit-user-select: none;
+}
+.ctxmenu__item {
+  appearance: none;
+  display: block;
+  width: 100%;
+  padding: 7px 10px;
+  font-size: 12px;
+  color: #e8edf8;
+  background: transparent;
+  border: none;
+  border-radius: 7px;
+  cursor: pointer;
+  text-align: left;
+  transition: background 120ms ease;
+}
+.ctxmenu__item:hover { background: rgba(124, 140, 255, 0.22); }
+.ctxmenu__item--danger { color: #f1968f; }
+.ctxmenu__item--danger:hover { background: rgba(244, 113, 102, 0.15); }
+
 /* ── Assistant expanded chat panel ────────────────────────────────── */
 .assistant-panel {
   pointer-events: auto;
@@ -443,7 +486,7 @@ html:has(.overlay-stage), body:has(.overlay-stage) { background: transparent; }
 }
 .assistant-panel__avatar:active { cursor: grabbing; }
 
-.chat { flex: 1; min-height: 0; display: flex; flex-direction: column; }
+.chat { flex: 1; min-height: 0; display: flex; flex-direction: column; position: relative; }
 .chat__head {
   flex: none;
   display: flex; align-items: center; justify-content: space-between;

@@ -38,14 +38,17 @@ export function SpeechBubble({
 }) {
   const [draft, setDraft] = useState('');
   const [replying, setReplying] = useState(false);
+  const [hovered, setHovered] = useState(false);
   const inputRef = useRef<HTMLInputElement | null>(null);
 
   useEffect(() => {
     // Interactive bubbles stay until the user responds; ambient auto-dismiss.
-    if (action || replying || pending) return;
+    // Hover pauses the TTL so the user can read/select/copy without the
+    // bubble vanishing mid-gesture.
+    if (action || replying || pending || hovered) return;
     const t = setTimeout(() => onDismiss?.(), ttlMs);
     return () => clearTimeout(t);
-  }, [text, ttlMs, action, replying, pending, onDismiss]);
+  }, [text, ttlMs, action, replying, pending, hovered, onDismiss]);
 
   useEffect(() => {
     if (replying) inputRef.current?.focus();
@@ -60,7 +63,12 @@ export function SpeechBubble({
   };
 
   return (
-    <div className="bubble" role="status">
+    <div
+      className="bubble"
+      role="status"
+      onPointerEnter={() => setHovered(true)}
+      onPointerLeave={() => setHovered(false)}
+    >
       <span className="bubble__text">
         {text}
         {pending && (
