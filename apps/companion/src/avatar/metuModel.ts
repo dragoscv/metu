@@ -246,6 +246,12 @@ export type MetuExpression = 'idle' | 'listening' | 'speaking' | 'thinking';
 /** One-shot gestures layered over the base pose (k = 0..1 progress). */
 export type MetuGesture =
   | 'wave'
+  | 'salute'
+  | 'bow'
+  | 'facepalm'
+  | 'stretch'
+  | 'dance'
+  | 'look-around'
   | 'point-left'
   | 'point-right'
   | 'point-up'
@@ -258,6 +264,12 @@ export type MetuGesture =
 /**
  * Drive one animation frame. `t` seconds since start, `amp` 0..1 voice
  * amplitude. Pure pose-setting — call every frame before render.
+ *
+ * `phase` is the CONTINUOUS locomotion phase (radians) maintained by the
+ * caller — NOT global time. Cyclic gaits (walk/climb) key off it so the
+ * cycle starts at a neutral point on every state entry and never snaps:
+ * deriving phase from `t` meant entering 'walking' at a random point in
+ * the sine cycle, which read as a fast wiggle on each transition.
  */
 export function poseMetu(
   rig: MetuRig,
@@ -267,6 +279,7 @@ export function poseMetu(
   amp = 0,
   /** Optional gaze target in [-1..1] screen-relative offsets (idle only). */
   look?: { x: number; y: number } | null,
+  phase = t * 5.5,
 ): void {
   const { hips, torso, head, armL, armR, forearmL, forearmR, legL, legR, shinL, shinR } = rig;
 
@@ -277,6 +290,7 @@ export function poseMetu(
   let headYaw = 0;
   let headRoll = 0;
   torso.rotation.y = 0; // reset gaze-follow twist from previous frames
+  torso.rotation.z = 0; // reset dance sway from previous frames
 
   switch (motion) {
     case 'teleporting': {
@@ -298,9 +312,10 @@ export function poseMetu(
       break;
     }
     case 'walking': {
-      // Cadence ~0.9 strides/sec — anything faster reads as frantic
-      // vibration at the avatar's small on-screen size.
-      const w = t * 5.5;
+      // Phase-driven gait: `phase` is advanced continuously by the caller
+      // (proportional to dt, optionally scaled by real ground speed), so
+      // the cycle is smooth across frame-rate changes and state entries.
+      const w = phase;
       const swing = Math.sin(w);
       legL.rotation.x = swing * 0.55;
       legR.rotation.x = -swing * 0.55;
@@ -310,7 +325,10 @@ export function poseMetu(
       armR.rotation.x = swing * 0.35;
       forearmL.rotation.x = -0.35;
       forearmR.rotation.x = -0.35;
-      hipsY = 0.46 + Math.abs(Math.cos(w)) * 0.012;
+      // Hip bob at 2× stride frequency (two footfalls per cycle), smooth
+      // sine — abs(cos) has a velocity discontinuity at each footfall
+      // which contributed the "vibration" feel.
+      hipsY = 0.452 + (Math.sin(w * 2 - Math.PI / 2) * 0.5 + 0.5) * 0.012;
       torsoPitch = 0.08;
       headPitch = -0.04;
       break;
@@ -341,7 +359,7 @@ export function poseMetu(
       break;
     }
     case 'climbing': {
-      const c = t * 4;
+      const c = phase * 0.7; // climb reach keyed to the same continuous phase
       const reach = Math.sin(c);
       armL.rotation.x = -2.2 - reach * 0.5;
       armR.rotation.x = -2.2 + reach * 0.5;
@@ -468,6 +486,74 @@ export function applyMetuGesture(rig: MetuRig, gesture: MetuGesture, k: number, 
       armR.rotation.x = -2.6 * env;
       armR.rotation.z = -0.4 * env;
       forearmR.rotation.x = (-0.4 + Math.sin(t * 9) * 0.45) * env;
+      break;
+    }
+    case 'salute': {
+      // Crisp military salute: upper arm raised out, forearm folded so
+      // the hand meets the brow; head straightens; tiny chest-out.
+      // Snap up fast, hold, release — use a plateau envelope instead of
+      // the bell so the hold reads as deliberate.
+      const hold = Math.min(1, Math.min(k / 0.18, (1 - k) / 0.22));
+      const e = Math.max(0, hold);
+      armR.rotation.x = -1.9 * e;
+      armR.rotation.z = -1.0 * e;
+      forearmR.rotation.x = -2.35 * e;
+      head.rotation.x += -0.06 * e;
+      head.rotation.z += -0.04 * e;
+      torso.rotation.x += -0.06 * e;
+      break;
+    }
+    case 'bow': {
+      // Formal bow: torso + head pitch forward, arms tucked to the sides.
+      torso.rotation.x += 0.55 * env;
+      head.rotation.x += 0.35 * env;
+      armL.rotation.x = 0.15 * env;
+      armR.rotation.x = 0.15 * env;
+      armL.rotation.z = 0.06 * env;
+      armR.rotation.z = -0.06 * env;
+      break;
+    }
+    case 'facepalm': {
+      // Hand to visor, head drops into it, slight slump.
+      armR.rotation.x = -2.5 * env;
+      armR.rotation.z = -0.35 * env;
+      forearmR.rotation.x = -2.2 * env;
+      head.rotation.x += 0.4 * env;
+      torso.rotation.x += 0.12 * env;
+      break;
+    }
+    case 'stretch': {
+      // Both arms overhead, torso arches back, slow side-to-side sway.
+      armL.rotation.x = -3.0 * env;
+      armR.rotation.x = -3.0 * env;
+      armL.rotation.z = (0.25 + Math.sin(t * 1.4) * 0.1) * env;
+      armR.rotation.z = (-0.25 - Math.sin(t * 1.4) * 0.1) * env;
+      forearmL.rotation.x = -0.15 * env;
+      forearmR.rotation.x = -0.15 * env;
+      torso.rotation.x += -0.18 * env;
+      head.rotation.x += -0.25 * env;
+      break;
+    }
+    case 'dance': {
+      // Cheesy two-step: alternating arm pumps, hip sway via torso roll,
+      // head bops on the beat (~2 Hz).
+      const beat = t * Math.PI * 4; // 2 Hz
+      const a = Math.sin(beat);
+      armL.rotation.x = (-1.4 + a * 0.7) * env;
+      armR.rotation.x = (-1.4 - a * 0.7) * env;
+      forearmL.rotation.x = -1.1 * env;
+      forearmR.rotation.x = -1.1 * env;
+      torso.rotation.z = a * 0.12 * env;
+      torso.rotation.y += a * 0.18 * env;
+      head.rotation.x += Math.abs(Math.sin(beat)) * -0.12 * env;
+      head.rotation.z += a * 0.08 * env;
+      break;
+    }
+    case 'look-around': {
+      // Deliberate scan: head sweeps left → right with torso follow.
+      const sweep = Math.sin(k * Math.PI * 2) * 0.7;
+      head.rotation.y += sweep * env;
+      torso.rotation.y += sweep * 0.25 * env;
       break;
     }
     case 'point-left':

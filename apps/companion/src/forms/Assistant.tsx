@@ -48,7 +48,7 @@ import { onProposal } from '../assistant/assistantActions';
 import { useAssistantChat } from '../assistant/useAssistantChat';
 import { ChatPanel } from '../assistant/ChatPanel';
 import { CalibrateOverlay } from '../assistant/CalibrateOverlay';
-import { playGesture } from '../avatar/gestures';
+import { playGesture, tryGestureCommand } from '../avatar/gestures';
 import {
   classifyCommand,
   isRiskyInvocation,
@@ -835,6 +835,9 @@ function AssistantSkin({
         }
         // Learning loop: persist durable preferences/corrections.
         maybeLearnFromUtterance(auth, text);
+        // "salute" / "dance" / "take a bow" → instant body language,
+        // no LLM round-trip.
+        if (tryGestureCommand(text)) return;
         // "run <command…>" / ">cmd" → local terminal lane.
         const runMatch = /^(?:run|exec|\$|>)\s+(.+)$/i.exec(text.trim());
         if (runMatch?.[1]) {
@@ -894,6 +897,11 @@ function AssistantSkin({
             onSend={(t) => {
               // Learning loop: persist durable preferences/corrections.
               if (auth) maybeLearnFromUtterance(auth, t);
+              // Gesture commands ("salute", "dance"…) → instant, local.
+              if (tryGestureCommand(t)) {
+                setChatOpen(false);
+                return;
+              }
               // "run <cmd…>" in chat → local terminal lane (closes the
               // panel so the result bubble is visible at the avatar).
               const m = /^(?:run|exec|\$|>)\s+(.+)$/i.exec(t.trim());

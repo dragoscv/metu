@@ -139,8 +139,32 @@ export function MetuStage({
       }
     };
     window.addEventListener('metu:assistant-gesture', onGesture);
+    // Idle variety: every 25–60s of uninterrupted idle, play a subtle
+    // life-sign gesture (stretch or look-around). Main stage only.
+    let idleVarietyTimer: ReturnType<typeof setTimeout> | null = null;
+    const scheduleIdleVariety = () => {
+      idleVarietyTimer = setTimeout(
+        () => {
+          const loco = (driveRef.current.locomotion ?? 'idle') as MetuMotion;
+          if (anchor && loco === 'idle' && driveRef.current.state === 'idle' && !gesture) {
+            const pick: MetuGesture = Math.random() < 0.5 ? 'stretch' : 'look-around';
+            gesture = { kind: pick, start: clock.getElapsedTime(), dur: 2.6 };
+          }
+          scheduleIdleVariety();
+        },
+        25_000 + Math.random() * 35_000,
+      );
+    };
+    if (anchor) scheduleIdleVariety();
     // Teleport morph clock: counts seconds inside the 'teleporting' state.
     let warpT = 0;
+    // Continuous locomotion phase (radians). Advancing by dt — instead of
+    // deriving from global time — means the gait cycle (a) never jumps when
+    // entering walking mid-sine, and (b) eases in/out: cadence ramps up
+    // over ~0.25s on start and decays on stop, so transitions don't snap.
+    let gaitPhase = 0;
+    let gaitSpeed = 0; // current cadence (rad/s), eased toward the target
+    const GAIT_CADENCE = 5.5; // rad/s ≈ 0.9 strides/s
     // Cursor curiosity: poll the native cursor at 4Hz while idle and derive
     // a clamped gaze offset relative to the window center.
     let look: { x: number; y: number } | null = null;
@@ -188,6 +212,11 @@ export function MetuStage({
       const t = clock.getElapsedTime();
       const dt = Math.min(t - lastT, 0.1);
       lastT = t;
+
+      // Ease the cadence toward its target and integrate the phase.
+      const gaitTarget = loco === 'walking' || loco === 'climbing' ? GAIT_CADENCE : 0;
+      gaitSpeed += (gaitTarget - gaitSpeed) * Math.min(1, dt * 8);
+      gaitPhase += gaitSpeed * dt;
 
       // Landing squash: falling/jumping → grounded triggers a brief
       // squash-and-stretch (scaleY dip + scaleX bulge, 180ms recover).
@@ -246,7 +275,7 @@ export function MetuStage({
         }
       }
 
-      poseMetu(rig, loco, expr, t, amp, look);
+      poseMetu(rig, loco, expr, t, amp, look, gaitPhase);
 
       // poseMetu resets emissive each frame — re-boost during the warp.
       if (loco === 'teleporting') {
@@ -289,6 +318,7 @@ export function MetuStage({
       if (cursorTimer) clearInterval(cursorTimer);
       clearTimeout(measureTimer);
       window.removeEventListener('metu:assistant-gesture', onGesture);
+      if (idleVarietyTimer) clearTimeout(idleVarietyTimer);
       scene.remove(rig.root);
       disposeMetuRig(rig);
       renderer.dispose();

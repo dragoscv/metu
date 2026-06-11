@@ -55,6 +55,12 @@ export interface AvatarDriveProps {
 /** One-shot expressive gestures layered over locomotion. */
 export type AvatarGesture =
   | 'wave'
+  | 'salute'
+  | 'bow'
+  | 'facepalm'
+  | 'stretch'
+  | 'dance'
+  | 'look-around'
   | 'point-left'
   | 'point-right'
   | 'point-up'
