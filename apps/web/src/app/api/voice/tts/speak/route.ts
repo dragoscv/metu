@@ -11,8 +11,8 @@
  * "client never sees raw provider tokens" invariant established in slice 4.
  */
 import { z } from 'zod';
-import { auth } from '@metu/auth';
 import { rateLimit } from '@/lib/ratelimit';
+import { hasScope, resolveSession } from '@/lib/bearer';
 import { getBuiltInPersona } from '@metu/presence';
 import { requireVoiceProviderKey } from '@/lib/voice-keys';
 
@@ -26,14 +26,15 @@ const Body = z.object({
 const TEXT_BUDGET = 4_000;
 
 export async function POST(req: Request) {
-  const session = await auth();
-  if (!session?.user?.workspaceId || !session.user.id) {
+  // Cookie session (web) OR bearer token (companion/mobile).
+  const session = await resolveSession(req);
+  if (!session || !hasScope(session, 'presence:talk')) {
     return new Response(JSON.stringify({ ok: false, error: 'unauthenticated' }), {
-      status: 401,
+      status: session ? 403 : 401,
       headers: { 'content-type': 'application/json' },
     });
   }
-  const { workspaceId, id: userId } = session.user;
+  const { workspaceId, userId } = session;
 
   // Cheap protection — TTS is paid per character.
   const limited = await rateLimit('voice-realtime', userId);

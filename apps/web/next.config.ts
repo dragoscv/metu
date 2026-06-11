@@ -75,6 +75,21 @@ const nextConfig: NextConfig = {
           { key: 'Content-Security-Policy', value: csp },
         ],
       },
+      // CORS for the bearer-token API surface used by non-browser-origin
+      // clients: the Tauri companion webview (http://localhost:5173 in dev,
+      // tauri.localhost in prod), browser extension, etc. These routes
+      // authenticate via Authorization header — never cookies — so a
+      // wildcard origin does not enable CSRF. Without these headers every
+      // companion fetch dies with "Failed to fetch" (no ACAO on response).
+      ...['/api/sdk/:path*', '/api/voice/:path*'].map((source) => ({
+        source,
+        headers: [
+          { key: 'Access-Control-Allow-Origin', value: '*' },
+          { key: 'Access-Control-Allow-Methods', value: 'GET,POST,PUT,PATCH,DELETE,OPTIONS' },
+          { key: 'Access-Control-Allow-Headers', value: 'authorization, content-type' },
+          { key: 'Access-Control-Max-Age', value: '86400' },
+        ],
+      })),
     ];
   },
 };

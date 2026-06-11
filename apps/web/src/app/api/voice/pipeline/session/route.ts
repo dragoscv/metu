@@ -12,8 +12,8 @@
  */
 import { NextResponse } from 'next/server';
 import { z } from 'zod';
-import { auth } from '@metu/auth';
 import { rateLimit } from '@/lib/ratelimit';
+import { hasScope, resolveSession } from '@/lib/bearer';
 import { getBuiltInPersona } from '@metu/presence';
 import { requireVoiceProviderKey } from '@/lib/voice-keys';
 import { getDb } from '@metu/db';
@@ -36,11 +36,15 @@ interface DeepgramGrant {
 const PIPELINE_TTL_SEC = 30;
 
 export async function POST(req: Request) {
-  const session = await auth();
-  if (!session?.user?.workspaceId || !session.user.id) {
+  // Cookie session (web) OR bearer token (companion/mobile).
+  const session = await resolveSession(req);
+  if (!session) {
     return NextResponse.json({ ok: false, error: 'unauthenticated' }, { status: 401 });
   }
-  const { workspaceId, id: userId } = session.user;
+  if (!hasScope(session, 'presence:talk')) {
+    return NextResponse.json({ ok: false, error: 'insufficient_scope' }, { status: 403 });
+  }
+  const { workspaceId, userId } = session;
 
   const limited = await rateLimit('voice-realtime', userId);
   if (limited) return limited;

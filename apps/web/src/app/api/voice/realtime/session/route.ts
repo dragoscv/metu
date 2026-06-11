@@ -19,11 +19,11 @@
  */
 import { NextResponse } from 'next/server';
 import { z } from 'zod';
-import { auth } from '@metu/auth';
 import { getProviderCredential } from '@metu/ai';
 import { getDb } from '@metu/db';
 import { timelineEvent } from '@metu/db/schema';
 import { rateLimit } from '@/lib/ratelimit';
+import { hasScope, resolveSession } from '@/lib/bearer';
 import { getBuiltInPersona } from '@metu/presence';
 import { getWorkspaceBillingTier } from '@/lib/voice-billing';
 import { isVoiceProviderAllowed } from '@metu/voice';
@@ -55,12 +55,18 @@ interface OpenAiRealtimeSession {
 }
 
 export async function POST(req: Request) {
-  const session = await auth();
-  if (!session?.user?.workspaceId || !session.user.id) {
+  // Cookie session (web) OR bearer token (companion/mobile) — the
+  // companion is a paired OAuth client, not a cookie browser. Bearer
+  // callers need the presence:talk scope.
+  const session = await resolveSession(req);
+  if (!session) {
     return NextResponse.json({ ok: false, error: 'unauthenticated' }, { status: 401 });
   }
-  const workspaceId = session.user.workspaceId;
-  const userId = session.user.id;
+  if (!hasScope(session, 'presence:talk')) {
+    return NextResponse.json({ ok: false, error: 'insufficient_scope' }, { status: 403 });
+  }
+  const workspaceId = session.workspaceId;
+  const userId = session.userId;
 
   // Cheap per-user rate limit — protects BYOK quota from runaway clients.
   const limited = await rateLimit('voice-realtime', userId);
