@@ -31,6 +31,12 @@ import { AvatarHost } from '../avatar/AvatarHost';
 import type { AvatarState } from '../avatar/types';
 import { useAssistantBrain, type PointRequest } from '../assistant/useAssistantBrain';
 import { startActivityModel, startDistiller } from '../assistant/activityModel';
+import {
+  startSuggestionEngine,
+  loadProactivity,
+  saveProactivity,
+  type ProactivityMode,
+} from '../assistant/proactivity';
 import { SpeechBubble, type BubbleAction } from '../assistant/SpeechBubble';
 import { assistantLines, QUICK_REPLIES } from '../assistant/assistantMessages';
 import { showHighlight } from '../assistant/overlay-bridge';
@@ -152,7 +158,11 @@ function AssistantSkin({
   audioRef?: (el: HTMLAudioElement | null) => void;
 }) {
   const [audioEl, setAudioEl] = useState<HTMLAudioElement | null>(null);
-  const [ambient, setAmbient] = useState<{ text: string; action?: BubbleAction } | null>(null);
+  const [ambient, setAmbient] = useState<{
+    text: string;
+    action?: BubbleAction;
+    quickReplies?: string[];
+  } | null>(null);
   const [chatOpen, setChatOpen] = useState(false);
   const cfg = PERSONALITIES[personality];
 
@@ -181,6 +191,8 @@ function AssistantSkin({
   const dragCooldownRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   // Right-click context menu (anchored inside the window).
   const [menu, setMenu] = useState<{ x: number; y: number } | null>(null);
+  // Proactivity mode (silent/aware/chatty) — gated in the suggestion engine.
+  const [proactivity, setProactivity] = useState<ProactivityMode>(() => loadProactivity());
 
   const onBodyPointerDown = (e: React.PointerEvent) => {
     if (e.button !== 0 || !isTauri()) return;
@@ -355,6 +367,15 @@ function AssistantSkin({
     return () => unlisten?.();
   }, [personality]);
 
+  // Jarvis Slice D — proactive suggestions (mode-gated in the engine).
+  useEffect(() => {
+    return startSuggestionEngine({
+      onSuggest: (s) => {
+        setAmbient({ text: s.text, quickReplies: s.quickReplies });
+      },
+    });
+  }, []);
+
   // Ask-before-act: surface a confirm bubble for any proposed window action.
   useEffect(() => {
     return onProposal((p) => {
@@ -404,12 +425,13 @@ function AssistantSkin({
   const bubbleIsChat = !voiceBubble && !!chatBubble;
   // One-tap chips: ambient remarks get conversation starters; chat replies
   // get follow-ups. Confirm bubbles + live voice transcripts get none.
+  // Suggestion bubbles carry their own context-specific replies.
   const bubbleSuggestions =
     voiceBubble || bubbleAction || !auth
       ? undefined
       : bubbleIsChat
         ? QUICK_REPLIES.followup
-        : QUICK_REPLIES.ambient;
+        : (ambient?.quickReplies ?? QUICK_REPLIES.ambient);
 
   const dismissBubble = () => {
     if (bubbleIsChat) setChatBubble(null);
@@ -555,6 +577,29 @@ function AssistantSkin({
             }}
           >
             🎤 Toggle voice
+          </button>
+          <button
+            className="assistant-menu__item"
+            onClick={() => {
+              // Cycle silent → aware → chatty.
+              const order: ProactivityMode[] = ['silent', 'aware', 'chatty'];
+              const cur = loadProactivity();
+              const next = order[(order.indexOf(cur) + 1) % order.length] ?? 'aware';
+              saveProactivity(next);
+              setProactivity(next);
+              setMenu(null);
+              setAmbient({
+                text:
+                  next === 'silent'
+                    ? "Going quiet — I'll only speak when you ask."
+                    : next === 'aware'
+                      ? "I'll speak up when it matters."
+                      : "Chatty mode — I'll share thoughts as we go!",
+              });
+            }}
+          >
+            {proactivity === 'silent' ? '🔕' : proactivity === 'aware' ? '🔔' : '💬'} Mode:{' '}
+            {proactivity}
           </button>
           <button
             className="assistant-menu__item"
