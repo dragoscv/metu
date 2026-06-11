@@ -84,16 +84,16 @@ export class ScreenWorld {
     const platforms: Platform[] = [];
     const walls: Wall[] = [];
 
-    // Floors: monitor work-area bottoms. spatial_monitors returns full
-    // bounds; approximate the work area as bottom minus a 48px taskbar on
-    // the primary monitor (Windows default). Good enough visually — the
-    // character walks ON the taskbar.
+    // Floors: the REAL work-area bottom from the OS (GetMonitorInfoW
+    // rcWork) — exactly where the taskbar starts, whatever its size,
+    // side, or auto-hide state. The character stands ON the taskbar's
+    // top edge.
     for (const m of this.monitors) {
-      const taskbar = m.primary ? Math.round(48 * (m.scale || 1)) : 0;
+      const workBottom = (m.workY ?? m.y) + (m.workH ?? m.h);
       platforms.push({
-        x1: m.x,
-        x2: m.x + m.w,
-        y: m.y + m.h - taskbar,
+        x1: m.workX ?? m.x,
+        x2: (m.workX ?? m.x) + (m.workW ?? m.w),
+        y: workBottom,
         kind: 'floor',
       });
     }

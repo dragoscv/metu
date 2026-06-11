@@ -15,6 +15,11 @@ export interface MonitorInfo {
   h: number;
   scale: number;
   primary: boolean;
+  /** Work area (excludes taskbar), physical px. */
+  workX: number;
+  workY: number;
+  workW: number;
+  workH: number;
 }
 
 export interface Point {

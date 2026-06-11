@@ -25,6 +25,12 @@ pub struct MonitorInfo {
     /// DPI scale factor (1.0 = 96 DPI). Physical pixels = logical * scale.
     pub scale: f64,
     pub primary: bool,
+    /// Work area (excludes taskbar/docks), physical px. Same as the full
+    /// bounds on platforms where we can't query it.
+    pub work_x: i32,
+    pub work_y: i32,
+    pub work_w: u32,
+    pub work_h: u32,
 }
 
 #[derive(Debug, Serialize, Clone, Copy)]
@@ -63,6 +69,7 @@ pub fn spatial_monitors(window: tauri::Window) -> Result<Vec<MonitorInfo>, Strin
         .map(|m| {
             let pos = m.position();
             let size = m.size();
+            let (work_x, work_y, work_w, work_h) = work_area(pos.x, pos.y, size.width, size.height);
             MonitorInfo {
                 x: pos.x,
                 y: pos.y,
@@ -70,10 +77,51 @@ pub fn spatial_monitors(window: tauri::Window) -> Result<Vec<MonitorInfo>, Strin
                 h: size.height,
                 scale: m.scale_factor(),
                 primary: primary_pos == Some(*pos),
+                work_x,
+                work_y,
+                work_w,
+                work_h,
             }
         })
         .collect();
     Ok(out)
+}
+
+/// Real work area for the monitor containing (x, y) — Windows reports it
+/// via MonitorFromPoint + GetMonitorInfoW (rcWork excludes the taskbar
+/// wherever it's docked and whatever size it is).
+#[cfg(windows)]
+fn work_area(x: i32, y: i32, w: u32, h: u32) -> (i32, i32, u32, u32) {
+    use windows::Win32::Foundation::POINT;
+    use windows::Win32::Graphics::Gdi::{
+        GetMonitorInfoW, MonitorFromPoint, MONITORINFO, MONITOR_DEFAULTTONEAREST,
+    };
+    let center = POINT {
+        x: x + (w as i32) / 2,
+        y: y + (h as i32) / 2,
+    };
+    unsafe {
+        let hmon = MonitorFromPoint(center, MONITOR_DEFAULTTONEAREST);
+        let mut info = MONITORINFO {
+            cbSize: std::mem::size_of::<MONITORINFO>() as u32,
+            ..Default::default()
+        };
+        if GetMonitorInfoW(hmon, &mut info).as_bool() {
+            let r = info.rcWork;
+            return (
+                r.left,
+                r.top,
+                (r.right - r.left).max(0) as u32,
+                (r.bottom - r.top).max(0) as u32,
+            );
+        }
+    }
+    (x, y, w, h)
+}
+
+#[cfg(not(windows))]
+fn work_area(x: i32, y: i32, w: u32, h: u32) -> (i32, i32, u32, u32) {
+    (x, y, w, h)
 }
 
 /// Current global cursor position in physical pixels.
