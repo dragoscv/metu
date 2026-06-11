@@ -16,6 +16,7 @@ import * as THREE from 'three';
 import { GLTFLoader } from 'three/examples/jsm/loaders/GLTFLoader.js';
 import type { AvatarDriveProps, AvatarState } from './types';
 import { getGlbPreset } from './glbPresets';
+import { reportFootOffset } from './footAnchor';
 import type { VrmStatus } from './VrmStage';
 
 export function GlbStage({
@@ -129,6 +130,19 @@ export function GlbStage({
         const dist = (sphere.radius * margin) / Math.sin((camera.fov * Math.PI) / 360);
         camera.position.set(0, sphere.radius * 0.1, dist);
         camera.lookAt(0, 0, 0);
+        // Report the foot anchor: project the model's lowest point to the
+        // canvas, convert to distance-from-window-bottom (logical px) so
+        // the physics puts these feet exactly on platforms.
+        setTimeout(() => {
+          if (disposed || !root) return;
+          const fitBox = new THREE.Box3().setFromObject(root);
+          const feet = new THREE.Vector3(0, fitBox.min.y, 0);
+          feet.project(camera);
+          const feetCanvasY = ((1 - feet.y) / 2) * size;
+          const rect = canvas.getBoundingClientRect();
+          const feetViewportY = rect.top + (feetCanvasY / size) * rect.height;
+          reportFootOffset(window.innerHeight - feetViewportY);
+        }, 100);
         onStatus?.('ready');
       })
       .catch(() => {

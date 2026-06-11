@@ -14,6 +14,7 @@ import * as THREE from 'three';
 import { getCurrentWindow } from '@tauri-apps/api/window';
 import { isTauri } from '../state/runtime';
 import { getCursor } from '../assistant/spatial';
+import { reportFootOffset } from './footAnchor';
 import type { AvatarDriveProps } from './types';
 import {
   buildMetuRig,
@@ -63,6 +64,23 @@ export function MetuStage({
 
     const rig = buildMetuRig(getMetuPalette(paletteId));
     scene.add(rig.root);
+
+    // Measure the foot anchor: project the model's feet (y=0 in rig space)
+    // to canvas coordinates, then convert to "distance from the window
+    // bottom" in logical px. Re-measured on mount (layout/canvas/camera
+    // are stable afterwards; squash scaling never moves the feet).
+    const measureFeet = () => {
+      const v = new THREE.Vector3(0, 0, 0); // feet in world space
+      v.project(camera);
+      // NDC y → canvas px (top-left origin).
+      const feetCanvasY = ((1 - v.y) / 2) * size;
+      const rect = canvas.getBoundingClientRect();
+      const feetViewportY = rect.top + (feetCanvasY / size) * rect.height;
+      const offset = window.innerHeight - feetViewportY;
+      reportFootOffset(offset);
+    };
+    // Layout settles a tick after mount.
+    const measureTimer = setTimeout(measureFeet, 100);
 
     // Voice amplitude via WebAudio analyser on the shared element.
     let analyser: AnalyserNode | null = null;
@@ -193,6 +211,7 @@ export function MetuStage({
       disposed = true;
       cancelAnimationFrame(raf);
       if (cursorTimer) clearInterval(cursorTimer);
+      clearTimeout(measureTimer);
       scene.remove(rig.root);
       disposeMetuRig(rig);
       renderer.dispose();

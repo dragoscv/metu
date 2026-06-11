@@ -50,13 +50,13 @@ import {
   cancelNav,
   createBody,
   DEFAULT_PHYSICS,
-  FOOT_OFFSET,
   hop,
   navigateTo,
   step,
   type LocomotionState,
   type PhysicsConfig,
 } from './avatarPhysics';
+import { getFootOffsetPhysical } from '../avatar/footAnchor';
 
 /**
  * Director states (Jarvis Slice C — purposeful presence):
@@ -248,7 +248,7 @@ export function useAssistantBrain(opts: Options): AssistantBrainState {
         // Seed the physics body's feet; it starts falling so gravity
         // settles it onto the nearest platform (taskbar).
         bodyRef.current.x = seedX + width / 2;
-        bodyRef.current.y = seedY + height - FOOT_OFFSET;
+        bodyRef.current.y = seedY + height - getFootOffsetPhysical();
         bodyRef.current.state = 'falling';
       }
     })();
@@ -274,8 +274,11 @@ export function useAssistantBrain(opts: Options): AssistantBrainState {
   // suggestion engine (Slice D) via `metu:assistant-approach` events.
   const dockTarget = useCallback(
     (fg: ForegroundWindow | null): Point => {
-      // Bottom-right corner of the monitor hosting the active window (or
-      // primary). 16px margin keeps it off taskbar edges.
+      // Dock = stand on the WORK-AREA floor (taskbar top) near the right
+      // edge of the monitor hosting the active window. The y is computed
+      // so that feet (window bottom − foot offset) land exactly on the
+      // floor — same math the physics uses, so arrival is stable (no
+      // jump/teleport corrections).
       const mons = monitorsRef.current;
       const margin = 16;
       let mon = mons.find((m) => m.primary) ?? mons[0];
@@ -285,9 +288,12 @@ export function useAssistantBrain(opts: Options): AssistantBrainState {
         mon = mons.find((m) => cx >= m.x && cx < m.x + m.w && cy >= m.y && cy < m.y + m.h) ?? mon;
       }
       if (!mon) return { x: 100, y: 100 };
+      const workX = mon.workX ?? mon.x;
+      const workW = mon.workW ?? mon.w;
+      const floorY = (mon.workY ?? mon.y) + (mon.workH ?? mon.h);
       return {
-        x: mon.x + mon.w - width - margin,
-        y: mon.y + mon.h - height - margin,
+        x: workX + workW - width - margin,
+        y: floorY - height + getFootOffsetPhysical() - 0, // feet ON the floor
       };
     },
     [width, height],
@@ -435,7 +441,7 @@ export function useAssistantBrain(opts: Options): AssistantBrainState {
           .then((p) => {
             posRef.current = { x: p.x, y: p.y };
             body.x = p.x + width / 2;
-            body.y = p.y + height - FOOT_OFFSET;
+            body.y = p.y + height - getFootOffsetPhysical();
             // Dropped from a drag → land on whatever is below.
             if (body.state !== 'falling') {
               const ground = screenWorld.groundBelow(body.x, body.y - 1);
@@ -451,7 +457,7 @@ export function useAssistantBrain(opts: Options): AssistantBrainState {
       const target = targetRef.current;
       if (target) {
         targetRef.current = null;
-        navigateTo(body, target.x + width / 2, target.y + height - FOOT_OFFSET);
+        navigateTo(body, target.x + width / 2, target.y + height - getFootOffsetPhysical());
       }
 
       const before = body.goal;
@@ -483,7 +489,7 @@ export function useAssistantBrain(opts: Options): AssistantBrainState {
 
       // Feet → window top-left.
       const wx = Math.round(body.x - width / 2);
-      const wy = Math.round(body.y - height + FOOT_OFFSET);
+      const wy = Math.round(body.y - height + getFootOffsetPhysical());
       if (wx !== posRef.current.x || wy !== posRef.current.y) {
         posRef.current = { x: wx, y: wy };
         void w.setPosition(new PhysicalPosition(wx, wy)).catch(() => {});

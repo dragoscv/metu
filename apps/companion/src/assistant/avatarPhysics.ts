@@ -34,7 +34,11 @@ export const DEFAULT_PHYSICS: PhysicsConfig = {
   maxJumpHeight: 190,
 };
 
-/** Feet are this many px above the window's bottom edge (canvas padding). */
+/**
+ * Legacy constant — superseded by the measured anchor in
+ * `avatar/footAnchor.ts` (the stage projects the model's actual feet).
+ * Kept only as the pre-measurement default documented there.
+ */
 export const FOOT_OFFSET = 28;
 
 export interface AvatarBody {
