@@ -392,15 +392,21 @@ function AssistantSkin({
     text: string;
     how: 'expired' | 'dismissed';
   } | null>(null);
+  /** True once the user has explicitly restored/read the current bubble —
+   *  a read bubble must NOT re-park as unread on expiry/dismiss (that made
+   *  the badge immortal). Reset whenever a NEW assistant reply arrives. */
+  const bubbleReadRef = useRef(false);
   // Human-readable progress stage while a quick-reply/chat turn runs.
   const [progressLabel, setProgressLabel] = useState<string | null>(null);
   useEffect(() => {
     if (chatOpen) {
       setChatBubble(null);
       setUnreadReply(null);
+      bubbleReadRef.current = true; // panel shows the thread — all read
       return;
     }
     if (chat.lastAssistantText) {
+      bubbleReadRef.current = false; // fresh reply — unread until seen
       setChatBubble(chat.lastAssistantText);
       setUnreadReply(null);
     }
@@ -574,9 +580,12 @@ function AssistantSkin({
 
   const dismissBubble = () => {
     if (bubbleIsChat) {
-      // Auto-expiry parks the reply as "unread" — the avatar badge brings
-      // it back on hover. Manual ✕ also parks it (cheap undo).
-      if (chatBubble) setUnreadReply({ text: chatBubble, how: 'dismissed' });
+      // Manual ✕ on a bubble the user has ALREADY restored once counts as
+      // read — don't re-park it (the badge would never go away). Fresh
+      // bubbles park as 'dismissed' (cheap undo).
+      if (chatBubble && !bubbleReadRef.current) {
+        setUnreadReply({ text: chatBubble, how: 'dismissed' });
+      }
       setChatBubble(null);
     } else {
       setAmbient(null);
@@ -586,7 +595,12 @@ function AssistantSkin({
   /** TTL expiry of a chat reply — parked as hover-restorable unread. */
   const expireBubble = () => {
     if (bubbleIsChat) {
-      if (chatBubble) setUnreadReply({ text: chatBubble, how: 'expired' });
+      // Once restored (= read), expiry is silent: re-parking made the
+      // unread badge immortal — read the message, bubble re-expires,
+      // badge returns. Read means read.
+      if (chatBubble && !bubbleReadRef.current) {
+        setUnreadReply({ text: chatBubble, how: 'expired' });
+      }
       setChatBubble(null);
     } else {
       setAmbient(null);
@@ -595,6 +609,7 @@ function AssistantSkin({
 
   const restoreUnread = () => {
     if (!unreadReply) return;
+    bubbleReadRef.current = true; // user explicitly opened it — it's read
     setChatBubble(unreadReply.text);
     setUnreadReply(null);
   };
