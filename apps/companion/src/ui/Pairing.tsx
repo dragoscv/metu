@@ -25,7 +25,7 @@ const DEFAULT_API = import.meta.env.VITE_METU_API ?? 'http://localhost:24890';
 const DEFAULT_HUB = import.meta.env.VITE_METU_HUB ?? 'http://localhost:24891';
 const CLIENT_ID = import.meta.env.VITE_METU_COMPANION_CLIENT_ID ?? 'metu_app_companion';
 const SCOPES =
-  'openid profile email offline_access capture:write recall:read notify:write notify:read event:write event:read tools:invoke audit:read';
+  'openid profile email offline_access capture:write recall:read notify:write notify:read event:write event:read tools:invoke audit:read presence:talk';
 
 const AUTH_TIMEOUT_SECS = 300;
 

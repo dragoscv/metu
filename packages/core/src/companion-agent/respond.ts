@@ -178,6 +178,23 @@ export async function* streamLocal(input: CompanionTurnInput): AsyncGenerator<Lo
     };
     return;
   }
-  const text = assembled.trim() || 'Mm-hm.';
-  yield { type: 'final', text, toolCallNames };
+  let text = assembled.trim();
+  if (!text && toolCallNames.length === 0) {
+    // Some gateway models (codai auto-router) return empty text when the
+    // request carries tool definitions they can't handle. Retry once
+    // without tools — a plain answer beats a grunt.
+    try {
+      const retry = await generateText({
+        model: modelInfo.model as Parameters<typeof generateText>[0]['model'],
+        system,
+        messages,
+        maxOutputTokens: 400,
+      });
+      text = retry.text.trim();
+      if (text) yield { type: 'delta', text };
+    } catch {
+      /* fall through to the grunt */
+    }
+  }
+  yield { type: 'final', text: text || 'Mm-hm.', toolCallNames };
 }

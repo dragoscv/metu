@@ -18,7 +18,7 @@
  *     biased toward escalate.
  */
 import { z } from 'zod';
-import { generateObject } from 'ai';
+import { generateObject, generateText } from 'ai';
 import { getModel } from '@metu/ai';
 import type { CompanionTurnInput, TriageDecision } from './types';
 
@@ -155,13 +155,30 @@ export async function triageTurn(input: CompanionTurnInput): Promise<TriageDecis
     // We deliberately don't add a separate 'classify' intent: the
     // intent set is curated.
     const { model } = await getModel({ workspaceId: input.workspaceId, intent: 'fast' });
-    const { object } = await generateObject({
-      model: model as Parameters<typeof generateObject>[0]['model'],
-      schema: triageSchema,
-      system: TRIAGE_SYSTEM,
-      prompt: `Persona: ${input.personaSlug}\nSurface: ${input.surface}\nUtterance: ${input.utterance}`,
-      maxOutputTokens: 80,
-    });
+    let object: z.infer<typeof triageSchema>;
+    try {
+      const r = await generateObject({
+        model: model as Parameters<typeof generateObject>[0]['model'],
+        schema: triageSchema,
+        system: TRIAGE_SYSTEM,
+        prompt: `Persona: ${input.personaSlug}\nSurface: ${input.surface}\nUtterance: ${input.utterance}`,
+        maxOutputTokens: 80,
+      });
+      object = r.object;
+    } catch {
+      // Some gateway models (codai auto-router) don't reliably honor
+      // structured-output mode and generateObject throws "No object
+      // generated". Fall back to plain text + keyword extraction —
+      // far better than dumping EVERY greeting onto the Conductor.
+      const { text } = await generateText({
+        model: model as Parameters<typeof generateText>[0]['model'],
+        system: TRIAGE_SYSTEM + '\n\nReply with EXACTLY one word: "local" or "escalate".',
+        prompt: `Persona: ${input.personaSlug}\nSurface: ${input.surface}\nUtterance: ${input.utterance}`,
+        maxOutputTokens: 20,
+      });
+      const lane = /escalate/i.test(text) ? 'escalate' : 'local';
+      object = { lane, reason: `text-fallback: model said "${text.trim().slice(0, 40)}"` };
+    }
     // Low-eagerness personas bias toward escalate when the model is
     // ambivalent — if reason mentions uncertainty, force escalate.
     if (
