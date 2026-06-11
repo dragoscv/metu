@@ -31,6 +31,7 @@ import { AvatarHost } from '../avatar/AvatarHost';
 import type { AvatarState } from '../avatar/types';
 import { useAssistantBrain, type PointRequest } from '../assistant/useAssistantBrain';
 import { onActivityChange, startActivityModel, startDistiller } from '../assistant/activityModel';
+import { runSkill, SKILL_ACKS, type SkillId } from '../assistant/skills';
 import { applySenseSettings, saveWatchPaused } from '../state/senseSettings';
 import { writeText } from '@tauri-apps/plugin-clipboard-manager';
 import {
@@ -572,6 +573,42 @@ function AssistantSkin({
     setUnreadReply(null);
   };
 
+  // ── Direct skill lane: instant ack + stream into the bubble ─────────────
+  const skillAbortRef = useRef<AbortController | null>(null);
+  const [skillBusy, setSkillBusy] = useState(false);
+  const fireSkill = useCallback(
+    (skill: SkillId) => {
+      if (!auth) return;
+      skillAbortRef.current?.abort();
+      const ctrl = new AbortController();
+      skillAbortRef.current = ctrl;
+      setSkillBusy(true);
+      // Instant ack — the bubble appears before any network round-trip.
+      setUnreadReply(null);
+      setChatBubble(SKILL_ACKS[skill]);
+      runSkill(
+        auth,
+        skill,
+        personaSlug,
+        (full) => {
+          if (!ctrl.signal.aborted) setChatBubble(full);
+        },
+        ctrl.signal,
+      )
+        .catch((err: unknown) => {
+          if (ctrl.signal.aborted) return;
+          setChatBubble(err instanceof Error ? err.message : 'Something went wrong.');
+        })
+        .finally(() => {
+          if (skillAbortRef.current === ctrl) {
+            skillAbortRef.current = null;
+            setSkillBusy(false);
+          }
+        });
+    },
+    [auth, personaSlug],
+  );
+
   // The assistant window is created with `focus: false` (it must never steal
   // focus while ambient). Opening the chat is an explicit user action, so we
   // DO want focus then — otherwise the input can't receive keystrokes and
@@ -650,10 +687,25 @@ function AssistantSkin({
     };
   }, [menu]);
 
+  /** Canned chips that map to the fast skill lane instead of full chat. */
+  const SKILL_CHIPS: Record<string, SkillId> = {
+    'Catch me up': 'catch_up',
+    'What was I doing?': 'catch_up',
+    'Summarize where I left off': 'catch_up',
+    "What's next on my plate?": 'whats_next',
+    'What does this error mean?': 'explain_error',
+    'Suggest a fix': 'explain_error',
+  };
   const quickReply = auth
     ? (text: string) => {
-        setChatBubble(null);
         setAmbient(null);
+        const skill = SKILL_CHIPS[text];
+        if (skill) {
+          // Fast lane: ack + streamed answer, no triage round-trip.
+          fireSkill(skill);
+          return;
+        }
+        setChatBubble(null);
         void chat.send(text);
       }
     : undefined;
@@ -710,7 +762,7 @@ function AssistantSkin({
                 text={bubbleText}
                 ttlMs={bubbleIsChat ? Math.max(cfg.bubbleTtlMs * 3, 18_000) : cfg.bubbleTtlMs}
                 action={bubbleAction}
-                pending={chatBusy && (bubbleIsChat || !!workingBubble)}
+                pending={(chatBusy && (bubbleIsChat || !!workingBubble)) || skillBusy}
                 progressLabel={progressLabel}
                 onDismiss={dismissBubble}
                 onExpire={expireBubble}
@@ -782,7 +834,7 @@ function AssistantSkin({
               className="assistant-menu__item"
               onClick={() => {
                 setMenu(null);
-                quickReply?.('Catch me up on what I was doing.');
+                fireSkill('catch_up');
               }}
             >
               ⏪ Catch me up
@@ -793,7 +845,7 @@ function AssistantSkin({
               className="assistant-menu__item"
               onClick={() => {
                 setMenu(null);
-                quickReply?.('Take a look at my screen and tell me what you see.');
+                fireSkill('analyze_screen');
               }}
             >
               👀 Analyze my screen

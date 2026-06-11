@@ -22,6 +22,7 @@ import type { AiIntent, AiProvider } from '@metu/types';
 import type { LanguageModel } from 'ai';
 import { open } from './crypto';
 import { copilotFetch, getCopilotSession } from './copilot';
+import { modelsForIntent } from './models';
 
 // ─── codai gateway (first-class, preconfigured) ────────────────────────────
 // ai.codai.ro is OpenAI-compatible. Base URL + tuning headers are baked in so
@@ -34,6 +35,16 @@ export const CODAI_DEFAULT_HEADERS: Record<string, string> = {
   'x-codai-thinking-budget': '32768',
   'x-codai-cache': '1',
   'x-codai-cascade': 'verify',
+};
+/**
+ * Latency-first headers for the `fast` intent: no extended thinking, no
+ * cascade verification — the 32K thinking budget added seconds to every
+ * companion bubble/voice turn for zero benefit on chit-chat-grade calls.
+ * Semantic cache stays on (it only helps latency).
+ */
+export const CODAI_FAST_HEADERS: Record<string, string> = {
+  'x-codai-thinking': '0',
+  'x-codai-cache': '1',
 };
 
 // ─── Default model per (provider, intent) ──────────────────────────────────
@@ -234,7 +245,16 @@ export async function getModel(input: GetModelInput): Promise<ResolvedModel> {
     // For embeddings, never inherit the stored chat default model (e.g. a
     // user who saved defaultModel='codai' must still embed with a 1536-dim
     // embedding model). Skip cred.defaultModel on the embed intent.
-    const credDefault = input.intent === 'embed' ? undefined : cred.defaultModel;
+    // Same logic generalized: a credential default only applies when that
+    // model actually serves this intent (per the catalog). Otherwise a
+    // generic default like 'codai' (auto-router) silently overrides the
+    // intent tiers — e.g. fast-lane calls routed to the slow auto-router,
+    // which is why companion actions felt sluggish.
+    const credServesIntent =
+      !!cred.defaultModel &&
+      modelsForIntent(provider, input.intent).some((m) => m.id === cred.defaultModel);
+    const credDefault =
+      input.intent === 'embed' ? undefined : credServesIntent ? cred.defaultModel : undefined;
     const modelId = input.model ?? policyModel ?? credDefault ?? DEFAULTS[provider][input.intent];
     if (!modelId) continue;
     try {
@@ -316,7 +336,10 @@ function instantiate(
       const client = createOpenAI({
         apiKey: cred.apiKey,
         baseURL,
-        headers: { ...CODAI_DEFAULT_HEADERS, ...(cfg?.headers ?? {}) },
+        headers: {
+          ...(intent === 'fast' ? CODAI_FAST_HEADERS : CODAI_DEFAULT_HEADERS),
+          ...(cfg?.headers ?? {}),
+        },
       });
       if (intent === 'embed') return client.textEmbedding(modelId);
       // codai speaks OpenAI Chat Completions, not the Responses API.
@@ -334,8 +357,7 @@ function instantiate(
       }
       // Optional provider-specific request headers (codai: thinking/cache/
       // cascade tuning). Stored under config.headers as a string map.
-      const headers =
-        ((cred.config as { headers?: Record<string, string> })?.headers) ?? undefined;
+      const headers = (cred.config as { headers?: Record<string, string> })?.headers ?? undefined;
       const client = createOpenAI({
         apiKey: cred.apiKey,
         baseURL: baseURL.replace(/\/+$/, ''),
