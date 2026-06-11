@@ -1,10 +1,10 @@
 'use server';
 import { revalidatePath } from 'next/cache';
-import { eq, and, isNull } from 'drizzle-orm';
+import { eq, and, isNull, sql } from 'drizzle-orm';
 import { z } from 'zod';
 import { auth } from '@metu/auth';
 import { getDb } from '@metu/db';
-import { agentPolicy, timelineEvent, toolAcl, workspace } from '@metu/db/schema';
+import { agentPolicy, autonomyGrant, timelineEvent, toolAcl, workspace } from '@metu/db/schema';
 
 const autonomyMode = z.enum(['observe', 'ask', 'auto_with_undo', 'autopilot']);
 
@@ -178,4 +178,85 @@ export async function clearToolAclAction(input: string | z.infer<typeof clearToo
     );
   revalidatePath('/settings/autonomy');
   return { ok: true as const };
+}
+
+// ── Session autopilot grants (Conductor v2) ────────────────────────────────
+
+const createGrantSchema = z.object({
+  /** Hours from now; 1–24. */
+  hours: z.number().int().min(1).max(24),
+  /** Null/undefined = workspace-wide. */
+  tool: z.string().min(1).max(64).nullish(),
+  note: z.string().max(280).nullish(),
+});
+
+export async function createAutonomyGrantAction(input: z.infer<typeof createGrantSchema>) {
+  const session = await auth();
+  if (!session) return { ok: false as const, error: 'Unauthenticated' };
+  const parsed = createGrantSchema.safeParse(input);
+  if (!parsed.success) {
+    return { ok: false as const, error: parsed.error.issues[0]?.message ?? 'Invalid' };
+  }
+  const db = getDb();
+  const wsId = session.user.workspaceId;
+  const expiresAt = new Date(Date.now() + parsed.data.hours * 3600_000);
+  const [row] = await db
+    .insert(autonomyGrant)
+    .values({
+      workspaceId: wsId,
+      userId: session.user.id,
+      tool: parsed.data.tool ?? null,
+      note: parsed.data.note ?? null,
+      expiresAt,
+    })
+    .returning();
+  await db.insert(timelineEvent).values({
+    workspaceId: wsId,
+    userId: session.user.id,
+    kind: 'conductor.grant.created',
+    title: `Autopilot grant: ${parsed.data.tool ?? 'all tools'} for ${parsed.data.hours}h`,
+    body: parsed.data.note ?? '',
+    importance: 0.6,
+    payload: {
+      grantId: row!.id,
+      tool: parsed.data.tool ?? null,
+      expiresAt: expiresAt.toISOString(),
+    },
+  });
+  revalidatePath('/settings/autonomy');
+  return { ok: true as const, id: row!.id, expiresAt: expiresAt.toISOString() };
+}
+
+export async function revokeAutonomyGrantAction(grantId: string) {
+  const session = await auth();
+  if (!session) return { ok: false as const, error: 'Unauthenticated' };
+  if (!z.string().uuid().safeParse(grantId).success) {
+    return { ok: false as const, error: 'Invalid grant id' };
+  }
+  const db = getDb();
+  await db
+    .update(autonomyGrant)
+    .set({ revokedAt: new Date() })
+    .where(
+      and(eq(autonomyGrant.id, grantId), eq(autonomyGrant.workspaceId, session.user.workspaceId)),
+    );
+  revalidatePath('/settings/autonomy');
+  return { ok: true as const };
+}
+
+export async function listAutonomyGrantsAction() {
+  const session = await auth();
+  if (!session) return { ok: false as const, error: 'Unauthenticated', grants: [] };
+  const db = getDb();
+  const grants = await db
+    .select()
+    .from(autonomyGrant)
+    .where(
+      and(
+        eq(autonomyGrant.workspaceId, session.user.workspaceId),
+        isNull(autonomyGrant.revokedAt),
+        sql`${autonomyGrant.expiresAt} >= now()`,
+      ),
+    );
+  return { ok: true as const, grants };
 }

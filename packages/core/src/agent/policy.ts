@@ -13,6 +13,7 @@ import { and, eq, gte, isNull, sql, ne } from 'drizzle-orm';
 import { getDb } from '@metu/db';
 import {
   agentPolicy,
+  autonomyGrant,
   toolAcl,
   toolCall as toolCallTable,
   timelineEvent,
@@ -78,6 +79,65 @@ async function emitVisibilityNotification(
  * undoable — we refuse to honor any autopilot/auto_with_undo override.
  */
 const FORCE_ASK_TOOLS = new Set<string>(['send_telegram', 'send_email']);
+
+/**
+ * Earned autonomy (Conductor v2): after this many consecutive APPROVALS of
+ * the same tool (no rejections in between), an `ask` resolution is
+ * automatically softened to `auto_with_undo`. A single rejection resets
+ * the streak. FORCE_ASK tools never participate.
+ */
+const EARNED_AUTONOMY_STREAK = 3;
+
+/**
+ * Session autopilot grant check: an unexpired, unrevoked grant for the
+ * workspace (tool IS NULL) or for this specific tool upgrades `ask` →
+ * `auto_with_undo`.
+ */
+async function hasActiveGrant(workspaceId: string, toolName: string): Promise<boolean> {
+  const db = getDb();
+  const [row] = await db
+    .select({ id: autonomyGrant.id })
+    .from(autonomyGrant)
+    .where(
+      and(
+        eq(autonomyGrant.workspaceId, workspaceId),
+        isNull(autonomyGrant.revokedAt),
+        gte(autonomyGrant.expiresAt, sql`now()`),
+        sql`(${autonomyGrant.tool} IS NULL OR ${autonomyGrant.tool} = ${toolName})`,
+      ),
+    )
+    .limit(1);
+  return !!row;
+}
+
+/**
+ * Earned-autonomy streak: count consecutive most-recent approvals of this
+ * tool. Any rejected/failed-after-approval row breaks the streak.
+ */
+async function approvalStreak(workspaceId: string, toolName: string): Promise<number> {
+  const db = getDb();
+  const rows = await db
+    .select({ status: toolCallTable.status })
+    .from(toolCallTable)
+    .where(
+      and(
+        eq(toolCallTable.workspaceId, workspaceId),
+        eq(toolCallTable.tool, toolName),
+        eq(toolCallTable.aclMode, 'ask'),
+        sql`${toolCallTable.status} in ('success', 'rejected')`,
+      ),
+    )
+    .orderBy(sql`${toolCallTable.requestedAt} desc`)
+    .limit(EARNED_AUTONOMY_STREAK);
+  if (rows.length < EARNED_AUTONOMY_STREAK)
+    return rows.filter((r) => r.status === 'success').length;
+  let streak = 0;
+  for (const r of rows) {
+    if (r.status === 'success') streak++;
+    else break;
+  }
+  return streak;
+}
 
 /**
  * Once MTD spend crosses this fraction of `workspace.monthlyCostCapUsd`,
@@ -147,11 +207,22 @@ export async function resolveAcl(
 
   if (FORCE_ASK_TOOLS.has(toolName) && resolved !== 'observe') return 'ask';
 
-  if (resolved === 'autopilot' || resolved === 'auto_with_undo') {
+  // Conductor v2 — soften `ask` before the cost brake so grants/earned
+  // autonomy keep the agent fluid. Never applies to FORCE_ASK tools.
+  let effective = resolved;
+  if (effective === 'ask' && !FORCE_ASK_TOOLS.has(toolName)) {
+    if (await hasActiveGrant(workspaceId, toolName)) {
+      effective = 'auto_with_undo';
+    } else if ((await approvalStreak(workspaceId, toolName)) >= EARNED_AUTONOMY_STREAK) {
+      effective = 'auto_with_undo';
+    }
+  }
+
+  if (effective === 'autopilot' || effective === 'auto_with_undo') {
     if (await monthlyBrakeTripped(workspaceId)) return 'ask';
   }
 
-  return resolved;
+  return effective;
 }
 
 /**
@@ -543,6 +614,43 @@ export async function runTool(input: RunToolInput): Promise<RunToolResult> {
       .where(
         and(eq(toolCallTable.id, toolCallId), eq(toolCallTable.workspaceId, input.workspaceId)),
       );
+    // Conductor v2: auto_with_undo actions are visible-by-default — a
+    // low-urgency notification with an Undo affordance, so autonomy never
+    // feels like things happening behind the user's back.
+    if (aclMode === 'auto_with_undo' && tool!.kind !== 'read') {
+      try {
+        await db.insert(notification).values({
+          workspaceId: input.workspaceId,
+          userId: input.userId,
+          title: `Done: ${input.tool}`,
+          body: JSON.stringify(parsedArgs).slice(0, 200),
+          urgency: 'low',
+          source: 'conductor:auto-action',
+          actionUrl: `/audit/${toolCallId}`,
+          actions: undoPayload
+            ? [
+                { id: 'undo', label: 'Undo', kind: 'undo' as const, toolCallId },
+                {
+                  id: 'open',
+                  label: 'Details',
+                  kind: 'open' as const,
+                  href: `/audit/${toolCallId}`,
+                },
+              ]
+            : [
+                {
+                  id: 'open',
+                  label: 'Details',
+                  kind: 'open' as const,
+                  href: `/audit/${toolCallId}`,
+                },
+              ],
+          metadata: { toolCallId, tool: input.tool, auto: true },
+        });
+      } catch {
+        /* visibility is best-effort */
+      }
+    }
     if (VISIBILITY_NOTIFY_TOOLS.has(input.tool)) {
       await emitVisibilityNotification(
         input.workspaceId,

@@ -289,6 +289,38 @@ export const toolAcl = pgTable(
   ],
 );
 
+/**
+ * Session autopilot grants (Conductor v2 — Jarvis Slice E).
+ *
+ * "Act freely for the next N hours / for this tool" — while an unexpired,
+ * unrevoked grant matches, `resolveAcl` upgrades `ask` to `auto_with_undo`
+ * for everything except FORCE_ASK tools. Scope:
+ *   - tool IS NULL  → whole workspace.
+ *   - tool set      → that tool only.
+ */
+export const autonomyGrant = pgTable(
+  'autonomy_grant',
+  {
+    id: uuid('id')
+      .primaryKey()
+      .default(sql`gen_random_uuid()`),
+    workspaceId: uuid('workspace_id')
+      .notNull()
+      .references(() => workspace.id, { onDelete: 'cascade' }),
+    /** Who granted it (audit). */
+    userId: uuid('user_id').notNull(),
+    /** Null = workspace-wide; otherwise a tool-registry name. */
+    tool: text('tool'),
+    note: text('note'),
+    expiresAt: timestamp('expires_at', { withTimezone: true }).notNull(),
+    revokedAt: timestamp('revoked_at', { withTimezone: true }),
+    createdAt: timestamp('created_at', { withTimezone: true })
+      .notNull()
+      .default(sql`now()`),
+  },
+  (t) => [index('autonomy_grant_workspace_idx').on(t.workspaceId, t.expiresAt)],
+);
+
 // ─── Devices ──────────────────────────────────────────────────────────────
 
 export const deviceKind = pgEnum('device_kind', [
