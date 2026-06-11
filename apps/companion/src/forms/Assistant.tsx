@@ -549,13 +549,30 @@ function AssistantSkin({
   // Disambiguated with a short timer so a double-click never first flashes
   // the bubble. Voice toggle lives in the context menu (and hotkey).
   const clickTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const onAvatarClick = () => {
+  // Double-click detection via e.detail on click events. WebView2's native
+  // `dblclick` proved unreliable here: the first click's state update
+  // re-renders the subtree, and a re-rendered/remounted node between the
+  // two clicks swallows the dblclick. `detail` is computed by the input
+  // pipeline on the SECOND click event itself, so it always arrives.
+  const onAvatarClick = (e: React.MouseEvent) => {
     if (suppressClickRef.current) return;
     if (speaking) {
       onInterrupt?.();
       return;
     }
-    if (clickTimerRef.current) return; // 2nd click of a double — let dblclick win
+    if (e.detail >= 2) {
+      // Double click: cancel the pending single-click action and morph.
+      if (clickTimerRef.current) {
+        clearTimeout(clickTimerRef.current);
+        clickTimerRef.current = null;
+      }
+      setAmbient(null);
+      setChatBubble(null);
+      setUnreadReply(null);
+      setChatOpen(true);
+      return;
+    }
+    if (clickTimerRef.current) return; // already pending
     clickTimerRef.current = setTimeout(() => {
       clickTimerRef.current = null;
       if (chatOpen) return; // panel open: single click does nothing
@@ -570,17 +587,6 @@ function AssistantSkin({
         setAmbient((a) => (a ? { ...a } : a));
       }
     }, 260);
-  };
-  const onAvatarDoubleClick = () => {
-    if (clickTimerRef.current) {
-      clearTimeout(clickTimerRef.current);
-      clickTimerRef.current = null;
-    }
-    // Morph into chat: drop any bubble (its text lives in the thread).
-    setAmbient(null);
-    setChatBubble(null);
-    setUnreadReply(null);
-    setChatOpen(true);
   };
 
   // Right-click: in-window context menu. WebView2 suppresses the native menu
@@ -685,7 +691,6 @@ function AssistantSkin({
             onPointerLeave={() => setInteractive(false)}
             onPointerDown={onBodyPointerDown}
             onClick={onAvatarClick}
-            onDoubleClick={onAvatarDoubleClick}
             onContextMenu={onAvatarContextMenu}
             title="Click for quick actions · double-click to chat · right-click for menu"
           >
