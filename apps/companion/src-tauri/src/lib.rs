@@ -27,6 +27,7 @@ mod mdns;
 mod oauth;
 mod screenshot;
 mod see;
+mod sense;
 mod sensors;
 mod shell;
 mod spatial;
@@ -284,6 +285,7 @@ pub fn run() {
         .manage(oauth::LoopbackState::default())
         .manage(diag::DiagState::default())
         .manage(forms::AssistantInput::default())
+        .manage(sense::SenseState::default())
         .plugin(tauri_plugin_http::init())
         .plugin(tauri_plugin_notification::init())
         .plugin(tauri_plugin_clipboard_manager::init())
@@ -343,12 +345,21 @@ pub fn run() {
             spatial::spatial_monitors,
             spatial::spatial_cursor,
             spatial::spatial_foreground,
+            sense::sense_search,
+            sense::sense_timeline,
+            sense::sense_recent_text,
+            sense::sense_set_paused,
+            sense::sense_set_blocklist,
+            sense::sense_status,
+            sense::sense_store_summary,
         ])
         .setup(|app| {
             // ── Diagnostics log file ────────────────────────────────────
             diag::init(app);
             // ── Assistant click-through autopilot (native, single writer) ──
             forms::start_assistant_input_watcher(app.handle().clone());
+            // ── Jarvis Slice A — ambient sense engine ──────────────────
+            sense::start_sense_engine(app.handle().clone());
             // ── Tray ────────────────────────────────────────────────────
             let show_item = MenuItem::with_id(app, "show", "Show METU", true, None::<&str>)?;
             let backlog_item = MenuItem::with_id(

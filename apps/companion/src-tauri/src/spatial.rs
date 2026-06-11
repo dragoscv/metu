@@ -142,3 +142,88 @@ pub fn spatial_foreground() -> Result<Option<ForegroundWindow>, String> {
 pub fn spatial_foreground() -> Result<Option<ForegroundWindow>, String> {
     Err(format!("unsupported_on_platform: {}", std::env::consts::OS))
 }
+
+// ── Internal (non-command) helpers for the sense engine ───────────────────
+
+/// Plain struct used by `sense.rs` — same data as [`ForegroundWindow`] plus
+/// the resolved process/app name, fetched without going through the Tauri
+/// command layer.
+pub struct ForegroundInfo {
+    pub app: String,
+    pub title: String,
+    pub x: i32,
+    pub y: i32,
+    pub w: u32,
+    pub h: u32,
+}
+
+#[cfg(windows)]
+pub fn foreground_window_info() -> Option<ForegroundInfo> {
+    use windows::Win32::Foundation::{HWND, RECT};
+    use windows::Win32::System::Threading::{
+        OpenProcess, QueryFullProcessImageNameW, PROCESS_NAME_WIN32,
+        PROCESS_QUERY_LIMITED_INFORMATION,
+    };
+    use windows::Win32::UI::WindowsAndMessaging::{
+        GetForegroundWindow, GetWindowRect, GetWindowTextLengthW, GetWindowTextW,
+        GetWindowThreadProcessId,
+    };
+    unsafe {
+        let hwnd: HWND = GetForegroundWindow();
+        if hwnd.0 == 0 {
+            return None;
+        }
+        let mut rect = RECT::default();
+        if GetWindowRect(hwnd, &mut rect).is_err() {
+            return None;
+        }
+        let len = GetWindowTextLengthW(hwnd);
+        let title = if len > 0 {
+            let mut buf = vec![0u16; (len + 1) as usize];
+            let read = GetWindowTextW(hwnd, &mut buf);
+            String::from_utf16_lossy(&buf[..read as usize])
+        } else {
+            String::new()
+        };
+        // Resolve the owning process image name → app name.
+        let mut pid = 0u32;
+        GetWindowThreadProcessId(hwnd, Some(&mut pid));
+        let mut app = String::new();
+        if pid != 0 {
+            if let Ok(handle) = OpenProcess(PROCESS_QUERY_LIMITED_INFORMATION, false, pid) {
+                let mut buf = vec![0u16; 1024];
+                let mut size = buf.len() as u32;
+                if QueryFullProcessImageNameW(
+                    handle,
+                    PROCESS_NAME_WIN32,
+                    windows::core::PWSTR(buf.as_mut_ptr()),
+                    &mut size,
+                )
+                .is_ok()
+                {
+                    let full = String::from_utf16_lossy(&buf[..size as usize]);
+                    app = full
+                        .rsplit(['\\', '/'])
+                        .next()
+                        .unwrap_or("")
+                        .trim_end_matches(".exe")
+                        .to_string();
+                }
+                let _ = windows::Win32::Foundation::CloseHandle(handle);
+            }
+        }
+        Some(ForegroundInfo {
+            app,
+            title,
+            x: rect.left,
+            y: rect.top,
+            w: (rect.right - rect.left).max(0) as u32,
+            h: (rect.bottom - rect.top).max(0) as u32,
+        })
+    }
+}
+
+#[cfg(not(windows))]
+pub fn foreground_window_info() -> Option<ForegroundInfo> {
+    None
+}

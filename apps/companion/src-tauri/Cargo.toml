@@ -53,6 +53,16 @@ hostname = "0.4"
 windows = { version = "0.56", features = [
   "Win32_Foundation",
   "Win32_UI_WindowsAndMessaging",
+  # Jarvis Slice A — sense engine
+  "Win32_UI_Input_KeyboardAndMouse",   # GetLastInputInfo (idle detection)
+  "Win32_UI_Accessibility",            # SetWinEventHook (foreground events)
+  "Win32_System_Threading",            # OpenProcess / QueryFullProcessImageNameW
+  "Win32_System_SystemInformation",    # GetTickCount
+  "Media_Ocr",                         # Windows.Media.Ocr (native OCR, no model)
+  "Graphics_Imaging",                  # SoftwareBitmap for OCR input
+  "Storage",                           # WinRT storage types used by imaging
+  "Storage_Streams",                   # InMemoryRandomAccessStream
+  "Globalization",                     # OCR language selection
 ] }
 # Companion-Agent slice 1 — deep accessibility tree (UI Automation).
 # Default features (`input`, `control`, `pattern`) give us InvokePattern /
@@ -63,6 +73,10 @@ uiautomation = "0.25"
 notify = "7"
 regex = "1"
 tokio = { version = "1", features = ["time", "macros", "rt"] }
+
+# Jarvis Slice A — ambient awareness: local activity store (frames + OCR
+# text + FTS5 search) and perceptual-hash frame dedupe.
+rusqlite = { version = "0.32", features = ["bundled"] }
 
 [features]
 default = []
