@@ -29,6 +29,54 @@ interface TimelineEntry {
   endedTs: number | null;
 }
 
+interface A11yNode {
+  role: string;
+  name: string;
+  value: string;
+  enabled: boolean;
+  selected: boolean;
+  patterns: string[];
+  children: A11yNode[];
+}
+
+/**
+ * Flatten the focused window's UIA tree into a compact, LLM-readable
+ * outline: real UI structure (buttons, fields, tabs, their state) instead
+ * of flat OCR text. Skips structural noise (panes/groups without names).
+ */
+function outlineA11y(node: A11yNode, depth: number, out: string[], budget: { left: number }): void {
+  if (budget.left <= 0 || depth > 7) return;
+  const interesting =
+    node.name.trim() !== '' || node.value.trim() !== '' || node.patterns.length > 0;
+  const structural = /pane|group|custom|window/i.test(node.role) && !node.name.trim();
+  if (interesting && !structural) {
+    const bits = [
+      `${'  '.repeat(Math.min(depth, 5))}[${node.role}] ${node.name.slice(0, 80)}`,
+      node.value ? `= "${node.value.slice(0, 120)}"` : '',
+      !node.enabled ? '(disabled)' : '',
+      node.selected ? '(selected)' : '',
+    ].filter(Boolean);
+    out.push(bits.join(' '));
+    budget.left--;
+  }
+  for (const c of node.children) outlineA11y(c, depth + 1, out, budget);
+}
+
+/** Read the focused window's accessibility outline. '' on any failure. */
+async function a11yOutline(): Promise<string> {
+  try {
+    const tree = await invoke<{ root: A11yNode | null; truncated: boolean }>('sense_ui_outline', {
+      args: { maxDepth: 7, maxNodes: 400 },
+    });
+    if (!tree.root) return '';
+    const out: string[] = [];
+    outlineA11y(tree.root, 0, out, { left: 120 });
+    return out.join('\n');
+  } catch {
+    return ''; // capability disabled / non-Windows / UIA hiccup
+  }
+}
+
 /** Build the context string each skill needs — all local, all fast. */
 async function gatherContext(skill: SkillId): Promise<string> {
   if (!isTauri()) return '';
@@ -40,11 +88,18 @@ async function gatherContext(skill: SkillId): Promise<string> {
     : '';
 
   if (skill === 'analyze_screen' || skill === 'explain_error') {
-    const recent = await invoke<string>('sense_recent_text', {
-      minutes: 5,
-      maxChars: 8_000,
-    }).catch(() => '');
-    return [head, recent ? `Screen text (most recent first):\n${recent}` : '']
+    // Structured UI first (real elements + state via UIA), OCR as the
+    // content layer. Together the model sees both WHAT the app is and
+    // WHAT it says — far better than OCR alone.
+    const [outline, recent] = await Promise.all([
+      a11yOutline(),
+      invoke<string>('sense_recent_text', { minutes: 5, maxChars: 6_000 }).catch(() => ''),
+    ]);
+    return [
+      head,
+      outline ? `UI structure of the focused window (role/name/value):\n${outline}` : '',
+      recent ? `Screen text (most recent first):\n${recent}` : '',
+    ]
       .filter(Boolean)
       .join('\n\n');
   }

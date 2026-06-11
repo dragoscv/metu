@@ -27,11 +27,11 @@ const SKILLS: Record<string, { system: string; maxOutputTokens: number }> = {
     maxOutputTokens: 220,
   },
   analyze_screen: {
-    system: `You are the user's desktop assistant looking at their screen via extracted text. Describe what they're working on and point out anything notable (errors, TODOs, unfinished thoughts). Be concrete — quote the actual content. 2-5 short sentences. If the screen text is empty, say you can't see anything useful and suggest enabling watching.`,
+    system: `You are the user's desktop assistant looking at their focused window. You receive the UI STRUCTURE (accessibility tree: [role] name = "value", with disabled/selected state) and the SCREEN TEXT (OCR). Use the structure to understand WHAT the app is and what state it's in (which tab is selected, which fields are filled, which buttons exist); use the text for content. Describe what they're working on and point out anything notable (errors, TODOs, empty required fields, unfinished work). Be concrete — reference actual elements and content. 2-5 short sentences. If both are empty, say you can't see anything useful and suggest enabling watching.`,
     maxOutputTokens: 280,
   },
   explain_error: {
-    system: `You are the user's debugging assistant. The screen text contains an error. Identify it, explain the likely cause in one sentence, and give the most probable fix. Be specific to THEIR error, not generic advice. 2-5 short sentences or a tiny code snippet.`,
+    system: `You are the user's debugging assistant. You receive the focused window's UI structure (accessibility tree) and screen text containing an error. Identify the error, explain the likely cause in one sentence, and give the most probable fix. Be specific to THEIR error and THEIR app context, not generic advice. 2-5 short sentences or a tiny code snippet.`,
     maxOutputTokens: 320,
   },
   whats_next: {

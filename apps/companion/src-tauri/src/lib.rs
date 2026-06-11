@@ -63,6 +63,18 @@ async fn device_a11y_tree(args: a11y::A11yArgs) -> Result<a11y::A11yTree, String
         .map_err(|e| format!("join_failed: {e}"))?
 }
 
+/// Ungated UIA read for USER-INITIATED local analysis ("Analyze my
+/// screen" in the avatar menu). The `device_a11y_tree` command above stays
+/// capability-gated because the REMOTE Conductor calls it; this one is
+/// only invoked by the local skill lane in direct response to a click,
+/// and reads the same data the sense engine already captures via OCR.
+#[tauri::command]
+async fn sense_ui_outline(args: a11y::A11yArgs) -> Result<a11y::A11yTree, String> {
+    tauri::async_runtime::spawn_blocking(move || a11y::read(args))
+        .await
+        .map_err(|e| format!("join_failed: {e}"))?
+}
+
 // ── Companion-Agent slice 1 — semantic a11y actions ────────────────────────
 
 #[tauri::command]
@@ -300,6 +312,7 @@ pub fn run() {
             device_list_windows,
             device_a11y_tree,
             device_a11y_find,
+            sense_ui_outline,
             device_a11y_invoke,
             device_a11y_set_value,
             device_see,
