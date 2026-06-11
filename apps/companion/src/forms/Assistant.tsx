@@ -896,9 +896,11 @@ function AssistantSkin({
   }, []);
 
   /** Image generation lane: "draw/imagine <prompt>" → inline image card. */
+  const lastImagePromptRef = useRef<string>('');
   const fireImage = useCallback(
     (prompt: string) => {
       if (!auth) return;
+      lastImagePromptRef.current = prompt;
       setUnreadReply(null);
       setDynamicChips([]);
       setSkillBusy(true);
@@ -908,7 +910,10 @@ function AssistantSkin({
         .then(({ src }) => {
           // RichMessage renders the markdown image as a card w/ shimmer+zoom.
           setChatBubble(`![${prompt.slice(0, 80)}](${src})`);
-          setDynamicChips(['Draw another variation', 'Make it more detailed']);
+          setDynamicChips([
+            `Draw ${prompt.slice(0, 40)}, new variation`,
+            `Draw ${prompt.slice(0, 36)}, more detailed`,
+          ]);
           playGesture('celebrate');
         })
         .catch((err: unknown) => {

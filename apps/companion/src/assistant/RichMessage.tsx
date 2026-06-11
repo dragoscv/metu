@@ -12,7 +12,7 @@
  * the Tauri opener (system browser), never in-webview navigation.
  */
 import { memo, useMemo, useState } from 'react';
-import ReactMarkdown from 'react-markdown';
+import ReactMarkdown, { defaultUrlTransform } from 'react-markdown';
 import remarkGfm from 'remark-gfm';
 import { open as openUrl } from '@tauri-apps/plugin-shell';
 import { writeText } from '@tauri-apps/plugin-clipboard-manager';
@@ -173,6 +173,10 @@ export const RichMessage = memo(function RichMessage({
           <ReactMarkdown
             key={i}
             remarkPlugins={[remarkGfm]}
+            // Default transform strips data: URIs — but generated images
+            // arrive as data:image/png;base64 from /companion/image. Allow
+            // image data URIs only; everything else stays sanitized.
+            urlTransform={(url) => (url.startsWith('data:image/') ? url : defaultUrlTransform(url))}
             components={{
               a: ({ href, children }) => (
                 <a
