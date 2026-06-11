@@ -28,7 +28,8 @@ import type {
   VoiceSessionEvent,
 } from './types';
 
-const REALTIME_BASE = 'https://api.openai.com/v1/realtime';
+/** GA WebRTC endpoint — the beta `/v1/realtime?model=` SDP exchange is gone. */
+const REALTIME_CALLS_URL = 'https://api.openai.com/v1/realtime/calls';
 
 export interface OpenAiRealtimeBrowserOpts extends RealtimeOpenOpts {
   /** Model id passed as `?model=`. Defaults to the broker's default. */
@@ -39,7 +40,7 @@ export interface OpenAiRealtimeBrowserOpts extends RealtimeOpenOpts {
   micStream?: MediaStream | null;
 }
 
-const DEFAULT_MODEL = 'gpt-4o-realtime-preview-2024-12-17';
+const DEFAULT_MODEL = 'gpt-realtime';
 
 class OpenAiRealtimeWebRTCSession implements RealtimeSession {
   private pc: RTCPeerConnection | null = null;
@@ -128,13 +129,15 @@ class OpenAiRealtimeWebRTCSession implements RealtimeSession {
     const offer = await pc.createOffer({ offerToReceiveAudio: true });
     await pc.setLocalDescription(offer);
 
+    // GA: model/voice/instructions are bound to the ephemeral client secret
+    // minted by the broker; the SDP exchange takes no query params.
     const model = this.opts.model ?? DEFAULT_MODEL;
-    const res = await fetch(`${REALTIME_BASE}?model=${encodeURIComponent(model)}`, {
+    void model; // retained for future session.update use
+    const res = await fetch(REALTIME_CALLS_URL, {
       method: 'POST',
       headers: {
         authorization: `Bearer ${this.opts.sessionToken}`,
         'content-type': 'application/sdp',
-        'OpenAI-Beta': 'realtime=v1',
       },
       body: offer.sdp ?? '',
     });

@@ -31,7 +31,7 @@ import { isVoiceProviderAllowed } from '@metu/voice';
 export const runtime = 'nodejs';
 
 const REQUEST_TTL_SEC = 60;
-const REALTIME_DEFAULT_MODEL = 'gpt-4o-realtime-preview-2024-12-17';
+const REALTIME_DEFAULT_MODEL = 'gpt-realtime';
 
 const Body = z.object({
   /** Built-in persona slug or DB persona id. Built-in lookup first. */
@@ -46,12 +46,11 @@ const Body = z.object({
     .optional(),
 });
 
-interface OpenAiRealtimeSession {
-  id: string;
-  model: string;
-  voice: string;
+/** GA /v1/realtime/client_secrets response shape. */
+interface OpenAiClientSecret {
+  value: string;
   expires_at?: number;
-  client_secret: { value: string; expires_at?: number };
+  session?: { id?: string; model?: string };
 }
 
 export async function POST(req: Request) {
@@ -121,25 +120,29 @@ export async function POST(req: Request) {
   const model = parsed.data.model ?? REALTIME_DEFAULT_MODEL;
   const voice = persona.voiceId || 'verse';
 
-  let upstream: OpenAiRealtimeSession;
+  let upstream: OpenAiClientSecret;
   try {
     const ac = new AbortController();
     const t = setTimeout(() => ac.abort(), 10_000);
-    const res = await fetch('https://api.openai.com/v1/realtime/sessions', {
+    // GA endpoint — /v1/realtime/sessions was the 2024 beta and now 404s.
+    const res = await fetch('https://api.openai.com/v1/realtime/client_secrets', {
       method: 'POST',
       headers: {
         authorization: `Bearer ${cred.apiKey}`,
         'content-type': 'application/json',
-        'OpenAI-Beta': 'realtime=v1',
       },
       body: JSON.stringify({
-        model,
-        voice,
-        instructions: persona.systemPrompt,
-        modalities: ['audio', 'text'],
-        // Server-side VAD so the model knows when the user finishes speaking
-        // — barge-in still works because the client sends `cancel` events.
-        turn_detection: { type: 'server_vad' },
+        session: {
+          type: 'realtime',
+          model,
+          instructions: persona.systemPrompt,
+          audio: {
+            output: { voice },
+            // Server-side VAD so the model knows when the user finishes
+            // speaking — barge-in still works via client cancel events.
+            input: { turn_detection: { type: 'server_vad' } },
+          },
+        },
       }),
       signal: ac.signal,
     });
@@ -151,13 +154,13 @@ export async function POST(req: Request) {
         { status: 502 },
       );
     }
-    upstream = (await res.json()) as OpenAiRealtimeSession;
+    upstream = (await res.json()) as OpenAiClientSecret;
   } catch (err) {
     const msg = err instanceof Error ? err.message : String(err);
     return NextResponse.json({ ok: false, error: 'broker_failed', detail: msg }, { status: 502 });
   }
 
-  if (!upstream.client_secret?.value) {
+  if (!upstream.value) {
     return NextResponse.json({ ok: false, error: 'no_client_secret' }, { status: 502 });
   }
 
@@ -174,15 +177,15 @@ export async function POST(req: Request) {
         personaSlug: persona.slug,
         model,
         voice,
-        sessionId: upstream.id,
+        sessionId: upstream.session?.id ?? null,
         ttlSec: REQUEST_TTL_SEC,
       },
     });
 
   return NextResponse.json({
     ok: true,
-    sessionToken: upstream.client_secret.value,
-    sessionId: upstream.id,
+    sessionToken: upstream.value,
+    sessionId: upstream.session?.id ?? '',
     model,
     voice,
     /** Wall-clock seconds until the ephemeral token expires. */
