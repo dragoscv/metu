@@ -325,6 +325,7 @@ pub fn run() {
             forms::presence_assistant_hide,
             forms::presence_assistant_set_clickthrough,
             forms::presence_assistant_set_interactive_lock,
+            forms::presence_assistant_set_zones,
             forms::presence_overlay_show,
             forms::presence_overlay_hide,
             mdns::mdns_announce,

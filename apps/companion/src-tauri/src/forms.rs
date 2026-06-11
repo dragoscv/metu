@@ -6,6 +6,7 @@
 //! about positioning and input transparency.
 
 use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::Mutex;
 use tauri::{Manager, Runtime, WebviewWindow};
 
 const HUD_LABEL: &str = "hud";
@@ -19,6 +20,12 @@ const OVERLAY_LABEL: &str = "overlay";
 #[derive(Default)]
 pub struct AssistantInput {
     pub lock_interactive: AtomicBool,
+    /// Interactive zones in LOGICAL window-relative px (x, y, w, h),
+    /// reported by the JS layer whenever layout changes. The watcher only
+    /// makes the window clickable while the cursor is inside one of these —
+    /// the window is a tall transparent sheet and treating its full rect as
+    /// interactive swallows clicks meant for apps behind it.
+    pub zones: Mutex<Vec<(f64, f64, f64, f64)>>,
 }
 
 fn lookup<R: Runtime>(app: &tauri::AppHandle<R>, label: &str) -> Result<WebviewWindow<R>, String> {
@@ -109,6 +116,21 @@ pub async fn presence_assistant_set_interactive_lock<R: Runtime>(
     Ok(())
 }
 
+/// Report the assistant's interactive zones (logical, window-relative
+/// rects). The watcher only disables click-through while the cursor is
+/// inside one of them, so the transparent sheet never swallows clicks
+/// meant for apps underneath.
+#[tauri::command]
+pub async fn presence_assistant_set_zones(
+    state: tauri::State<'_, AssistantInput>,
+    zones: Vec<(f64, f64, f64, f64)>,
+) -> Result<(), String> {
+    if let Ok(mut z) = state.zones.lock() {
+        *z = zones;
+    }
+    Ok(())
+}
+
 /// Native click-through autopilot for the assistant window.
 ///
 /// Why Rust instead of JS polling: the JS reconciler raced its own IPC
@@ -136,7 +158,7 @@ pub fn start_assistant_input_watcher<R: Runtime>(app: tauri::AppHandle<R>) {
                 .state::<AssistantInput>()
                 .lock_interactive
                 .load(Ordering::Relaxed);
-            let interactive = locked || cursor_inside(&w);
+            let interactive = locked || cursor_in_zone(&app, &w);
             let ignore = !interactive;
             // Force re-apply every ~1s so external writers can't strand us.
             let force = ticks % 20 == 0;
@@ -173,6 +195,49 @@ fn cursor_inside<R: Runtime>(w: &WebviewWindow<R>) -> bool {
 #[cfg(not(windows))]
 fn cursor_inside<R: Runtime>(_w: &WebviewWindow<R>) -> bool {
     // No native cursor read on this platform yet — stay interactive.
+    true
+}
+
+/// Zone-aware cursor test: interactive only while the cursor is inside one
+/// of the JS-reported interactive rects (avatar body, bubble, menu). When
+/// no zones have been reported yet, fall back to the whole-window test so
+/// a slow-booting frontend can't lock itself out.
+fn cursor_in_zone<R: Runtime>(app: &tauri::AppHandle<R>, w: &WebviewWindow<R>) -> bool {
+    let zones = app
+        .state::<AssistantInput>()
+        .zones
+        .lock()
+        .map(|z| z.clone())
+        .unwrap_or_default();
+    if zones.is_empty() {
+        return cursor_inside(w);
+    }
+    cursor_in_rects(w, &zones)
+}
+
+#[cfg(windows)]
+fn cursor_in_rects<R: Runtime>(w: &WebviewWindow<R>, zones: &[(f64, f64, f64, f64)]) -> bool {
+    use windows::Win32::Foundation::POINT;
+    use windows::Win32::UI::WindowsAndMessaging::GetCursorPos;
+    let mut p = POINT { x: 0, y: 0 };
+    if unsafe { GetCursorPos(&mut p) }.is_err() {
+        return true;
+    }
+    let Ok(pos) = w.outer_position() else {
+        return true;
+    };
+    let scale = w.scale_factor().unwrap_or(1.0);
+    // Cursor in window-relative logical px.
+    let cx = (p.x - pos.x) as f64 / scale;
+    let cy = (p.y - pos.y) as f64 / scale;
+    const MARGIN: f64 = 12.0;
+    zones.iter().any(|&(x, y, wd, h)| {
+        cx >= x - MARGIN && cx <= x + wd + MARGIN && cy >= y - MARGIN && cy <= y + h + MARGIN
+    })
+}
+
+#[cfg(not(windows))]
+fn cursor_in_rects<R: Runtime>(_w: &WebviewWindow<R>, _zones: &[(f64, f64, f64, f64)]) -> bool {
     true
 }
 

@@ -196,6 +196,9 @@ function AssistantSkin({
     el: HTMLElement;
   } | null>(null);
   const dragCooldownRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  // Drag-gesture race guards (see onBodyPointerDown).
+  const dragGenRef = useRef(0);
+  const pointerStillDownRef = useRef(false);
   // Right-click context menu (anchored inside the window).
   const [menu, setMenu] = useState<{ x: number; y: number } | null>(null);
   // Proactivity mode (silent/aware/chatty) — gated in the suggestion engine.
@@ -213,15 +216,50 @@ function AssistantSkin({
     void applySenseSettings().then(({ paused }) => setUserPausedWatch(paused));
   }, []);
 
+  // Report interactive zones to the native watcher. The assistant window
+  // is a tall transparent sheet; the watcher must only make it clickable
+  // over real UI (avatar, bubble, panel, menu) or it swallows clicks meant
+  // for apps behind the transparent area — which also broke OTHER windows'
+  // buttons when the sheet overlapped them.
+  useEffect(() => {
+    if (!isTauri()) return;
+    const report = () => {
+      const rects: Array<[number, number, number, number]> = [];
+      for (const sel of [
+        '.assistant-body',
+        '.bubble',
+        '.assistant-menu',
+        '.assistant-panel',
+        '.assistant-unread',
+      ]) {
+        document.querySelectorAll(sel).forEach((el) => {
+          const r = (el as HTMLElement).getBoundingClientRect();
+          if (r.width > 0 && r.height > 0) rects.push([r.x, r.y, r.width, r.height]);
+        });
+      }
+      void invoke('presence_assistant_set_zones', { zones: rects }).catch(() => {});
+    };
+    report();
+    const t = setInterval(report, 500);
+    return () => clearInterval(t);
+  }, []);
+
   const onBodyPointerDown = (e: React.PointerEvent) => {
     if (e.button !== 0 || !isTauri()) return;
+    pointerStillDownRef.current = true;
     const el = e.currentTarget as HTMLElement;
     const pointerId = e.pointerId;
+    // Generation guard: if the pointer is released before the async
+    // position snapshot lands, the stale .then() must NOT arm a gesture —
+    // an armed-but-unstarted dragRef turns subsequent HOVER movement into a
+    // phantom drag that suppresses every click (the "nothing works" bug).
+    const gen = ++dragGenRef.current;
     // Snapshot async; gesture arms when the position lands (a few ms).
     void getCurrentWindow()
       .outerPosition()
       .then((pos) => {
-        // User may have released already.
+        // User may have released already — or a newer gesture started.
+        if (dragGenRef.current !== gen || !pointerStillDownRef.current) return;
         dragRef.current = {
           pointerId,
           startX: e.screenX,
@@ -275,6 +313,8 @@ function AssistantSkin({
     };
 
     const endDrag = () => {
+      pointerStillDownRef.current = false;
+      dragGenRef.current++; // invalidate any in-flight position snapshot
       const g = dragRef.current;
       dragRef.current = null;
       if (!g) return;
