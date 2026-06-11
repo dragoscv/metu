@@ -12,7 +12,7 @@
  */
 import { z } from 'zod';
 import { type NextRequest } from 'next/server';
-import { streamText } from 'ai';
+import { generateObject, generateText, streamText } from 'ai';
 import { getModel } from '@metu/ai';
 import { forbidden, hasScope, resolveSession, unauthorized } from '@/lib/bearer';
 import { rateLimit } from '@/lib/ratelimit';
@@ -41,11 +41,34 @@ const SKILLS: Record<string, { system: string; maxOutputTokens: number }> = {
 };
 
 const Body = z.object({
-  skill: z.enum(['catch_up', 'analyze_screen', 'explain_error', 'whats_next']),
+  skill: z.enum(['catch_up', 'analyze_screen', 'explain_error', 'whats_next', 'act']),
   /** Locally-gathered context (timeline summary, OCR text). Text only. */
   context: z.string().max(12_000).default(''),
   personaSlug: z.string().min(1).max(80).default('atlas'),
+  /** For the `act` skill: the user's natural-language instruction. */
+  instruction: z.string().max(500).optional(),
 });
+
+/**
+ * Act planner output: ONE concrete UIA step the companion can execute
+ * after user confirmation. The element is identified by role + exact name
+ * from the provided UI outline — the companion re-finds it via a11y_find.
+ */
+const actPlanSchema = z.object({
+  feasible: z.boolean(),
+  /** When infeasible: why, in one user-facing sentence. */
+  reason: z.string().max(200).optional(),
+  action: z.enum(['invoke', 'set_value']).optional(),
+  /** Control role exactly as it appears in the outline (e.g. "Button"). */
+  role: z.string().max(60).optional(),
+  /** Element name exactly as it appears in the outline. */
+  name: z.string().max(120).optional(),
+  /** For set_value. */
+  value: z.string().max(2_000).optional(),
+  /** Confirmation prompt, e.g. 'Click "Save" in Notepad?' */
+  prompt: z.string().max(160).optional(),
+});
+export type ActPlan = z.infer<typeof actPlanSchema>;
 
 export async function POST(req: NextRequest) {
   const session = await resolveSession(req);
@@ -64,9 +87,60 @@ export async function POST(req: NextRequest) {
   if (!parsed.success) {
     return new Response(parsed.error.issues[0]?.message ?? 'invalid', { status: 400 });
   }
-  const skill = SKILLS[parsed.data.skill]!;
 
   const { model } = await getModel({ workspaceId: session.workspaceId, intent: 'fast' });
+
+  // `act` is a JSON planner, not a streamed answer: map the instruction to
+  // ONE concrete element action from the UI outline. The companion shows
+  // an ask-before-act confirm bubble, then executes via UIA locally.
+  if (parsed.data.skill === 'act') {
+    if (!parsed.data.instruction) {
+      return new Response('instruction required for act', { status: 400 });
+    }
+    const ACT_SYSTEM = `You map a user's instruction to ONE action on their focused window. You receive the window's UI outline: lines like "[Button] Save (disabled)" or '[Edit] Email = "x@y.com"'. Pick the single best element and action:
+  - invoke: click a Button/MenuItem/TabItem/CheckBox/Hyperlink…
+  - set_value: type into an Edit/ComboBox (provide value).
+  Use the role and name EXACTLY as they appear in the outline. Refuse (feasible:false + reason) when: no matching element, the element is disabled, the instruction needs multiple steps, or it is destructive/irreversible (delete, send money, format…). Always write a short confirmation prompt naming the element and app.`;
+    const actPrompt = `Instruction: ${parsed.data.instruction}\n\n${parsed.data.context || '(no UI outline available)'}`;
+    try {
+      const { object } = await generateObject({
+        model: model as Parameters<typeof generateObject>[0]['model'],
+        schema: actPlanSchema,
+        system: ACT_SYSTEM,
+        prompt: actPrompt,
+        maxOutputTokens: 200,
+      });
+      return Response.json({ ok: true, plan: object });
+    } catch {
+      // codai's gateway models don't reliably honor structured-output mode
+      // (same failure as the triage classifier). Fall back to plain text
+      // with explicit JSON instructions and parse defensively.
+      try {
+        const { text } = await generateText({
+          model: model as Parameters<typeof generateText>[0]['model'],
+          system:
+            ACT_SYSTEM +
+            '\n\nRespond with ONLY a JSON object, no prose, matching: {"feasible":boolean,"reason"?:string,"action"?:"invoke"|"set_value","role"?:string,"name"?:string,"value"?:string,"prompt"?:string}',
+          prompt: actPrompt,
+          maxOutputTokens: 220,
+        });
+        const raw = text
+          .trim()
+          .replace(/^```(?:json)?\s*/i, '')
+          .replace(/\s*```$/, '');
+        const planParsed = actPlanSchema.safeParse(JSON.parse(raw));
+        if (planParsed.success) return Response.json({ ok: true, plan: planParsed.data });
+      } catch {
+        /* fall through */
+      }
+      return Response.json({
+        ok: true,
+        plan: { feasible: false, reason: "I couldn't map that to a single safe UI action." },
+      });
+    }
+  }
+
+  const skill = SKILLS[parsed.data.skill]!;
   const result = streamText({
     model: model as Parameters<typeof streamText>[0]['model'],
     system: skill.system,

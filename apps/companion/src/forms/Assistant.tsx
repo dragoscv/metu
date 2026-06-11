@@ -31,7 +31,7 @@ import { AvatarHost } from '../avatar/AvatarHost';
 import type { AvatarState } from '../avatar/types';
 import { useAssistantBrain, type PointRequest } from '../assistant/useAssistantBrain';
 import { onActivityChange, startActivityModel, startDistiller } from '../assistant/activityModel';
-import { runSkill, SKILL_ACKS, type SkillId } from '../assistant/skills';
+import { executeActPlan, planAct, runSkill, SKILL_ACKS, type SkillId } from '../assistant/skills';
 import { applySenseSettings, saveWatchPaused } from '../state/senseSettings';
 import { writeText } from '@tauri-apps/plugin-clipboard-manager';
 import {
@@ -576,6 +576,54 @@ function AssistantSkin({
   // ── Direct skill lane: instant ack + stream into the bubble ─────────────
   const skillAbortRef = useRef<AbortController | null>(null);
   const [skillBusy, setSkillBusy] = useState(false);
+  /**
+   * Act skill: natural-language instruction → ONE planned UIA step →
+   * ask-before-act confirm bubble → native execute. Never runs without
+   * the user pressing the confirm button.
+   */
+  const fireAct = useCallback(
+    (instruction: string) => {
+      if (!auth) return;
+      setUnreadReply(null);
+      setChatBubble('Working out how to do that…');
+      setSkillBusy(true);
+      planAct(auth, instruction, personaSlug)
+        .then((plan) => {
+          setSkillBusy(false);
+          if (!plan.feasible || !plan.action) {
+            setChatBubble(plan.reason ?? "I couldn't find a safe way to do that.");
+            return;
+          }
+          setChatBubble(null);
+          setAmbient({
+            text: plan.prompt ?? `Do this: ${plan.action} "${plan.name}"?`,
+            action: {
+              label: 'Do it',
+              onConfirm: () => {
+                setAmbient(null);
+                setChatBubble(
+                  `On it — ${plan.action === 'invoke' ? 'clicking' : 'filling'} "${plan.name}"…`,
+                );
+                executeActPlan(plan)
+                  .then(() => setChatBubble(`Done — ${plan.name}.`))
+                  .catch((err: unknown) =>
+                    setChatBubble(err instanceof Error ? err.message : 'That didn’t work.'),
+                  );
+              },
+              onDeny: () => {
+                setAmbient(null);
+                setChatBubble('Okay, not doing it.');
+              },
+            },
+          });
+        })
+        .catch((err: unknown) => {
+          setSkillBusy(false);
+          setChatBubble(err instanceof Error ? err.message : 'Planning failed.');
+        });
+    },
+    [auth, personaSlug],
+  );
   const fireSkill = useCallback(
     (skill: SkillId) => {
       if (!auth) return;
@@ -699,6 +747,12 @@ function AssistantSkin({
   const quickReply = auth
     ? (text: string) => {
         setAmbient(null);
+        // "do <instruction>" → act skill (plan → confirm → UIA execute).
+        const doMatch = /^(?:do|click|press|type|fill|select|open tab)\b/i.test(text.trim());
+        if (doMatch) {
+          fireAct(text.trim());
+          return;
+        }
         const skill = SKILL_CHIPS[text];
         if (skill) {
           // Fast lane: ack + streamed answer, no triage round-trip.

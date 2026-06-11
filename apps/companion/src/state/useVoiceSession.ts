@@ -85,8 +85,10 @@ async function postBroker<T extends { ok: true }>(
   const json = (await res.json().catch(() => ({}))) as T | BrokerErr;
   if (!res.ok || !json.ok) {
     const err = (json as BrokerErr).error ?? `http_${res.status}`;
-    const hint = (json as BrokerErr).hint ? ` (${(json as BrokerErr).hint})` : '';
-    throw new Error(`broker_${err}${hint}`);
+    const hint = (json as BrokerErr).hint;
+    // Prefer the server's human hint over the raw error code — the UI
+    // renders this message directly.
+    throw new Error(hint ?? `broker_${err}`);
   }
   return json;
 }

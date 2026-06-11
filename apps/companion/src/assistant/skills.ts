@@ -168,3 +168,59 @@ export async function runSkill(
   }
   return full;
 }
+
+// ── Act skill: instruction → ONE confirmed UIA action ─────────────────────
+
+export interface ActPlan {
+  feasible: boolean;
+  reason?: string;
+  action?: 'invoke' | 'set_value';
+  role?: string;
+  name?: string;
+  value?: string;
+  prompt?: string;
+}
+
+/**
+ * Plan a UI action from a natural-language instruction. Sends the focused
+ * window's a11y outline to the act planner; returns the plan. The CALLER
+ * is responsible for user confirmation before calling {@link executeActPlan}
+ * — ask-before-act is non-negotiable.
+ */
+export async function planAct(
+  auth: AuthState,
+  instruction: string,
+  personaSlug: string,
+): Promise<ActPlan> {
+  const [fresh, context] = await Promise.all([
+    ensureFreshAuth(auth).then((a) => a ?? auth),
+    gatherContext('analyze_screen'), // outline + screen text — same context
+  ]);
+  const res = await fetch(`${fresh.apiBase.replace(/\/$/, '')}/api/sdk/v1/companion/skill`, {
+    method: 'POST',
+    headers: {
+      'content-type': 'application/json',
+      authorization: `Bearer ${fresh.accessToken}`,
+    },
+    body: JSON.stringify({ skill: 'act', instruction, context, personaSlug }),
+  });
+  if (!res.ok) throw new Error(`Request failed (${res.status}).`);
+  const json = (await res.json()) as { ok: boolean; plan?: ActPlan };
+  if (!json.ok || !json.plan) throw new Error('Planner returned nothing.');
+  return json.plan;
+}
+
+/** Execute a confirmed act plan via the native UIA layer. */
+export async function executeActPlan(plan: ActPlan): Promise<void> {
+  if (!plan.feasible || !plan.action || !plan.role || !plan.name) {
+    throw new Error(plan.reason ?? 'Nothing to execute.');
+  }
+  const args = {
+    role: plan.role,
+    name: plan.name,
+    ...(plan.action === 'set_value' ? { value: plan.value ?? '' } : {}),
+  };
+  // sense_ui_* are the ungated user-confirmed variants — only ever called
+  // after the confirm bubble (ask-before-act).
+  await invoke(plan.action === 'invoke' ? 'sense_ui_invoke' : 'sense_ui_set_value', { args });
+}

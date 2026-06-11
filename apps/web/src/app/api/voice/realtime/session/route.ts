@@ -149,6 +149,19 @@ export async function POST(req: Request) {
     clearTimeout(t);
     if (!res.ok) {
       const errText = await res.text().catch(() => '');
+      // Map the most common failure to a human, actionable error: the
+      // stored BYOK key is invalid/revoked. Surfacing OpenAI's raw JSON as
+      // 'broker_upstream_error' left users stranded.
+      if (res.status === 401 || errText.includes('invalid_api_key')) {
+        return NextResponse.json(
+          {
+            ok: false,
+            error: 'invalid_openai_key',
+            hint: 'Your OpenAI API key is invalid or revoked. Update it in metu Settings → AI Providers (must be an sk-… key).',
+          },
+          { status: 412 },
+        );
+      }
       return NextResponse.json(
         { ok: false, error: 'upstream_error', status: res.status, detail: errText.slice(0, 240) },
         { status: 502 },

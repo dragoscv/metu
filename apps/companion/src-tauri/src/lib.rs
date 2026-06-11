@@ -75,6 +75,25 @@ async fn sense_ui_outline(args: a11y::A11yArgs) -> Result<a11y::A11yTree, String
         .map_err(|e| format!("join_failed: {e}"))?
 }
 
+/// Ungated UIA actions for USER-CONFIRMED local act-skill steps. The
+/// remote-facing `device_a11y_invoke`/`device_a11y_set_value` stay
+/// capability-gated; these run ONLY after the user pressed the confirm
+/// button in the ask-before-act bubble (the JS side never calls them
+/// without an explicit confirmation gesture).
+#[tauri::command]
+async fn sense_ui_invoke(args: a11y::A11yActionArgs) -> Result<a11y::A11yActionResult, String> {
+    tauri::async_runtime::spawn_blocking(move || a11y::invoke(args))
+        .await
+        .map_err(|e| format!("join_failed: {e}"))?
+}
+
+#[tauri::command]
+async fn sense_ui_set_value(args: a11y::A11yActionArgs) -> Result<a11y::A11yActionResult, String> {
+    tauri::async_runtime::spawn_blocking(move || a11y::set_value(args))
+        .await
+        .map_err(|e| format!("join_failed: {e}"))?
+}
+
 // ── Companion-Agent slice 1 — semantic a11y actions ────────────────────────
 
 #[tauri::command]
@@ -313,6 +332,8 @@ pub fn run() {
             device_a11y_tree,
             device_a11y_find,
             sense_ui_outline,
+            sense_ui_invoke,
+            sense_ui_set_value,
             device_a11y_invoke,
             device_a11y_set_value,
             device_see,
