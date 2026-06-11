@@ -131,6 +131,19 @@ export async function executeDeviceTool(tool: string, args: DeviceToolArgs): Pro
     case 'device.list_windows': {
       return await invoke('device_list_windows');
     }
+    // ── Jarvis sense engine — local screen-history recall ─────────────────
+    case 'device.screen_history': {
+      const query = asString(args, 'query');
+      const limit = typeof args.limit === 'number' ? args.limit : 10;
+      const hits = await invoke('sense_search', { args: { query, limit } });
+      return { hits };
+    }
+    case 'device.activity_timeline': {
+      const sinceTs = typeof args.sinceTs === 'number' ? args.sinceTs : undefined;
+      const limit = typeof args.limit === 'number' ? args.limit : 100;
+      const entries = await invoke('sense_timeline', { sinceTs, limit });
+      return { entries };
+    }
     case 'device.a11y_tree': {
       return await invoke('device_a11y_tree', { args });
     }

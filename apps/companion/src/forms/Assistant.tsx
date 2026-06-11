@@ -30,7 +30,8 @@ import { playWakeBlip } from '../state/wakeBlip';
 import { AvatarHost } from '../avatar/AvatarHost';
 import type { AvatarState } from '../avatar/types';
 import { useAssistantBrain, type PointRequest } from '../assistant/useAssistantBrain';
-import { startActivityModel, startDistiller } from '../assistant/activityModel';
+import { onActivityChange, startActivityModel, startDistiller } from '../assistant/activityModel';
+import { applySenseSettings, saveWatchPaused } from '../state/senseSettings';
 import {
   startSuggestionEngine,
   loadProactivity,
@@ -194,6 +195,14 @@ function AssistantSkin({
   const [menu, setMenu] = useState<{ x: number; y: number } | null>(null);
   // Proactivity mode (silent/aware/chatty) — gated in the suggestion engine.
   const [proactivity, setProactivity] = useState<ProactivityMode>(() => loadProactivity());
+  // Sense engine watching state (false = user-paused or privacy gate).
+  const [watching, setWatching] = useState(true);
+  const [userPausedWatch, setUserPausedWatch] = useState(false);
+  useEffect(() => onActivityChange((s) => setWatching(s.watching)), []);
+  // Restore persisted privacy choices (blocklist + paused) on mount.
+  useEffect(() => {
+    void applySenseSettings().then(({ paused }) => setUserPausedWatch(paused));
+  }, []);
 
   const onBodyPointerDown = (e: React.PointerEvent) => {
     if (e.button !== 0 || !isTauri()) return;
@@ -514,6 +523,18 @@ function AssistantSkin({
       data-hovering={hovering}
       data-mode={mode}
     >
+      {/* Watching indicator — green eye while ambient sensing is active,
+            gray when paused (user or privacy gate). Always visible so the
+            user can ALWAYS tell whether the screen is being observed. */}
+      <div
+        className={`assistant-watchdot ${watching && !userPausedWatch ? 'assistant-watchdot--on' : ''}`}
+        title={
+          watching && !userPausedWatch
+            ? 'Watching your screen (right-click to stop)'
+            : 'Not watching (paused or sensitive context)'
+        }
+        aria-hidden
+      />
       {chatOpen && auth ? (
         <div
           className="assistant-panel"
@@ -628,6 +649,22 @@ function AssistantSkin({
             }}
           >
             ✨ Dismiss bubble
+          </button>
+          <button
+            className="assistant-menu__item"
+            onClick={() => {
+              const next = !userPausedWatch;
+              setUserPausedWatch(next);
+              setMenu(null);
+              void saveWatchPaused(next); // persists + applies to the engine
+              setAmbient({
+                text: next
+                  ? "Stopped watching — I can't see your screen until you resume."
+                  : 'Watching again. Privacy gate still applies.',
+              });
+            }}
+          >
+            {userPausedWatch ? '🙈 Resume watching' : '👁 Stop watching'}
           </button>
           <button
             className="assistant-menu__item"

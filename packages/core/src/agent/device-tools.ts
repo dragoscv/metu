@@ -104,6 +104,28 @@ export const deviceListWindowsTool = bridge(
   z.object({}).default({}),
 );
 
+// ─── Ambient awareness (Jarvis sense engine) ──────────────────────────────
+
+export const deviceScreenHistoryTool = bridge(
+  'device.screen_history',
+  "Search the user's local on-screen text history (OCR of what they have seen, last 7 days, privacy-gated on the device). Use for 'what was I reading about X' / 'find that page I saw'. Returns matching snippets with app, window title, and timestamp.",
+  'read',
+  z.object({
+    query: z.string().min(2).max(200),
+    limit: z.number().int().min(1).max(50).default(10),
+  }),
+);
+
+export const deviceActivityTimelineTool = bridge(
+  'device.activity_timeline',
+  "Recent focused-app sessions on the user's device (app, window title, start/end). Use for 'what was I working on' style recall.",
+  'read',
+  z.object({
+    sinceTs: z.number().int().nonnegative().optional(),
+    limit: z.number().int().min(1).max(500).default(100),
+  }),
+);
+
 export const deviceA11yTreeTool = bridge(
   'device.a11y_tree',
   'Read the accessibility tree of the focused window (or specified windowId). Caps default to depth 6 / 500 nodes; raise via maxDepth/maxNodes.',
@@ -461,6 +483,8 @@ export const deviceOllamaChatTool = bridge(
 export const DEVICE_TOOLS = {
   'device.screenshot': deviceScreenshotTool,
   'device.list_windows': deviceListWindowsTool,
+  'device.screen_history': deviceScreenHistoryTool,
+  'device.activity_timeline': deviceActivityTimelineTool,
   'device.a11y_tree': deviceA11yTreeTool,
   'device.a11y_find': deviceA11yFindTool,
   'device.a11y_invoke': deviceA11yInvokeTool,
