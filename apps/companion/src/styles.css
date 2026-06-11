@@ -456,13 +456,21 @@ html:has(.overlay-stage), body:has(.overlay-stage) { background: transparent; }
   -webkit-backdrop-filter: blur(14px);
   min-width: 160px;
   z-index: 1000;
+  /* The action list outgrew the 560px window — keep every item reachable.
+     (THE original 'menu items don't work' bug: items past the window edge
+     rendered but could never receive clicks.) */
+  max-height: 420px;
+  overflow-y: auto;
+  padding: 3px;
 }
 .assistant-menu__item {
   appearance: none;
   display: block;
   width: 100%;
-  padding: 10px 12px;
-  font-size: 13px;
+  padding: 7px 11px;
+  font-size: 12.5px;
+  border-radius: 8px;
+  white-space: nowrap;
   color: #f5f7fb;
   background: transparent;
   border: none;
@@ -470,9 +478,12 @@ html:has(.overlay-stage), body:has(.overlay-stage) { background: transparent; }
   text-align: left;
   transition: background 160ms ease;
 }
-.assistant-menu__item:first-child { border-radius: 11px 11px 0 0; }
-.assistant-menu__item:last-child { border-radius: 0 0 11px 11px; }
 .assistant-menu__item:hover { background: rgba(124, 140, 255, 0.25); }
+.assistant-menu__sep {
+  height: 1px;
+  margin: 3px 8px;
+  background: rgba(140, 180, 255, 0.18);
+}
 
 /* ── Chat context menu (copy/paste/select) ────────────────────────── */
 .ctxmenu {

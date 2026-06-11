@@ -322,6 +322,24 @@ export function useAssistantBrain(opts: Options): AssistantBrainState {
     return () => window.removeEventListener('metu:assistant-approach', handler);
   }, [width, height]);
 
+  // Explicit "go home" intent (context menu): walk to the dock corner of
+  // the monitor hosting the active window.
+  useEffect(() => {
+    const handler = () => {
+      void getForeground()
+        .then((fg) => {
+          targetRef.current = dockTarget(fg);
+          setMode('docked');
+        })
+        .catch(() => {
+          targetRef.current = dockTarget(null);
+          setMode('docked');
+        });
+    };
+    window.addEventListener('metu:assistant-dock', handler);
+    return () => window.removeEventListener('metu:assistant-dock', handler);
+  }, [dockTarget]);
+
   // ── Idle nudge loop ──────────────────────────────────────────────────────
   useEffect(() => {
     const timer = setInterval(() => {

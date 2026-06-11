@@ -50,8 +50,12 @@ import {
   loadPersonality,
   onPersonalityChange,
   PERSONALITIES,
+  savePersonality,
   type PersonalityId,
 } from '../avatar/personality';
+import { GLB_PRESETS } from '../avatar/glbPresets';
+import { useAvatarSelection } from '../avatar/useAvatarSelection';
+import { open as openUrl } from '@tauri-apps/plugin-shell';
 
 /** Logical window size — must match the `assistant` window in tauri.conf.json. */
 const WIN_W = 380;
@@ -196,6 +200,10 @@ function AssistantSkin({
   const [menu, setMenu] = useState<{ x: number; y: number } | null>(null);
   // Proactivity mode (silent/aware/chatty) — gated in the suggestion engine.
   const [proactivity, setProactivity] = useState<ProactivityMode>(() => loadProactivity());
+  // Avatar selection (for the "Next avatar" cycler).
+  const avatarSel = useAvatarSelection();
+  // Snooze guard — only the latest snooze's timeout restores aware mode.
+  const suggestionSnoozeUntilRef = useRef<number>(0);
   // Sense engine watching state (false = user-paused or privacy gate).
   const [watching, setWatching] = useState(true);
   const [userPausedWatch, setUserPausedWatch] = useState(false);
@@ -317,10 +325,14 @@ function AssistantSkin({
 
   // Surface the latest assistant chat text as a bubble while collapsed.
   const [chatBubble, setChatBubble] = useState<string | null>(null);
-  // Unread reply: set when a chat bubble auto-expires unseen; hovering the
-  // avatar re-opens it (the badge on the avatar signals there's something
-  // to read).
-  const [unreadReply, setUnreadReply] = useState<string | null>(null);
+  // Unread reply: parked when a chat bubble leaves the screen unseen.
+  // 'expired' (TTL) restores on avatar hover; 'dismissed' (explicit ✕)
+  // keeps the badge but only restores on CLICK — the user said "not now",
+  // so hover must not nag them.
+  const [unreadReply, setUnreadReply] = useState<{
+    text: string;
+    how: 'expired' | 'dismissed';
+  } | null>(null);
   // Human-readable progress stage while a quick-reply/chat turn runs.
   const [progressLabel, setProgressLabel] = useState<string | null>(null);
   useEffect(() => {
@@ -497,11 +509,27 @@ function AssistantSkin({
     if (bubbleIsChat) {
       // Auto-expiry parks the reply as "unread" — the avatar badge brings
       // it back on hover. Manual ✕ also parks it (cheap undo).
-      setUnreadReply(chatBubble);
+      if (chatBubble) setUnreadReply({ text: chatBubble, how: 'dismissed' });
       setChatBubble(null);
     } else {
       setAmbient(null);
     }
+  };
+
+  /** TTL expiry of a chat reply — parked as hover-restorable unread. */
+  const expireBubble = () => {
+    if (bubbleIsChat) {
+      if (chatBubble) setUnreadReply({ text: chatBubble, how: 'expired' });
+      setChatBubble(null);
+    } else {
+      setAmbient(null);
+    }
+  };
+
+  const restoreUnread = () => {
+    if (!unreadReply) return;
+    setChatBubble(unreadReply.text);
+    setUnreadReply(null);
   };
 
   // The assistant window is created with `focus: false` (it must never steal
@@ -609,6 +637,7 @@ function AssistantSkin({
                 pending={chatBusy && (bubbleIsChat || !!workingBubble)}
                 progressLabel={progressLabel}
                 onDismiss={dismissBubble}
+                onExpire={expireBubble}
                 onQuickReply={workingBubble ? undefined : quickReply}
                 suggestions={bubbleSuggestions}
                 onOpenChat={auth ? () => setChatOpen(true) : undefined}
@@ -619,11 +648,9 @@ function AssistantSkin({
             className={`assistant-body ${speaking ? 'assistant-body--speaking' : ''}`}
             onPointerEnter={() => {
               setInteractive(true);
-              // Hovering the avatar re-surfaces an unread reply.
-              if (unreadReply && !bubbleText) {
-                setChatBubble(unreadReply);
-                setUnreadReply(null);
-              }
+              // Hover restores TTL-expired replies only; explicitly
+              // dismissed ones need a click (user said "not now").
+              if (unreadReply?.how === 'expired' && !bubbleText) restoreUnread();
             }}
             onPointerLeave={() => setInteractive(false)}
             onPointerDown={onBodyPointerDown}
@@ -639,12 +666,11 @@ function AssistantSkin({
                 className="assistant-unread"
                 title="Show the last reply"
                 onPointerEnter={() => {
-                  setChatBubble(unreadReply);
-                  setUnreadReply(null);
+                  if (unreadReply.how === 'expired') restoreUnread();
                 }}
-                onClick={() => {
-                  setChatBubble(unreadReply);
-                  setUnreadReply(null);
+                onClick={(e) => {
+                  e.stopPropagation();
+                  restoreUnread();
                 }}
               >
                 💬
@@ -656,11 +682,15 @@ function AssistantSkin({
       {menu && (
         <div
           className="assistant-menu"
-          style={{ left: Math.min(menu.x, WIN_W - 168), top: Math.min(menu.y, WIN_H - 190) }}
+          style={{
+            left: Math.min(menu.x, WIN_W - 200),
+            top: Math.max(8, Math.min(menu.y, WIN_H - 430)),
+          }}
           onPointerDown={(e) => e.stopPropagation()}
           onPointerEnter={() => setInteractive(true)}
           onPointerLeave={() => setInteractive(false)}
         >
+          {/* ── Chat & context ── */}
           {auth && (
             <button
               className="assistant-menu__item"
@@ -670,6 +700,44 @@ function AssistantSkin({
               }}
             >
               💬 Open chat
+            </button>
+          )}
+          {auth && (
+            <button
+              className="assistant-menu__item"
+              onClick={() => {
+                setMenu(null);
+                quickReply?.('Catch me up on what I was doing.');
+              }}
+            >
+              ⏪ Catch me up
+            </button>
+          )}
+          {auth && (
+            <button
+              className="assistant-menu__item"
+              onClick={() => {
+                setMenu(null);
+                quickReply?.('Take a look at my screen and tell me what you see.');
+              }}
+            >
+              👀 Analyze my screen
+            </button>
+          )}
+          {auth && (
+            <button
+              className="assistant-menu__item"
+              onClick={() => {
+                setMenu(null);
+                setChatOpen(true);
+                window.dispatchEvent(
+                  new CustomEvent('metu:chat-prefill', {
+                    detail: 'Search my screen history for ',
+                  }),
+                );
+              }}
+            >
+              🔎 Search screen history
             </button>
           )}
           {bubbleText && (
@@ -683,6 +751,21 @@ function AssistantSkin({
               📋 Copy bubble text
             </button>
           )}
+          {(bubbleText || unreadReply) && (
+            <button
+              className="assistant-menu__item"
+              onClick={() => {
+                setMenu(null);
+                setAmbient(null);
+                setChatBubble(null);
+                setUnreadReply(null);
+              }}
+            >
+              ✨ Dismiss bubble
+            </button>
+          )}
+          <div className="assistant-menu__sep" />
+          {/* ── Behavior ── */}
           <button
             className="assistant-menu__item"
             onClick={() => {
@@ -718,13 +801,60 @@ function AssistantSkin({
           <button
             className="assistant-menu__item"
             onClick={() => {
+              // Cycle calm → playful → quiet.
+              const order: PersonalityId[] = ['calm', 'playful', 'quiet'];
+              const next = order[(order.indexOf(personality) + 1) % order.length] ?? 'calm';
+              savePersonality(next);
               setMenu(null);
-              setAmbient(null);
-              setChatBubble(null);
+              setAmbient({
+                text: `Mood: ${PERSONALITIES[next].label}. ${PERSONALITIES[next].description}`,
+              });
             }}
           >
-            ✨ Dismiss bubble
+            {personality === 'calm' ? '😌' : personality === 'playful' ? '😄' : '🤫'} Mood:{' '}
+            {personality}
           </button>
+          <button
+            className="assistant-menu__item"
+            onClick={() => {
+              // Cycle through GLB characters (the assistant's usual form).
+              const ids = GLB_PRESETS.map((p) => p.id);
+              const cur = avatarSel.selection.glbPresetId;
+              const next = ids[(ids.indexOf(cur) + 1) % ids.length] ?? ids[0]!;
+              avatarSel.setKind('glb');
+              avatarSel.setGlbPreset(next);
+              setMenu(null);
+              setAmbient({
+                text: `Switched to ${GLB_PRESETS.find((p) => p.id === next)?.name ?? next}.`,
+              });
+            }}
+          >
+            🎭 Next avatar
+          </button>
+          {auth && (
+            <button
+              className="assistant-menu__item"
+              onClick={() => {
+                setMenu(null);
+                const until = Date.now() + 3600_000;
+                suggestionSnoozeUntilRef.current = until;
+                saveProactivity('silent');
+                setProactivity('silent');
+                // Auto-restore after an hour.
+                setTimeout(() => {
+                  if (suggestionSnoozeUntilRef.current === until) {
+                    saveProactivity('aware');
+                    setProactivity('aware');
+                  }
+                }, 3600_000);
+                setAmbient({ text: 'Snoozed for 1 hour — no interruptions.' });
+              }}
+            >
+              😴 Snooze 1h
+            </button>
+          )}
+          <div className="assistant-menu__sep" />
+          {/* ── Privacy & window ── */}
           <button
             className="assistant-menu__item"
             onClick={() => {
@@ -741,6 +871,26 @@ function AssistantSkin({
           >
             {userPausedWatch ? '🙈 Resume watching' : '👁 Stop watching'}
           </button>
+          <button
+            className="assistant-menu__item"
+            onClick={() => {
+              setMenu(null);
+              window.dispatchEvent(new CustomEvent('metu:assistant-dock'));
+            }}
+          >
+            📍 Dock to corner
+          </button>
+          {auth && (
+            <button
+              className="assistant-menu__item"
+              onClick={() => {
+                setMenu(null);
+                void openUrl(auth.apiBase).catch(() => {});
+              }}
+            >
+              🌐 Open dashboard
+            </button>
+          )}
           <button
             className="assistant-menu__item"
             onClick={() => {

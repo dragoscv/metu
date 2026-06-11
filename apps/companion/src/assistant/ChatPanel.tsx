@@ -111,6 +111,19 @@ export function ChatPanel({
     inputRef.current?.focus();
   }, []);
 
+  // Prefill requests from the avatar context menu ("Search screen history…").
+  useEffect(() => {
+    const handler = (e: Event) => {
+      const text = (e as CustomEvent<string>).detail;
+      if (typeof text === 'string') {
+        setDraft(text);
+        inputRef.current?.focus();
+      }
+    };
+    window.addEventListener('metu:chat-prefill', handler);
+    return () => window.removeEventListener('metu:chat-prefill', handler);
+  }, []);
+
   const submit = () => {
     const v = draft.trim();
     if (!v || busy) return;

@@ -20,6 +20,7 @@ export function SpeechBubble({
   pending,
   progressLabel,
   onDismiss,
+  onExpire,
   onQuickReply,
   suggestions,
   onOpenChat,
@@ -32,6 +33,8 @@ export function SpeechBubble({
   /** Human-readable stage shown while pending ("Reading your screen…"). */
   progressLabel?: string | null;
   onDismiss?: () => void;
+  /** TTL expiry (no user gesture). Falls back to onDismiss when omitted. */
+  onExpire?: () => void;
   /** When provided, renders the inline quick-reply input. */
   onQuickReply?: (text: string) => void;
   /** One-tap canned replies — each chip sends its text immediately. */
@@ -43,15 +46,17 @@ export function SpeechBubble({
   const [replying, setReplying] = useState(false);
   const [hovered, setHovered] = useState(false);
   const inputRef = useRef<HTMLInputElement | null>(null);
+  const onExpireRef = useRef(onExpire ?? onDismiss);
+  onExpireRef.current = onExpire ?? onDismiss;
 
   useEffect(() => {
     // Interactive bubbles stay until the user responds; ambient auto-dismiss.
     // Hover pauses the TTL so the user can read/select/copy without the
     // bubble vanishing mid-gesture.
     if (action || replying || pending || hovered) return;
-    const t = setTimeout(() => onDismiss?.(), ttlMs);
+    const t = setTimeout(() => onExpireRef.current?.(), ttlMs);
     return () => clearTimeout(t);
-  }, [text, ttlMs, action, replying, pending, hovered, onDismiss]);
+  }, [text, ttlMs, action, replying, pending, hovered]);
 
   useEffect(() => {
     if (replying) inputRef.current?.focus();
