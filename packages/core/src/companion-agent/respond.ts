@@ -53,7 +53,14 @@ function buildSystemPrompt(input: CompanionTurnInput): string {
     recentDigest: input.promptContext?.recentDigest,
   });
 
-  return `${renderedPersona}
+  // Explicit response-language directive: persona templates may or may not
+  // reference {{language}}, so enforce it directly when the user picked one.
+  const lang = input.promptContext?.language;
+  const langDirective = lang
+    ? `\n\nIMPORTANT: Reply ONLY in ${lang === 'ro' ? 'Romanian (limba română)' : lang === 'en' ? 'English' : lang}, regardless of the language the user writes in.`
+    : '';
+
+  return `${renderedPersona}${langDirective}
 
 You are running on the FAST LANE of the Companion-Agent. Your job is to:
   - acknowledge and respond in a single short turn (≤ 3 sentences when spoken)

@@ -19,6 +19,7 @@ import { companionAgent } from '@metu/core';
 import { forbidden, hasScope, resolveSession, unauthorized } from '@/lib/bearer';
 import { rateLimit } from '@/lib/ratelimit';
 import { assertVoiceCap } from '@/lib/voice-billing';
+import { loadPromptContext } from '@/lib/prompt-context';
 import { inngest } from '@/inngest/client';
 
 export const runtime = 'nodejs';
@@ -40,6 +41,8 @@ const Body = z.object({
   surface: z.enum(['companion', 'mobile', 'web', 'vscode', 'browser', 'telegram']).optional(),
   /** Ambient on-screen context from the companion sense engine (text only). */
   screenContext: z.string().max(6_000).optional(),
+  /** User-chosen response language override (UI language stays separate). */
+  language: z.enum(['en', 'ro']).optional(),
 });
 
 export async function POST(req: NextRequest) {
@@ -73,6 +76,14 @@ export async function POST(req: NextRequest) {
     );
   }
 
+  const promptContext = await loadPromptContext({
+    workspaceId: session.workspaceId,
+    userId: session.userId,
+    personaSlug: parsed.data.personaSlug,
+  });
+  // Explicit user choice wins over persona default.
+  if (parsed.data.language) promptContext.language = parsed.data.language;
+
   const encoder = new TextEncoder();
   const stream = new ReadableStream<Uint8Array>({
     async start(controller) {
@@ -88,6 +99,7 @@ export async function POST(req: NextRequest) {
             eagerness: parsed.data.eagerness ?? 50,
             surface: parsed.data.surface ?? 'companion',
             screenContext: parsed.data.screenContext,
+            promptContext,
           },
           {
             onEscalate: async (input, reason) => {

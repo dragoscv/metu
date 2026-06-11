@@ -21,6 +21,8 @@ export const runtime = 'nodejs';
 const Body = z.object({
   personaSlug: z.string().min(1).max(80),
   text: z.string().min(1).max(4_000),
+  /** Spoken-language hint (Cartesia needs it; ElevenLabs auto-detects). */
+  language: z.enum(['en', 'ro']).optional(),
 });
 
 const TEXT_BUDGET = 4_000;
@@ -60,7 +62,13 @@ export async function POST(req: Request) {
   const text = parsed.data.text.slice(0, TEXT_BUDGET);
 
   if (persona.voiceProvider === 'cartesia-sonic-turbo') {
-    return streamFromCartesia(workspaceId, persona.voiceId, text, persona.voiceTuning);
+    return streamFromCartesia(
+      workspaceId,
+      persona.voiceId,
+      text,
+      persona.voiceTuning,
+      parsed.data.language ?? 'en',
+    );
   }
   if (persona.voiceProvider === 'elevenlabs-flash') {
     return streamFromElevenLabs(workspaceId, persona.voiceId, text, persona.voiceTuning);
@@ -87,6 +95,7 @@ async function streamFromCartesia(
   voiceId: string,
   text: string,
   tuning: VoiceTuning | undefined,
+  language: 'en' | 'ro',
 ): Promise<Response> {
   const cred = await requireVoiceProviderKey(workspaceId, 'cartesia');
   if ('error' in cred) return providerError(cred.error, 'CARTESIA_API_KEY');
@@ -103,7 +112,7 @@ async function streamFromCartesia(
       transcript: text,
       voice: { mode: 'id', id: voiceId || 'sonic-default' },
       output_format: { container: 'mp3', encoding: 'mp3', sample_rate: 24_000 },
-      language: 'en',
+      language,
       ...(tuning?.speed != null && {
         __experimental_controls: { speed: clamp(tuning.speed, 0.5, 1.5) },
       }),

@@ -14,6 +14,7 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import { OpenAiRealtimeProvider, registerOpenAiRealtime } from '@metu/voice/openai-realtime';
 import { DeepgramNova3Provider, registerDeepgramNova3 } from '@metu/voice/deepgram';
 import { MetuTtsProxyProvider, registerMetuTtsProxy } from '@metu/voice/tts-proxy';
+import { loadAssistantLanguage } from './language';
 import { createPipelineSession, type PipelineSessionHandle } from '@metu/voice/pipeline';
 import type { RealtimeSession, VoiceSessionEvent } from '@metu/voice';
 import type { AuthState } from './auth';
@@ -249,6 +250,7 @@ export function useVoiceSession(auth: AuthState | null) {
         apiBase: auth.apiBase,
         accessToken: auth.accessToken,
         personaSlug,
+        language: loadAssistantLanguage(),
         stt: DeepgramNova3Provider,
         sttOpenOpts: {
           sessionToken: minted.stt.sessionToken,

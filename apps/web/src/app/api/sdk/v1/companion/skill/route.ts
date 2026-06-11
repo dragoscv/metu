@@ -47,6 +47,8 @@ const Body = z.object({
   personaSlug: z.string().min(1).max(80).default('atlas'),
   /** For the `act` skill: the user's natural-language instruction. */
   instruction: z.string().max(500).optional(),
+  /** User-chosen response language (skills only; act plans stay English). */
+  language: z.enum(['en', 'ro']).optional(),
 });
 
 /**
@@ -141,9 +143,11 @@ export async function POST(req: NextRequest) {
   }
 
   const skill = SKILLS[parsed.data.skill]!;
+  const langDirective =
+    parsed.data.language === 'ro' ? '\n\nIMPORTANT: Reply ONLY in Romanian (limba română).' : '';
   const result = streamText({
     model: model as Parameters<typeof streamText>[0]['model'],
-    system: skill.system,
+    system: skill.system + langDirective,
     prompt: parsed.data.context || '(no context available)',
     maxOutputTokens: skill.maxOutputTokens,
   });

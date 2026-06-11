@@ -20,6 +20,8 @@ export interface PipelineSessionOpts {
   apiBase: string;
   accessToken: string;
   personaSlug: string;
+  /** Response + spoken language (e.g. 'ro'); rides to turn + TTS calls. */
+  language?: string;
   /** STT provider, e.g. Deepgram. */
   stt: STTProvider;
   sttOpenOpts: Parameters<STTProvider['open']>[0];
@@ -86,6 +88,7 @@ export function createPipelineSession(opts: PipelineSessionOpts): PipelineSessio
             accessToken: opts.accessToken,
             personaSlug: opts.personaSlug,
             voiceId: '',
+            language: opts.language,
           },
           opts.audioEl,
         );
@@ -122,6 +125,7 @@ export function createPipelineSession(opts: PipelineSessionOpts): PipelineSessio
             history: history.slice(-12),
             surface: 'companion',
             screenContext,
+            ...(opts.language ? { language: opts.language } : {}),
           }),
           signal: ac.signal,
         },

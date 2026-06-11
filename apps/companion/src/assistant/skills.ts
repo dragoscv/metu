@@ -12,6 +12,7 @@ import { invoke } from '@tauri-apps/api/core';
 import { ensureFreshAuth, type AuthState } from '../state/auth';
 import { isTauri } from '../state/runtime';
 import { getActivityState } from './activityModel';
+import { loadAssistantLanguage } from '../state/language';
 
 export type SkillId = 'catch_up' | 'analyze_screen' | 'explain_error' | 'whats_next';
 
@@ -151,7 +152,7 @@ export async function runSkill(
       'content-type': 'application/json',
       authorization: `Bearer ${fresh.accessToken}`,
     },
-    body: JSON.stringify({ skill, context, personaSlug }),
+    body: JSON.stringify({ skill, context, personaSlug, language: loadAssistantLanguage() }),
   });
   if (!res.ok || !res.body) {
     throw new Error(res.status === 402 ? 'Budget reached.' : `Request failed (${res.status}).`);

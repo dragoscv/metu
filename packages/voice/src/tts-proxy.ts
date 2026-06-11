@@ -19,6 +19,8 @@ export interface MetuTtsProxyOpts extends TTSSpeakOpts {
   accessToken: string;
   /** Persona slug — the proxy looks up the actual provider. */
   personaSlug: string;
+  /** Spoken-language hint forwarded to the TTS provider (e.g. 'ro'). */
+  language?: string;
 }
 
 export interface ProxiedTtsProvider extends TTSProvider {
@@ -87,7 +89,11 @@ async function openTtsReader(
       'content-type': 'application/json',
       authorization: `Bearer ${opts.accessToken}`,
     },
-    body: JSON.stringify({ personaSlug: opts.personaSlug, text }),
+    body: JSON.stringify({
+      personaSlug: opts.personaSlug,
+      text,
+      ...(opts.language ? { language: opts.language } : {}),
+    }),
   });
   if (!res.ok || !res.body) {
     const detail = await res.text().catch(() => '');

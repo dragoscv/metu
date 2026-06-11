@@ -62,6 +62,12 @@ import {
   type SuggestionCategory,
 } from '../assistant/learning';
 import {
+  LANGUAGE_LABELS,
+  loadAssistantLanguage,
+  saveAssistantLanguage,
+  type AssistantLanguage,
+} from '../state/language';
+import {
   loadPersonality,
   onPersonalityChange,
   PERSONALITIES,
@@ -219,6 +225,10 @@ function AssistantSkin({
   const [calibrating, setCalibrating] = useState(false);
   // Proactivity mode (silent/aware/chatty) — gated in the suggestion engine.
   const [proactivity, setProactivity] = useState<ProactivityMode>(() => loadProactivity());
+  /** Assistant RESPONSE language (replies + voice); UI stays English. */
+  const [assistantLang, setAssistantLang] = useState<AssistantLanguage>(() =>
+    loadAssistantLanguage(),
+  );
   // Avatar selection (for the "Next avatar" cycler).
   const avatarSel = useAvatarSelection();
   // Snooze guard — only the latest snooze's timeout restores aware mode.
@@ -507,6 +517,7 @@ function AssistantSkin({
               accessToken: auth.accessToken,
               personaSlug,
               voiceId: '',
+              language: loadAssistantLanguage(),
             },
             audioEl,
           ).catch(() => {
@@ -1091,6 +1102,24 @@ function AssistantSkin({
             }}
           >
             🎤 Toggle voice
+          </button>
+          <button
+            className="assistant-menu__item"
+            onClick={() => {
+              // Toggle assistant RESPONSE language (UI stays English).
+              const next: AssistantLanguage = assistantLang === 'en' ? 'ro' : 'en';
+              saveAssistantLanguage(next);
+              setAssistantLang(next);
+              setMenu(null);
+              setAmbient({
+                text:
+                  next === 'ro'
+                    ? 'De acum răspund în română. (Interfața rămâne în engleză.)'
+                    : "I'll reply in English from now on.",
+              });
+            }}
+          >
+            🌐 Language: {LANGUAGE_LABELS[assistantLang]}
           </button>
           <button
             className="assistant-menu__item"

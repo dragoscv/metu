@@ -15,6 +15,7 @@ import { useCallback, useRef, useState } from 'react';
 import type { AuthState } from '../state/auth';
 import { ensureFreshAuth } from '../state/auth';
 import { fetchScreenContext } from './activityModel';
+import { loadAssistantLanguage } from '../state/language';
 
 export type ChatRole = 'user' | 'assistant';
 
@@ -117,6 +118,7 @@ export function useAssistantChat(auth: AuthState, personaSlug: string) {
               history,
               surface: 'companion',
               screenContext,
+              language: loadAssistantLanguage(),
             }),
           },
         );
