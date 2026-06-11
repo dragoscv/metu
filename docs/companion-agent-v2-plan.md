@@ -57,4 +57,8 @@ Decisions (2026-06-11, with Dragos):
 - [x] A2 teleport morph
 - [x] B posture catalog (point/wave/nod/shake/shrug/celebrate/typing)
 - [x] C terminal tool with policy
-- [ ] D learning loops (preference memory wired; outcome feedback TODO)
+- [x] D learning loops — POST /companion/memory (preference/correction →
+      workspace memory via indexMemory, recalled by the existing `recall`
+      tool); local heuristic classifier (assistant/learning.ts); per-
+      category suggestion outcome stats adapt the proactivity cooldown
+      (dismissed categories go up to 4× quieter).

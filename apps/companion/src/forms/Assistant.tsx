@@ -56,6 +56,12 @@ import {
   runTerminal,
 } from '../assistant/terminal';
 import {
+  maybeLearnFromUtterance,
+  recordSuggestionEngaged,
+  suggestionCategory,
+  type SuggestionCategory,
+} from '../assistant/learning';
+import {
   loadPersonality,
   onPersonalityChange,
   PERSONALITIES,
@@ -217,6 +223,9 @@ function AssistantSkin({
   const avatarSel = useAvatarSelection();
   // Snooze guard — only the latest snooze's timeout restores aware mode.
   const suggestionSnoozeUntilRef = useRef<number>(0);
+  /** Category of the most recent proactive suggestion — engagement with
+   *  the next quick-reply credits this category (learning loop). */
+  const lastSuggestionCatRef = useRef<SuggestionCategory | null>(null);
   // Sense engine watching state (false = user-paused or privacy gate).
   const [watching, setWatching] = useState(true);
   const [userPausedWatch, setUserPausedWatch] = useState(false);
@@ -480,6 +489,7 @@ function AssistantSkin({
   useEffect(() => {
     return startSuggestionEngine({
       onSuggest: (s) => {
+        lastSuggestionCatRef.current = suggestionCategory(s.id);
         setAmbient({ text: s.text, quickReplies: s.quickReplies });
         // Verbal interjection: chatty mode only, never while a voice
         // conversation is active (don't talk over the user or yourself).
@@ -817,6 +827,14 @@ function AssistantSkin({
   const quickReply = auth
     ? (text: string) => {
         setAmbient(null);
+        // Learning loop: tapping a quick reply = engagement with the last
+        // proactive suggestion's category.
+        if (lastSuggestionCatRef.current) {
+          recordSuggestionEngaged(lastSuggestionCatRef.current);
+          lastSuggestionCatRef.current = null;
+        }
+        // Learning loop: persist durable preferences/corrections.
+        maybeLearnFromUtterance(auth, text);
         // "run <command…>" / ">cmd" → local terminal lane.
         const runMatch = /^(?:run|exec|\$|>)\s+(.+)$/i.exec(text.trim());
         if (runMatch?.[1]) {
@@ -874,6 +892,8 @@ function AssistantSkin({
             status={chat.status}
             personaName={personaName}
             onSend={(t) => {
+              // Learning loop: persist durable preferences/corrections.
+              if (auth) maybeLearnFromUtterance(auth, t);
               // "run <cmd…>" in chat → local terminal lane (closes the
               // panel so the result bubble is visible at the avatar).
               const m = /^(?:run|exec|\$|>)\s+(.+)$/i.exec(t.trim());

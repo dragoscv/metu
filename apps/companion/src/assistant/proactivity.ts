@@ -22,6 +22,7 @@ import { invoke } from '@tauri-apps/api/core';
 import { listen } from '@tauri-apps/api/event';
 import { isTauri } from '../state/runtime';
 import { getActivityState } from './activityModel';
+import { cooldownMultiplier, recordSuggestionShown, suggestionCategory } from './learning';
 
 export type ProactivityMode = 'silent' | 'aware' | 'chatty';
 
@@ -103,8 +104,12 @@ export function startSuggestionEngine(opts: EngineOpts): () => void {
       if (getActivityState().focusDepth === 'deep') return;
     }
     const now = Date.now();
-    if (now - lastSuggestAt < SUGGEST_COOLDOWN_MS) return;
+    // Learning loop: categories the user keeps dismissing earn a longer
+    // cooldown (up to 4×) — the assistant adapts its eagerness per topic.
+    const category = suggestionCategory(s.id);
+    if (now - lastSuggestAt < SUGGEST_COOLDOWN_MS * cooldownMultiplier(category)) return;
     lastSuggestAt = now;
+    recordSuggestionShown(category);
     if (s.approach) {
       window.dispatchEvent(new CustomEvent('metu:assistant-approach'));
     }
