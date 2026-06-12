@@ -1795,3 +1795,27 @@ html:has(.overlay-stage), body:has(.overlay-stage) { background: transparent; }
 .home-dash__session:hover { background: rgba(124, 140, 255, 0.12); transform: translateX(2px); }
 .home-dash__session-title { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .home-dash__session-time { flex: none; color: #76829e; font-size: 10.5px; }
+
+/* ── Bubble overflow discipline (no horizontal scroll, ever) ────────── */
+.bubble__text { overflow-x: hidden; min-width: 0; max-width: 100%; }
+.bubble__text * { max-width: 100%; box-sizing: border-box; }
+.bubble__text pre, .rmsg__code pre {
+  white-space: pre-wrap;       /* wrap long code lines instead of scrolling */
+  word-break: break-word;
+  overflow-x: hidden;
+}
+.bubble__text code { word-break: break-word; }
+.bubble__text table {
+  display: block; width: 100%;
+  overflow-x: auto;            /* tables scroll INSIDE their own card only */
+  border-collapse: collapse;
+}
+.bubble__text img { max-width: 100%; height: auto; }
+.bubble__text a { word-break: break-all; }
+.blk { min-width: 0; }
+.blk__kv-val, .blk__action, .blk__status-row, .blk__task-text { word-break: break-word; }
+/* Chat panel gets the same discipline */
+.msg__body { overflow-x: hidden; min-width: 0; }
+.msg__body pre { white-space: pre-wrap; word-break: break-word; overflow-x: hidden; }
+.msg__body table { display: block; width: 100%; overflow-x: auto; }
+.msg__body img { max-width: 100%; height: auto; }

@@ -446,7 +446,13 @@ function AssistantSkin({
   /** The reply text already SURFACED as a bubble — a dismissed/expired
    *  reply must never re-appear when this effect re-runs (panel close,
    *  dep churn). Only genuinely NEW replies open a fresh bubble. */
-  const lastSurfacedRef = useRef<string | null>(null);
+  // Seeded with the RESTORED session's last reply (sessions persist across
+  // restarts now): without the seed, mount/section-switch surfaced an OLD
+  // message from history as if it were fresh (the "stale bubble" bug).
+  const lastSurfacedRef = useRef<string | null | undefined>(undefined);
+  if (lastSurfacedRef.current === undefined) {
+    lastSurfacedRef.current = chat.lastAssistantText;
+  }
   // Human-readable progress stage while a quick-reply/chat turn runs.
   const [progressLabel, setProgressLabel] = useState<string | null>(null);
   useEffect(() => {
@@ -466,6 +472,13 @@ function AssistantSkin({
       setUnreadReply(null);
     }
   }, [chat.lastAssistantText, chatOpen]);
+
+  // Session switches change lastAssistantText to ANOTHER thread's old
+  // reply — mark it surfaced so it never bubbles.
+  useEffect(() => {
+    lastSurfacedRef.current = chat.lastAssistantText;
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [chat.activeSessionId]);
 
   // Progress narration: rotate friendly stage lines while the turn runs.
   useEffect(() => {
