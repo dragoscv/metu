@@ -1509,3 +1509,30 @@ html:has(.overlay-stage), body:has(.overlay-stage) { background: transparent; }
   border: 1.5px solid rgba(124, 140, 255, 0.25); border-top-color: #7c8cff;
   border-radius: 50%; animation: spin 0.8s linear infinite;
 }
+
+/* Session switcher (Jarvis v4.4) */
+.chat__sessions {
+  flex: none; max-height: 200px; overflow-y: auto;
+  display: flex; flex-direction: column; gap: 2px;
+  padding: 6px 8px;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.07);
+  background: rgba(8, 10, 17, 0.5);
+  animation: blockIn 180ms cubic-bezier(0.22, 1, 0.36, 1);
+}
+.chat__sessions::-webkit-scrollbar { width: 6px; }
+.chat__sessions::-webkit-scrollbar-thumb { background: rgba(255,255,255,0.12); border-radius: 6px; }
+.chat__session {
+  display: flex; align-items: center; justify-content: space-between; gap: 8px;
+  appearance: none; border: none; cursor: pointer; text-align: left;
+  padding: 7px 10px; border-radius: 9px;
+  background: transparent; color: #c6cfe4; font-size: 12px;
+  transition: background 120ms ease, color 120ms ease;
+}
+.chat__session:hover { background: rgba(255, 255, 255, 0.07); color: #fff; }
+.chat__session--active {
+  background: rgba(124, 140, 255, 0.14);
+  color: #e6ebff;
+  border: 1px solid rgba(124, 140, 255, 0.3);
+}
+.chat__session-title { flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.chat__session-time { flex: none; font-size: 10px; color: #76829e; }

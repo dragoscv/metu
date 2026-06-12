@@ -11,12 +11,22 @@
  * "utterance" is typed instead of spoken and the reply renders as a chat
  * thread + speech bubble instead of audio.
  */
-import { useCallback, useRef, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import type { AuthState } from '../state/auth';
 import { ensureFreshAuth } from '../state/auth';
 import { fetchScreenContext } from './activityModel';
 import { loadAssistantLanguage } from '../state/language';
 import { splitChips } from './skills';
+import {
+  createSession,
+  getActiveSessionId,
+  loadSessions,
+  otherSessionsDigest,
+  saveSession,
+  setActiveSessionId,
+  titleFor,
+  type ChatSession,
+} from './chatSessions';
 
 export type ChatRole = 'user' | 'assistant';
 
@@ -70,9 +80,28 @@ function uid(): string {
 }
 
 export function useAssistantChat(auth: AuthState, personaSlug: string) {
-  const [messages, setMessages] = useState<ChatMessage[]>([]);
+  // Restore the active session on mount — conversations survive restarts
+  // and hot reloads (Jarvis v4.4).
+  const sessionRef = useRef<ChatSession>(null as unknown as ChatSession);
+  if (sessionRef.current === null) {
+    const sessions = loadSessions();
+    const activeId = getActiveSessionId();
+    sessionRef.current = sessions.find((s) => s.id === activeId) ?? sessions[0] ?? createSession();
+    setActiveSessionId(sessionRef.current.id);
+  }
+  const [messages, setMessages] = useState<ChatMessage[]>(sessionRef.current.messages);
   const [status, setStatus] = useState<ChatStatus>('idle');
   const [lastChips, setLastChips] = useState<string[]>([]);
+  const [sessionVersion, setSessionVersion] = useState(0);
+
+  // Persist on every message change (debounced by React batching).
+  useEffect(() => {
+    const s = sessionRef.current;
+    s.messages = messages;
+    s.updatedAt = Date.now();
+    if (s.title === 'New conversation') s.title = titleFor(messages);
+    saveSession(s);
+  }, [messages]);
   const abortRef = useRef<AbortController | null>(null);
   const authRef = useRef(auth);
   authRef.current = auth;
@@ -91,6 +120,13 @@ export function useAssistantChat(auth: AuthState, personaSlug: string) {
         .filter((m) => !m.error)
         .slice(-HISTORY_LIMIT)
         .map((m) => ({ role: m.role, content: m.content }));
+      // Cross-session awareness: a compact digest of other recent threads
+      // rides as the FIRST history item so the assistant feels like one
+      // continuous conversation ("as we discussed about the trading bot…").
+      const digest = otherSessionsDigest(sessionRef.current.id);
+      if (digest && history.length < HISTORY_LIMIT) {
+        history.unshift({ role: 'assistant', content: digest });
+      }
 
       const userMsg: ChatMessage = { id: uid(), role: 'user', content: utterance };
       const assistantId = uid();
@@ -266,6 +302,42 @@ export function useAssistantChat(auth: AuthState, personaSlug: string) {
     setStatus('idle');
   }, []);
 
+  // ── Session management (Jarvis v4.4) ──────────────────────────────────
+  const switchSession = useCallback((id: string) => {
+    const target = loadSessions().find((s) => s.id === id);
+    if (!target) return;
+    abortRef.current?.abort();
+    // Flush the outgoing session first (the persist effect runs after
+    // setMessages, but the ref must already point at the NEW session).
+    saveSession({ ...sessionRef.current, updatedAt: Date.now() });
+    sessionRef.current = target;
+    setActiveSessionId(id);
+    setMessages(target.messages);
+    setStatus('idle');
+    setLastChips([]);
+    setSessionVersion((v) => v + 1);
+  }, []);
+
+  const newSession = useCallback(() => {
+    abortRef.current?.abort();
+    saveSession({ ...sessionRef.current, updatedAt: Date.now() });
+    const fresh = createSession();
+    sessionRef.current = fresh;
+    setActiveSessionId(fresh.id);
+    saveSession(fresh);
+    setMessages([]);
+    setStatus('idle');
+    setLastChips([]);
+    setSessionVersion((v) => v + 1);
+  }, []);
+
+  const listSessions = useCallback(
+    () => loadSessions().sort((a, b) => b.updatedAt - a.updatedAt),
+    // sessionVersion makes callers re-list after switch/new.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [sessionVersion],
+  );
+
   /**
    * Thread an out-of-band assistant message into the conversation —
    * Conductor follow-ups after an escalation ("3 done, 1 awaiting your
@@ -288,6 +360,20 @@ export function useAssistantChat(auth: AuthState, personaSlug: string) {
       return [...next, { id: uid(), role: 'assistant' as const, content: text.trim() }];
     });
     setStatus('idle');
+  }, []);
+
+  /**
+   * Record a completed exchange that happened OUTSIDE the panel (bubble
+   * quick-replies, skills) into the active session — silent, no status
+   * change. Keeps bubble and panel as ONE continuous conversation.
+   */
+  const recordExchange = useCallback((userText: string, assistantText: string) => {
+    if (!assistantText.trim()) return;
+    setMessages((prev) => [
+      ...prev,
+      { id: uid(), role: 'user' as const, content: userText },
+      { id: uid(), role: 'assistant' as const, content: assistantText.trim() },
+    ]);
   }, []);
 
   /**
@@ -336,5 +422,17 @@ export function useAssistantChat(auth: AuthState, personaSlug: string) {
     lastChips,
   };
 
-  return { ...state, send, stop, clear, appendAssistant, startLocalTurn };
+  return {
+    ...state,
+    send,
+    stop,
+    clear,
+    appendAssistant,
+    recordExchange,
+    startLocalTurn,
+    switchSession,
+    newSession,
+    listSessions,
+    activeSessionId: sessionRef.current.id,
+  };
 }

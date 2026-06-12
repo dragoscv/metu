@@ -72,6 +72,10 @@ export function ChatPanel({
   onClose,
   onDragPointerDown,
   apiBase,
+  sessions,
+  activeSessionId,
+  onNewSession,
+  onSwitchSession,
 }: {
   messages: ChatMessage[];
   status: ChatStatus;
@@ -84,8 +88,14 @@ export function ChatPanel({
   onDragPointerDown?: (e: React.PointerEvent) => void;
   /** Console base URL for entity/link cards in rich messages. */
   apiBase?: string;
+  /** Session management (Jarvis v4.4). */
+  sessions?: Array<{ id: string; title: string; updatedAt: number }>;
+  activeSessionId?: string;
+  onNewSession?: () => void;
+  onSwitchSession?: (id: string) => void;
 }) {
   const [draft, setDraft] = useState('');
+  const [showSessions, setShowSessions] = useState(false);
   const threadRef = useRef<HTMLDivElement | null>(null);
   const inputRef = useRef<HTMLTextAreaElement | null>(null);
   const busy = status === 'thinking' || status === 'streaming';
@@ -160,6 +170,29 @@ export function ChatPanel({
       <div className="chat__head" onPointerDown={onDragPointerDown} style={{ cursor: 'grab' }}>
         <span className="chat__title">{personaName}</span>
         <div className="chat__head-actions">
+          {onSwitchSession && (
+            <button
+              className="chat__hbtn"
+              onPointerDown={(e) => e.stopPropagation()}
+              onClick={() => setShowSessions((v) => !v)}
+              title="Conversations"
+            >
+              ☰
+            </button>
+          )}
+          {onNewSession && (
+            <button
+              className="chat__hbtn"
+              onPointerDown={(e) => e.stopPropagation()}
+              onClick={() => {
+                onNewSession();
+                setShowSessions(false);
+              }}
+              title="New conversation"
+            >
+              ＋
+            </button>
+          )}
           {messages.length > 0 && (
             <button className="chat__hbtn" onClick={onClear} title="Clear conversation">
               ⟲
@@ -170,6 +203,30 @@ export function ChatPanel({
           </button>
         </div>
       </div>
+
+      {showSessions && sessions && (
+        <div className="chat__sessions">
+          {sessions.map((s) => (
+            <button
+              key={s.id}
+              className={`chat__session ${s.id === activeSessionId ? 'chat__session--active' : ''}`}
+              onClick={() => {
+                onSwitchSession?.(s.id);
+                setShowSessions(false);
+              }}
+            >
+              <span className="chat__session-title">{s.title}</span>
+              <span className="chat__session-time">
+                {new Date(s.updatedAt).toLocaleDateString(undefined, {
+                  month: 'short',
+                  day: 'numeric',
+                })}
+              </span>
+            </button>
+          ))}
+          {sessions.length === 0 && <p className="chat__empty">No previous conversations.</p>}
+        </div>
+      )}
 
       <div className="chat__thread" ref={threadRef}>
         {messages.length === 0 && (

@@ -861,6 +861,10 @@ function AssistantSkin({
           else {
             setChatBubble(text);
             setDynamicChips(chips);
+            // Bubble interactions are part of THE conversation: thread the
+            // exchange into the active session so opening the panel shows
+            // it and the model remembers it (one continuous conversation).
+            chat.recordExchange(chipLabel ?? SKILL_ACKS[skill], text);
           }
           // EOD wrap doubles as continuity memory: tomorrow-me (and the
           // morning brief) recalls exactly where today ended.
@@ -1209,6 +1213,10 @@ function AssistantSkin({
             onClose={() => setChatOpen(false)}
             onDragPointerDown={onBodyPointerDown}
             apiBase={auth?.apiBase}
+            sessions={chat.listSessions()}
+            activeSessionId={chat.activeSessionId}
+            onNewSession={chat.newSession}
+            onSwitchSession={chat.switchSession}
           />
         </div>
       ) : (
