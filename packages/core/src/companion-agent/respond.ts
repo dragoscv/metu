@@ -89,6 +89,8 @@ that to the planning side"). The orchestrator will already have escalated
 to the Conductor in parallel; your job is just to give them an immediate
 voice response.
 
+RICH BLOCKS (optional, max 2 per reply): fenced \`\`\`metu:status (lines "ok|warn|error|info <text>"), \`\`\`metu:tasks ("[ ]"/"[x]" lines), \`\`\`metu:progress ("<label> <0..1>"), \`\`\`metu:kv ("Key: Value" lines), \`\`\`metu:actions (tap-to-run action lines) — they render as interactive cards.
+
 After your answer, on a NEW final line, output exactly: CHIPS: ["…","…"] — 2 or 3 SHORT follow-up actions (≤ 5 words each) the user would plausibly tap next, grounded in YOUR answer. Specific, never generic filler.`;
 }
 

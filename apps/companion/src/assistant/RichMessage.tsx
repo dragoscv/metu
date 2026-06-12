@@ -17,6 +17,7 @@ import remarkGfm from 'remark-gfm';
 import { open as openUrl } from '@tauri-apps/plugin-shell';
 import { writeText } from '@tauri-apps/plugin-clipboard-manager';
 import { isTauri } from '../state/runtime';
+import { isMetuBlock, MetuBlock } from './blocks';
 
 function openExternal(url: string): void {
   if (!/^https?:\/\//i.test(url)) return;
@@ -202,6 +203,11 @@ export const RichMessage = memo(function RichMessage({
               },
               code: ({ className, children, node }) => {
                 const value = String(children).replace(/\n$/, '');
+                // Dynamic content blocks (Jarvis v8): ```metu:status etc.
+                const metuLang = /language-(metu:[\w-]+)/.exec(className ?? '')?.[1];
+                if (metuLang && isMetuBlock(metuLang)) {
+                  return <MetuBlock type={metuLang.slice(5)} body={value} />;
+                }
                 // Block code (has a language class or newlines) → code card.
                 const lang = /language-(\w+)/.exec(className ?? '')?.[1] ?? '';
                 const isBlock =

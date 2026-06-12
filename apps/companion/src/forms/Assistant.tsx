@@ -1322,6 +1322,19 @@ function AssistantSkin({
       }
     : undefined;
 
+  // Block action buttons (Jarvis v8): ```metu:actions``` buttons inside
+  // any reply route through the SAME lane router as quick-reply chips.
+  const quickReplyRef = useRef<typeof quickReply>(quickReply);
+  quickReplyRef.current = quickReply;
+  useEffect(() => {
+    const handler = (e: Event) => {
+      const action = (e as CustomEvent<string>).detail;
+      if (typeof action === 'string' && action.trim()) quickReplyRef.current?.(action.trim());
+    };
+    window.addEventListener('metu:bubble-action', handler);
+    return () => window.removeEventListener('metu:bubble-action', handler);
+  }, []);
+
   return (
     <div
       className="assistant-stage"

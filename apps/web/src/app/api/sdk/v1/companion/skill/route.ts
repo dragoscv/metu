@@ -308,9 +308,16 @@ export async function POST(req: NextRequest) {
   // line the client strips and renders as tap-chips. Same call — zero
   // extra latency or cost vs a second structured request.
   const chipsDirective = `\n\nAfter your answer, on a NEW final line, output exactly: CHIPS: ["…","…"] — 2 or 3 SHORT follow-up actions (≤ 5 words each) the user would most plausibly tap next, grounded in YOUR answer and their context. Actionable and specific (e.g. "Fix that import error", "Open the PR", "Continue the draft") — never generic filler like "Tell me more".`;
+  const blocksDirective = `\n\nRICH BLOCKS: when it improves clarity, embed these fenced blocks in your answer (they render as interactive cards):
+\`\`\`metu:status   → lines "ok|warn|error|info <text>" (build/test states)
+\`\`\`metu:tasks    → lines "[ ] item" / "[x] item" (checklists w/ counter)
+\`\`\`metu:progress → one line "<label> <0..1>" (animated bar)
+\`\`\`metu:kv       → lines "Key: Value" (facts/specs)
+\`\`\`metu:actions  → lines of tap-to-run actions (each executes like a chip)
+Use at most 2 blocks per reply; plain prose is still the default.`;
   const result = streamText({
     model: model as Parameters<typeof streamText>[0]['model'],
-    system: IDENTITY + skill.system + langDirective + chipsDirective,
+    system: IDENTITY + skill.system + langDirective + chipsDirective + blocksDirective,
     prompt:
       [parsed.data.context, workspaceContext].filter(Boolean).join('\n\n') ||
       '(no context available)',
