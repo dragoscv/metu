@@ -435,6 +435,10 @@ function AssistantSkin({
    *  a read bubble must NOT re-park as unread on expiry/dismiss (that made
    *  the badge immortal). Reset whenever a NEW assistant reply arrives. */
   const bubbleReadRef = useRef(false);
+  /** The reply text already SURFACED as a bubble — a dismissed/expired
+   *  reply must never re-appear when this effect re-runs (panel close,
+   *  dep churn). Only genuinely NEW replies open a fresh bubble. */
+  const lastSurfacedRef = useRef<string | null>(null);
   // Human-readable progress stage while a quick-reply/chat turn runs.
   const [progressLabel, setProgressLabel] = useState<string | null>(null);
   useEffect(() => {
@@ -442,9 +446,12 @@ function AssistantSkin({
       setChatBubble(null);
       setUnreadReply(null);
       bubbleReadRef.current = true; // panel shows the thread — all read
+      // Panel showed the thread — everything in it counts as surfaced.
+      lastSurfacedRef.current = chat.lastAssistantText;
       return;
     }
-    if (chat.lastAssistantText) {
+    if (chat.lastAssistantText && chat.lastAssistantText !== lastSurfacedRef.current) {
+      lastSurfacedRef.current = chat.lastAssistantText;
       bubbleReadRef.current = false; // fresh reply — unread until seen
       setChatBubble(chat.lastAssistantText);
       setDynamicChips(chat.lastChips);
