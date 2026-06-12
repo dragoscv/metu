@@ -13,6 +13,7 @@ import { writeText, readText } from '@tauri-apps/plugin-clipboard-manager';
 import { isTauri } from '../state/runtime';
 import type { ChatMessage, ChatStatus } from './useAssistantChat';
 import { RichMessage } from './RichMessage';
+import { addAttachments, fromFile, type ChatAttachment } from './attachments';
 
 /** Clipboard write that works in both Tauri (plugin) and browser dev. */
 async function copyText(text: string): Promise<void> {
@@ -80,7 +81,7 @@ export function ChatPanel({
   messages: ChatMessage[];
   status: ChatStatus;
   personaName: string;
-  onSend: (text: string) => void;
+  onSend: (text: string, attachments?: ChatAttachment[]) => void;
   onStop: () => void;
   onClear: () => void;
   onClose: () => void;
@@ -96,6 +97,9 @@ export function ChatPanel({
 }) {
   const [draft, setDraft] = useState('');
   const [showSessions, setShowSessions] = useState(false);
+  const [pendingFiles, setPendingFiles] = useState<ChatAttachment[]>([]);
+  const [dragOver, setDragOver] = useState(false);
+  const fileInputRef = useRef<HTMLInputElement | null>(null);
   const threadRef = useRef<HTMLDivElement | null>(null);
   const inputRef = useRef<HTMLTextAreaElement | null>(null);
   const busy = status === 'thinking' || status === 'streaming';
@@ -156,17 +160,65 @@ export function ChatPanel({
     return () => window.removeEventListener('metu:chat-prefill', handler);
   }, []);
 
+  // Files dropped on the AVATAR arrive here (already read natively).
+  useEffect(() => {
+    const handler = (e: Event) => {
+      const files = (e as CustomEvent<ChatAttachment[]>).detail;
+      if (Array.isArray(files) && files.length) {
+        setPendingFiles((cur) => addAttachments(cur, files));
+        inputRef.current?.focus();
+      }
+    };
+    window.addEventListener('metu:chat-attach', handler);
+    return () => window.removeEventListener('metu:chat-attach', handler);
+  }, []);
+
   const submit = () => {
     const v = draft.trim();
-    if (!v || busy) return;
+    // Files without text get a sensible default instruction.
+    const text = v || (pendingFiles.length ? 'Look at the attached files.' : '');
+    if (!text || busy) return;
     setDraft('');
-    onSend(v);
+    const files = pendingFiles;
+    setPendingFiles([]);
+    onSend(text, files.length ? files : undefined);
+  };
+
+  const addFiles = async (list: FileList | File[]) => {
+    const incoming = await Promise.all([...list].map(fromFile));
+    setPendingFiles((cur) => addAttachments(cur, incoming));
+    inputRef.current?.focus();
   };
 
   const hint = STATUS_HINT[status];
 
   return (
-    <div className="chat" ref={rootRef} onContextMenu={(e) => openMenu(e, null)}>
+    <div
+      className={`chat ${dragOver ? 'chat--dragover' : ''}`}
+      ref={rootRef}
+      onContextMenu={(e) => openMenu(e, null)}
+      onDragOver={(e) => {
+        if (e.dataTransfer.types.includes('Files')) {
+          e.preventDefault();
+          setDragOver(true);
+        }
+      }}
+      onDragLeave={(e) => {
+        if (e.currentTarget === e.target || !e.currentTarget.contains(e.relatedTarget as Node)) {
+          setDragOver(false);
+        }
+      }}
+      onDrop={(e) => {
+        e.preventDefault();
+        setDragOver(false);
+        if (e.dataTransfer.files.length) void addFiles(e.dataTransfer.files);
+      }}
+    >
+      {dragOver && (
+        <div className="chat__dropzone" aria-hidden>
+          <span>📎 Drop files to attach</span>
+        </div>
+      )}
       <div className="chat__head" onPointerDown={onDragPointerDown} style={{ cursor: 'grab' }}>
         <span className="chat__title">{personaName}</span>
         <div className="chat__head-actions">
@@ -277,6 +329,15 @@ export function ChatPanel({
                 )}
               </div>
             )}
+            {m.attachments && m.attachments.length > 0 && (
+              <div className="msg__files">
+                {m.attachments.map((a) => (
+                  <span key={a.name} className="msg__file">
+                    📄 {a.name}
+                  </span>
+                ))}
+              </div>
+            )}
             {/* Live agent activity rows — visible WHILE tools run, the
                 "it's actually doing something" signal (Copilot-style). */}
             {m.toolActivity && m.toolActivity.length > 0 && (m.pending || !m.content) && (
@@ -316,7 +377,43 @@ export function ChatPanel({
 
       {hint && <div className="chat__hint">{hint}</div>}
 
+      {pendingFiles.length > 0 && (
+        <div className="chat__attach-row">
+          {pendingFiles.map((f) => (
+            <span key={f.name} className="chat__attach-chip" title={`${f.bytes} bytes`}>
+              📄 {f.name.length > 22 ? `${f.name.slice(0, 22)}…` : f.name}
+              {f.truncated ? ' (trimmed)' : ''}
+              <button
+                type="button"
+                aria-label={`Remove ${f.name}`}
+                onClick={() => setPendingFiles((cur) => cur.filter((c) => c.name !== f.name))}
+              >
+                ×
+              </button>
+            </span>
+          ))}
+        </div>
+      )}
+
       <div className="chat__composer">
+        <input
+          ref={fileInputRef}
+          type="file"
+          multiple
+          style={{ display: 'none' }}
+          onChange={(e) => {
+            if (e.target.files?.length) void addFiles(e.target.files);
+            e.target.value = '';
+          }}
+        />
+        <button
+          type="button"
+          className="chat__hbtn chat__attach-btn"
+          title="Attach files"
+          onClick={() => fileInputRef.current?.click()}
+        >
+          📎
+        </button>
         <textarea
           ref={inputRef}
           className="chat__input"

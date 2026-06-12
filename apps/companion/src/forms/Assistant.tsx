@@ -52,6 +52,7 @@ import {
 import { MetuTtsProxyProvider } from '@metu/voice/tts-proxy';
 import { SpeechBubble, type BubbleAction } from '../assistant/SpeechBubble';
 import { assistantLines } from '../assistant/assistantMessages';
+import { fromPath } from '../assistant/attachments';
 import { getSmartChips } from '../assistant/smartChips';
 import { showHighlight } from '../assistant/overlay-bridge';
 import { onProposal } from '../assistant/assistantActions';
@@ -682,6 +683,30 @@ function AssistantSkin({
     return () => unlisten?.();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [chatOpen, chat.messages.length]);
+
+  // Native drag-drop onto the AVATAR (Jarvis v4.6): dropping files on the
+  // character reads them locally and opens the chat with them attached —
+  // "hand metu a file". Tauri emits drag-drop for the whole window.
+  useEffect(() => {
+    if (!isTauri()) return;
+    let unlisten: (() => void) | undefined;
+    void getCurrentWindow()
+      .onDragDropEvent((event) => {
+        if (event.payload.type !== 'drop' || !event.payload.paths.length) return;
+        const paths = event.payload.paths.slice(0, 4);
+        playGesture('nod');
+        void Promise.all(paths.map(fromPath)).then((files) => {
+          // Stash for the panel; open chat with a prefill hinting intent.
+          window.dispatchEvent(new CustomEvent('metu:chat-attach', { detail: files }));
+          setChatOpen(true);
+        });
+      })
+      .then((fn) => {
+        unlisten = fn;
+      })
+      .catch(() => {});
+    return () => unlisten?.();
+  }, []);
 
   const handleAudio = useCallback(
     (el: HTMLAudioElement | null) => {

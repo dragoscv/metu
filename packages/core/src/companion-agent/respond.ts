@@ -88,11 +88,20 @@ function buildLocalContext(input: CompanionTurnInput) {
   const screen = input.screenContext
     ? `\n\n[Live screen context — what the user can currently see]\n${input.screenContext}`
     : '';
+  // Attached files ride on the user message itself (not the system
+  // prompt) so history replay keeps the pairing between question and
+  // documents.
+  const files = input.attachments?.length
+    ? '\n\n' +
+      input.attachments
+        .map((f) => `[Attached file: ${f.name}${f.truncated ? ' (truncated)' : ''}]\n${f.content}`)
+        .join('\n\n')
+    : '';
   return {
     system: buildSystemPrompt(input) + screen,
     messages: [
       ...input.history.map((m): ModelMessage => ({ role: m.role, content: m.content })),
-      { role: 'user' as const, content: input.utterance },
+      { role: 'user' as const, content: input.utterance + files },
     ],
   };
 }

@@ -52,6 +52,14 @@
     "fs:default",
     "fs:scope-appdata-recursive",
     "fs:allow-read-text-file",
+    {
+      "identifier": "fs:allow-read-text-file",
+      "allow": [{ "path": "**" }]
+    },
+    {
+      "identifier": "fs:allow-read-file",
+      "allow": [{ "path": "**" }]
+    },
     "fs:allow-write-text-file",
     "http:default",
     "dialog:default",

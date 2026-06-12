@@ -43,6 +43,17 @@ const Body = z.object({
   screenContext: z.string().max(6_000).optional(),
   /** User-chosen response language override (UI language stays separate). */
   language: z.enum(['en', 'ro']).optional(),
+  /** Client-extracted text attachments (Jarvis v4.6). */
+  attachments: z
+    .array(
+      z.object({
+        name: z.string().max(200),
+        content: z.string().max(24_000),
+        truncated: z.boolean().optional(),
+      }),
+    )
+    .max(4)
+    .optional(),
 });
 
 export async function POST(req: NextRequest) {
@@ -99,6 +110,7 @@ export async function POST(req: NextRequest) {
             eagerness: parsed.data.eagerness ?? 50,
             surface: parsed.data.surface ?? 'companion',
             screenContext: parsed.data.screenContext,
+            attachments: parsed.data.attachments,
             promptContext,
           },
           {

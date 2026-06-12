@@ -57,6 +57,22 @@ export const companionTurnInputSchema = z.object({
    * privacy-gated on the device.
    */
   screenContext: z.string().max(6_000).optional(),
+  /**
+   * File attachments (Jarvis v4.6): text content extracted CLIENT-side
+   * (the companion reads the file and ships text — no binary upload).
+   * Capped tight: 4 files × 24k chars keeps worst-case prompt bounded.
+   */
+  attachments: z
+    .array(
+      z.object({
+        name: z.string().max(200),
+        /** Extracted text content (possibly truncated client-side). */
+        content: z.string().max(24_000),
+        truncated: z.boolean().optional(),
+      }),
+    )
+    .max(4)
+    .optional(),
 });
 
 export type CompanionTurnInput = z.infer<typeof companionTurnInputSchema>;

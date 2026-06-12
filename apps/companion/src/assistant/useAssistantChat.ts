@@ -17,6 +17,7 @@ import { ensureFreshAuth } from '../state/auth';
 import { fetchScreenContext } from './activityModel';
 import { loadAssistantLanguage } from '../state/language';
 import { splitChips } from './skills';
+import type { ChatAttachment } from './attachments';
 import {
   createSession,
   getActiveSessionId,
@@ -34,6 +35,8 @@ export interface ChatMessage {
   id: string;
   role: ChatRole;
   content: string;
+  /** Attached file chips shown on user messages (names only persisted). */
+  attachments?: Array<{ name: string; bytes: number }>;
   /** Tool names the agent called on this turn (assistant messages only). */
   tools?: string[];
   /** Live tool activity while streaming: name → running|done. */
@@ -111,7 +114,7 @@ export function useAssistantChat(auth: AuthState, personaSlug: string) {
   }, []);
 
   const send = useCallback(
-    async (text: string) => {
+    async (text: string, attachments?: ChatAttachment[]) => {
       const utterance = text.trim();
       if (!utterance || status === 'thinking' || status === 'streaming') return;
 
@@ -128,7 +131,12 @@ export function useAssistantChat(auth: AuthState, personaSlug: string) {
         history.unshift({ role: 'assistant', content: digest });
       }
 
-      const userMsg: ChatMessage = { id: uid(), role: 'user', content: utterance };
+      const userMsg: ChatMessage = {
+        id: uid(),
+        role: 'user',
+        content: utterance,
+        attachments: attachments?.map((a) => ({ name: a.name, bytes: a.bytes })),
+      };
       const assistantId = uid();
       const assistantMsg: ChatMessage = {
         id: assistantId,
@@ -164,6 +172,11 @@ export function useAssistantChat(auth: AuthState, personaSlug: string) {
               surface: 'companion',
               screenContext,
               language: loadAssistantLanguage(),
+              attachments: attachments?.map(({ name, content, truncated }) => ({
+                name,
+                content,
+                truncated,
+              })),
             }),
           },
         );
