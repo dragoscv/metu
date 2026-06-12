@@ -204,28 +204,55 @@ export function ChatPanel({
         </div>
       </div>
 
-      {showSessions && sessions && (
-        <div className="chat__sessions">
-          {sessions.map((s) => (
+      {/* Sessions drawer: slides in from the left over the thread. */}
+      {sessions && (
+        <>
+          {showSessions && (
             <button
-              key={s.id}
-              className={`chat__session ${s.id === activeSessionId ? 'chat__session--active' : ''}`}
-              onClick={() => {
-                onSwitchSession?.(s.id);
-                setShowSessions(false);
-              }}
-            >
-              <span className="chat__session-title">{s.title}</span>
-              <span className="chat__session-time">
-                {new Date(s.updatedAt).toLocaleDateString(undefined, {
-                  month: 'short',
-                  day: 'numeric',
-                })}
-              </span>
-            </button>
-          ))}
-          {sessions.length === 0 && <p className="chat__empty">No previous conversations.</p>}
-        </div>
+              type="button"
+              aria-label="Close conversations"
+              className="chat__drawer-scrim"
+              onClick={() => setShowSessions(false)}
+            />
+          )}
+          <div className={`chat__drawer ${showSessions ? 'chat__drawer--open' : ''}`}>
+            <div className="chat__drawer-head">
+              <span>Conversations</span>
+              <button
+                type="button"
+                className="chat__hbtn"
+                onClick={() => {
+                  onNewSession?.();
+                  setShowSessions(false);
+                }}
+                title="New conversation"
+              >
+                ＋
+              </button>
+            </div>
+            <div className="chat__drawer-list">
+              {sessions.map((s) => (
+                <button
+                  key={s.id}
+                  className={`chat__session ${s.id === activeSessionId ? 'chat__session--active' : ''}`}
+                  onClick={() => {
+                    onSwitchSession?.(s.id);
+                    setShowSessions(false);
+                  }}
+                >
+                  <span className="chat__session-title">{s.title}</span>
+                  <span className="chat__session-time">
+                    {new Date(s.updatedAt).toLocaleDateString(undefined, {
+                      month: 'short',
+                      day: 'numeric',
+                    })}
+                  </span>
+                </button>
+              ))}
+              {sessions.length === 0 && <p className="chat__empty">No previous conversations.</p>}
+            </div>
+          </div>
+        </>
       )}
 
       <div className="chat__thread" ref={threadRef}>

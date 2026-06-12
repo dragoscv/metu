@@ -220,36 +220,39 @@ export function MetuStage({
     let antZ = 0;
     let lastHeadX = 0;
     let lastYaw = 0;
-    // Cursor curiosity: poll the native cursor at 4Hz while idle and derive
-    // a clamped gaze offset relative to the window center.
+    // Cursor curiosity: poll the native cursor while idle and derive a
+    // clamped gaze TARGET; the render loop eases the actual `look` toward
+    // it every frame. Polling sets only the target — without per-frame
+    // smoothing the head/eyes snapped in 4Hz steps (the "low FPS" feel).
     let look: { x: number; y: number } | null = null;
+    let lookTarget: { x: number; y: number } | null = null;
     let cursorTimer: ReturnType<typeof setInterval> | null = null;
     if (isTauri()) {
       cursorTimer = setInterval(() => {
         const loco = (driveRef.current.locomotion ?? 'idle') as MetuMotion;
         // Gaze-follow while idle OR sitting (relaxed but attentive).
         if ((loco !== 'idle' && loco !== 'sitting') || driveRef.current.state !== 'idle') {
-          look = null;
+          lookTarget = null;
           return;
         }
         void Promise.all([getCursor(), getCurrentWindow().outerPosition()])
           .then(([cur, pos]) => {
             if (!cur) {
-              look = null;
+              lookTarget = null;
               return;
             }
             const cx = pos.x + (size * (window.devicePixelRatio || 1)) / 2;
             const cy = pos.y + (size * (window.devicePixelRatio || 1)) / 2;
             // Normalize by ~a half-monitor of distance; clamp to [-1, 1].
-            look = {
+            lookTarget = {
               x: Math.max(-1, Math.min(1, (cur.x - cx) / 900)),
               y: Math.max(-1, Math.min(1, (cur.y - cy) / 700)),
             };
           })
           .catch(() => {
-            look = null;
+            lookTarget = null;
           });
-      }, 250);
+      }, 120); // 8Hz target updates; smoothing makes motion continuous
     }
 
     const tick = (now: number) => {
@@ -258,15 +261,39 @@ export function MetuStage({
 
       const loco = (driveRef.current.locomotion ?? 'idle') as MetuMotion;
       const expr = driveRef.current.state;
-      // Adaptive budget: 60fps active, 20fps idle/sitting.
-      const active = (loco !== 'idle' && loco !== 'sitting') || expr !== 'idle';
-      const minInterval = active ? 0 : 50 - 16; // ~20fps when idle
+      // Adaptive budget: 60fps while active OR gaze-following OR mid-blink
+      // / gesture / fidget — anything the eye can see moving. The 20fps
+      // economy mode only kicks in when truly static; head tracking at
+      // 20fps was the visible "low FPS" judder.
+      const visiblyAnimating =
+        lookTarget !== null ||
+        look !== null ||
+        blinkPhase >= 0 ||
+        gesture !== null ||
+        fidget !== null ||
+        antennaSpin > 0;
+      const active = (loco !== 'idle' && loco !== 'sitting') || expr !== 'idle' || visiblyAnimating;
+      const minInterval = active ? 0 : 50 - 16; // ~20fps only when truly still
       if (now - lastFrame < minInterval) return;
       lastFrame = now;
 
       const t = clock.getElapsedTime();
       const dt = Math.min(t - lastT, 0.1);
       lastT = t;
+
+      // Ease the gaze toward its target every frame (critically damped
+      // feel; ~120ms settle). Null target → ease back to center, then off.
+      if (lookTarget) {
+        if (!look) look = { x: 0, y: 0 };
+        const k = Math.min(1, dt * 10);
+        look.x += (lookTarget.x - look.x) * k;
+        look.y += (lookTarget.y - look.y) * k;
+      } else if (look) {
+        const k = Math.min(1, dt * 6);
+        look.x *= 1 - k;
+        look.y *= 1 - k;
+        if (Math.abs(look.x) < 0.01 && Math.abs(look.y) < 0.01) look = null;
+      }
 
       // Ease the cadence toward its target and integrate the phase.
       const gaitTarget = loco === 'walking' || loco === 'climbing' ? GAIT_CADENCE : 0;
