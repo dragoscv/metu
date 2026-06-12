@@ -2,7 +2,9 @@
 
 ## Prerequisites
 
-- Node.js 22+
+- Node.js **22 LTS** — pinned via `.node-version`. Node 24+/26 breaks
+  `next dev` (CJS external loading assert). The VS Code dev tasks run
+  `fnm exec --using 22 …`; if you use another shell, `fnm use` first.
 - pnpm 9.15+ (`corepack enable`)
 - Docker (optional, for worker image)
 - A Neon Postgres dev branch (free tier is enough)
@@ -49,6 +51,7 @@ For optional features:
 | `GCS_SERVICE_ACCOUNT_JSON` | upload signing                            |
 | `WORKER_URL`               | transcription dispatch                    |
 | `WORKER_AUTH_TOKEN`        | worker shared secret                      |
+| `E2E_AUTH_SECRET`          | dev-only Playwright auth (e2e-login)      |
 
 ## 3. Database
 
@@ -57,6 +60,18 @@ For optional features:
 pnpm db:push
 pnpm db:seed   # optional demo data
 ```
+
+## E2E smoke pack
+
+With the dev stack running and `E2E_AUTH_SECRET` set in `.env.local`:
+
+```pwsh
+$env:E2E_AUTH_SECRET = '<same value as .env.local>'
+pnpm --filter @metu/web e2e
+```
+
+Auth uses the dev-gated `POST /api/dev/e2e-login` route (404 in
+production builds). Tests live in `apps/web/e2e/`.
 
 To browse:
 

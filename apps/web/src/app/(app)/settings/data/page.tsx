@@ -2,7 +2,8 @@ import { auth } from '@metu/auth';
 import { headers } from 'next/headers';
 import { redirect } from 'next/navigation';
 import { and, eq } from 'drizzle-orm';
-import { Card, CardTitle, Page, PageHeader } from '@metu/ui';
+import { Page, PageHeader } from '@metu/ui';
+import { ImportCard } from '@/components/import-card';
 import { getDb } from '@metu/db';
 import { workspace, workspaceMember } from '@metu/db/schema';
 import { DangerZone } from '@/components/danger-zone';
@@ -48,22 +49,7 @@ export default async function DataSettingsPage() {
         description="Take your data with you, or take it down. Both are your right."
       />
       <CalendarFeedCard initialToken={calendarToken} baseUrl={baseUrl} canManage={canManage} />
-      {canManage ? (
-        <Card className="space-y-2 p-5">
-          <CardTitle>Export workspace</CardTitle>
-          <p className="text-sm text-[var(--color-fg-subtle)]">
-            Download everything — captures, tasks, projects, decisions, timeline, goals, and memory
-            chunks (embeddings included) — as a single JSON file.
-          </p>
-          <a
-            href="/settings/data/export"
-            download
-            className="inline-flex w-fit items-center rounded-lg border border-[var(--color-border)] bg-[var(--color-bg-muted)] px-4 py-2 text-sm font-medium hover:bg-[var(--color-bg-subtle)]"
-          >
-            Download takeout (.json)
-          </a>
-        </Card>
-      ) : null}
+      {canManage ? <ImportCard /> : null}
       <DangerZone workspaceId={ws.id} workspaceName={ws.name} isOwner={me?.role === 'owner'} />
     </Page>
   );
