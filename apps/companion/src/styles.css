@@ -1594,3 +1594,41 @@ html:has(.overlay-stage), body:has(.overlay-stage) { background: transparent; }
 }
 .chat__session-title { flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .chat__session-time { flex: none; font-size: 10px; color: #76829e; }
+
+/* File attachments (Jarvis v4.6) */
+.chat--dragover { outline: 2px dashed rgba(124, 140, 255, 0.6); outline-offset: -6px; border-radius: 16px; }
+.chat__dropzone {
+  position: absolute; inset: 0; z-index: 30;
+  display: flex; align-items: center; justify-content: center;
+  background: rgba(10, 12, 20, 0.72);
+  backdrop-filter: blur(3px); -webkit-backdrop-filter: blur(3px);
+  font-size: 14px; font-weight: 600; color: #c4d2ff;
+  pointer-events: none;
+  animation: fadeIn 120ms ease;
+}
+.chat__attach-row {
+  flex: none; display: flex; flex-wrap: wrap; gap: 6px;
+  padding: 6px 10px 0;
+}
+.chat__attach-chip {
+  display: inline-flex; align-items: center; gap: 5px;
+  font-size: 11px; color: #c6cfe4;
+  background: rgba(124, 140, 255, 0.12);
+  border: 1px solid rgba(124, 140, 255, 0.25);
+  border-radius: 999px; padding: 3px 8px;
+  animation: blockIn 180ms cubic-bezier(0.22, 1, 0.36, 1);
+}
+.chat__attach-chip button {
+  appearance: none; border: none; cursor: pointer;
+  background: transparent; color: #8fa0c8; font-size: 13px; line-height: 1;
+  padding: 0 1px;
+}
+.chat__attach-chip button:hover { color: #fff; }
+.chat__attach-btn { flex: none; align-self: flex-end; height: 34px; width: 30px; }
+.msg__files { display: flex; flex-wrap: wrap; gap: 4px; }
+.msg__file {
+  font-size: 10px; font-weight: 600; color: #b6c4ea;
+  background: rgba(124, 140, 255, 0.1);
+  border: 1px solid rgba(124, 140, 255, 0.22);
+  border-radius: 999px; padding: 2px 7px;
+}
