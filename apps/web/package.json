@@ -38,7 +38,7 @@
     "framer-motion": "catalog:",
     "inngest": "catalog:",
     "lucide-react": "catalog:",
-    "next": "^16.1.5",
+    "next": "catalog:",
     "next-auth": "catalog:",
     "nuqs": "catalog:",
     "react": "catalog:",

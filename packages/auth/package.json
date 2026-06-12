@@ -20,7 +20,7 @@
   },
   "devDependencies": {
     "@metu/config": "workspace:*",
-    "next": "^16.1.5",
+    "next": "catalog:",
     "react": "catalog:",
     "typescript": "catalog:",
     "vitest": "catalog:"
