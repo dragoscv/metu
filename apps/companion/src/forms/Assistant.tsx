@@ -211,6 +211,9 @@ function AssistantSkin({
     quickReplies?: string[];
   } | null>(null);
   const [chatOpen, setChatOpen] = useState(false);
+  /** Live busy bit for background loops (autonomy deliberation skips
+   *  while the user is mid-conversation). Synced via effect below. */
+  const busyRef = useRef(false);
   const cfg = PERSONALITIES[personality];
 
   const dpr = typeof window !== 'undefined' ? window.devicePixelRatio || 1 : 1;
@@ -629,6 +632,9 @@ function AssistantSkin({
         setAmbient({ text: card.text, quickReplies: card.actions });
         playGesture('nod', 1200);
       },
+      // Ref-based: skillBusy is declared later in the component; a ref
+      // avoids both TDZ and effect re-subscribes on every state flip.
+      isBusy: () => busyRef.current,
     });
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [auth]);
@@ -858,6 +864,9 @@ function AssistantSkin({
   // ── Direct skill lane: instant ack + stream into the bubble ─────────────
   const skillAbortRef = useRef<AbortController | null>(null);
   const [skillBusy, setSkillBusy] = useState(false);
+  useEffect(() => {
+    busyRef.current = chatOpen || skillBusy || speaking || !!listening;
+  }, [chatOpen, skillBusy, speaking, listening]);
   /**
    * Act skill: natural-language instruction → ONE planned UIA step →
    * ask-before-act confirm bubble → native execute. Never runs without

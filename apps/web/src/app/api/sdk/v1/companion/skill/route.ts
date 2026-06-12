@@ -61,6 +61,16 @@ const SKILLS: Record<string, { system: string; maxOutputTokens: number }> = {
     system: `You are a proactive desktop assistant deciding whether to speak up UNPROMPTED. You receive the user's current activity context (focused app, recent screen text, recent timeline). Decide whether there is ONE genuinely valuable thing to offer right now (a blocker you can help with, a forgotten thread, an obvious next step, a relevant reminder). If yes: say it in 1-2 short, personal sentences. If there is nothing clearly valuable, reply with exactly: PASS. Never invent urgency. Bias strongly toward PASS — interrupting costs more than silence.`,
     maxOutputTokens: 160,
   },
+  deliberate: {
+    system: `You are metu's DELIBERATE PLANNER — the background reasoning pass that decides what is genuinely worth doing for the user right now. You receive their full situation: screen activity, recent timeline, open tasks, active projects, memories, preferences. Think like a chief of staff for an AI-agent orchestrator:
+1. What is the user ACTUALLY trying to accomplish this session (infer from evidence)?
+2. What is blocked, forgotten, or about to be a problem?
+3. What is the ONE highest-leverage thing to surface — and what concrete ACTIONS go with it?
+Output format (strict):
+INSIGHT: <1-2 sentences — the single most valuable observation, personal and specific. Or exactly PASS if nothing clears the bar.>
+Bias toward PASS unless the insight is clearly worth an interruption. Reference real data (task names, project names, error text) — never invent.`,
+    maxOutputTokens: 220,
+  },
   morning_brief: {
     system: `You are the user's desktop assistant giving the morning briefing. From their recent activity summaries and any open threads, write a warm, concise start-of-day brief: 1) one-line recap of where they left off, 2) the most valuable thing to tackle first and why, 3) anything time-sensitive. 3-5 short sentences, personal tone, no headers.`,
     maxOutputTokens: 260,
@@ -78,6 +88,7 @@ const Body = z.object({
     'explain_error',
     'whats_next',
     'anticipate',
+    'deliberate',
     'morning_brief',
     'eod_wrap',
     'act',
@@ -205,9 +216,13 @@ export async function POST(req: NextRequest) {
   // the LIVE open tasks + active projects.
   const workspaceContext = await (async () => {
     const db = getDb();
-    const wantsTasks = ['whats_next', 'morning_brief', 'eod_wrap', 'catch_up'].includes(
-      parsed.data.skill,
-    );
+    const wantsTasks = [
+      'whats_next',
+      'morning_brief',
+      'eod_wrap',
+      'catch_up',
+      'deliberate',
+    ].includes(parsed.data.skill);
     const [digestRow, prefRows, taskRows, projectRows, recalled] = await Promise.all([
       db
         .select({ digest: workspaceRecentDigest.digest })

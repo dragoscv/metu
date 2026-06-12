@@ -21,6 +21,7 @@ export type SkillId =
   | 'explain_error'
   | 'whats_next'
   | 'anticipate'
+  | 'deliberate'
   | 'morning_brief'
   | 'eod_wrap';
 
@@ -30,6 +31,7 @@ export const SKILL_ACKS: Record<SkillId, string> = {
   explain_error: 'Looking at that error…',
   whats_next: 'Checking where you left off…',
   anticipate: '…',
+  deliberate: '…',
   morning_brief: 'Putting your morning brief together…',
   eod_wrap: 'Wrapping up your day…',
 };

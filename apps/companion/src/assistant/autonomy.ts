@@ -27,6 +27,7 @@ import { getActivityState } from './activityModel';
 import { loadProactivity } from './proactivity';
 import type { AuthState } from '../state/auth';
 import { ensureFreshAuth } from '../state/auth';
+import { runSkill, splitChips } from './skills';
 
 export interface ActionCard {
   /** Narrative line for the bubble. */
@@ -40,6 +41,8 @@ export interface ActionCard {
 interface AutonomyOpts {
   auth: AuthState;
   onCard: (card: ActionCard) => void;
+  /** Live check — deliberation skips while the user is mid-conversation. */
+  isBusy?: () => boolean;
 }
 
 /** Patterns worth noting into the inbox. */
@@ -249,5 +252,41 @@ export function startAutonomy(opts: AutonomyOpts): () => void {
     })();
   }, 3 * 60_000);
 
-  return () => clearInterval(scanTimer);
+  // ── Loop 4 (Jarvis v7): DELIBERATE PLANNER ─────────────────────────
+  // Every ~25 min of active use, run a full LLM reasoning pass over the
+  // whole situation (screen + timeline + tasks + projects + memories —
+  // the skill route assembles all of it). This is where regex triggers
+  // end and actual THINKING begins: it infers what the user is trying
+  // to accomplish, what's blocked or forgotten, and surfaces the ONE
+  // highest-leverage insight with chips from the same reply. PASS-biased.
+  let deliberating = false;
+  const deliberateTimer = setInterval(() => {
+    void (async () => {
+      if (deliberating || loadProactivity() === 'silent') return;
+      if (opts.isBusy?.()) return;
+      const act = getActivityState();
+      if (!act.watching || act.focusDepth !== 'normal') return;
+      deliberating = true;
+      try {
+        const full = await runSkill(opts.auth, 'deliberate', 'metu', () => {});
+        const { text, chips } = splitChips(full);
+        const insight = text.replace(/^INSIGHT:\s*/i, '').trim();
+        if (!insight || /^PASS\b/i.test(insight)) return;
+        opts.onCard({
+          id: `deliberate_${Date.now()}`,
+          text: insight,
+          actions: chips.length ? chips : ['Catch me up', "What's next on my plate?"],
+        });
+      } catch {
+        /* silent — deliberation is a luxury, never an error surface */
+      } finally {
+        deliberating = false;
+      }
+    })();
+  }, 25 * 60_000);
+
+  return () => {
+    clearInterval(scanTimer);
+    clearInterval(deliberateTimer);
+  };
 }
