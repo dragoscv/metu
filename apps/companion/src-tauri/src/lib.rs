@@ -335,6 +335,10 @@ fn open_web_path<R: tauri::Runtime>(app: &tauri::AppHandle<R>, path: &str) {
     let base = std::env::var("METU_WEB_URL").unwrap_or_else(|_| "https://metu.ro".to_string());
     let trimmed = base.trim_end_matches('/');
     let url = format!("{trimmed}{path}");
+    // tauri-plugin-shell's `open` is deprecated in favor of tauri-plugin-opener,
+    // but pulling in a whole extra plugin (Rust dep + capability + JS pkg) for
+    // one call isn't worth it — suppress until we adopt opener wholesale.
+    #[allow(deprecated)]
     let _ = app.shell().open(url, None);
 }
 

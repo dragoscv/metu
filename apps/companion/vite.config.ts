@@ -50,7 +50,18 @@ export default defineConfig({
   },
   envPrefix: ['VITE_', 'TAURI_'],
   optimizeDeps: {
-    exclude: OPTIONAL_LIVE2D_DEPS,
+    // Workspace packages ship raw TS source (`exports: ./src/*.ts`).
+    // Excluding them from pre-bundling keeps them on the normal module
+    // graph so edits in packages/voice|sdk|protocol|presence HMR
+    // instantly instead of requiring a dev-server restart (esbuild
+    // pre-bundle snapshots are NOT watched).
+    exclude: [
+      ...OPTIONAL_LIVE2D_DEPS,
+      '@metu/voice',
+      '@metu/sdk',
+      '@metu/protocol',
+      '@metu/presence',
+    ],
   },
   build: {
     target: 'es2022',
