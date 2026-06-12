@@ -116,7 +116,11 @@ export function AppSidebar({
         animate={{ width: collapsed ? 68 : 240 }}
         transition={{ type: 'spring', stiffness: 320, damping: 32 }}
         className={cn(
-          'group/aside fixed inset-y-0 left-0 z-50 flex flex-col border-r border-[var(--color-border)] bg-[var(--color-bg-elevated)]',
+          // z-50 is only for the MOBILE off-canvas drawer (must beat the
+          // z-40 scrim). On desktop the sidebar is a sticky column and must
+          // sit BELOW modals/drawers (z-40/z-50) — z-50 here made every
+          // overlay render under the sidebar.
+          'group/aside fixed inset-y-0 left-0 z-50 flex flex-col border-r border-[var(--color-border)] bg-[var(--color-bg-elevated)] md:z-20',
           'transition-transform duration-200 md:sticky md:top-0 md:translate-x-0',
           mobileOpen ? 'translate-x-0' : '-translate-x-full md:translate-x-0',
           'h-screen shrink-0',

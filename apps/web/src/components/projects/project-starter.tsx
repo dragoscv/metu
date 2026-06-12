@@ -21,6 +21,7 @@ import {
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { useEffect, useState, useTransition } from 'react';
+import { createPortal } from 'react-dom';
 import {
   createGithubRepoAction,
   getGithubRepoByUrlAction,
@@ -450,12 +451,16 @@ function RepoSourceModal({
   const isLoading = accounts === null;
   const noAccount = accounts !== null && accounts.length === 0;
 
-  return (
+  // Portal to <body>: the modal lives inside PageTransition's motion.div,
+  // whose transform/will-change creates a containing block + stacking
+  // context — `fixed` became relative to the CONTENT area and z-50 was
+  // trapped below the aside's z-50 (the "modal under the sidebar" bug).
+  return createPortal(
     <motion.div
       initial={{ opacity: 0 }}
       animate={{ opacity: 1 }}
       exit={{ opacity: 0 }}
-      className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4"
+      className="fixed inset-0 z-[60] flex items-center justify-center bg-black/60 p-4"
       onClick={onClose}
     >
       <motion.div
@@ -574,7 +579,8 @@ function RepoSourceModal({
           </>
         )}
       </motion.div>
-    </motion.div>
+    </motion.div>,
+    document.body,
   );
 }
 
