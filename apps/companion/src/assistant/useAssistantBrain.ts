@@ -399,6 +399,33 @@ export function useAssistantBrain(opts: Options): AssistantBrainState {
     };
 
     timer = setTimeout(decide, 2_000);
+    // Dodge (Jarvis v4.5): when a real window is dragged/resized INTO the
+    // avatar's body space, step aside instead of being buried. Checked on
+    // every world refresh (1Hz) — cheap rect overlap on existing data.
+    const offWorld = screenWorld.onChange(() => {
+      if (pausedRef.current || lockedRef.current || pointReqRef.current) return;
+      const body = bodyRef.current;
+      if (body.state !== 'idle' && body.state !== 'sitting') return;
+      // Approximate the character's hitbox: ~120px wide, 220px tall above feet.
+      const bx1 = body.x - 60;
+      const bx2 = body.x + 60;
+      const by1 = body.y - 220;
+      const by2 = body.y - 4;
+      const intruder = screenWorld.walls.find(
+        (wl) => wl.x >= bx1 - 40 && wl.x <= bx2 + 40 && wl.y1 < by2 && wl.y2 > by1,
+      );
+      if (!intruder) return;
+      // Step aside: walk 180px away from the intruding edge (clamped later
+      // by physics/monitors). A startled hop sells the reaction.
+      const dir: 1 | -1 = intruder.side === 'left' ? -1 : 1;
+      hop(body, physicsRef.current);
+      navigateTo(body, body.x + dir * 180, body.y);
+      window.dispatchEvent(
+        new CustomEvent('metu:assistant-emotion', {
+          detail: { emotion: 'surprised', durationMs: 1500 },
+        }),
+      );
+    });
     // Work-area changed (taskbar resize/auto-hide/monitor change) →
     // re-dock NOW instead of waiting for the next 5s decide cycle, and
     // bust the hysteresis key so the new dock target always applies.
@@ -411,6 +438,7 @@ export function useAssistantBrain(opts: Options): AssistantBrainState {
     return () => {
       cancelled = true;
       clearTimeout(timer);
+      offWorld();
       window.removeEventListener('metu:workarea-changed', onWorkareaChange);
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps

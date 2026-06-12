@@ -199,7 +199,13 @@ export function step(
 
       body.state = 'walking';
       body.vx = dir * cfg.walkSpeed;
-      const nextX = body.x + body.vx * dt;
+      // Clamp to the goal — overshooting past it makes next frame's dir
+      // flip and the body oscillate around the goal line (walk wobble at
+      // arrival, especially at low frame rates where vx*dt is large).
+      let nextX = body.x + body.vx * dt;
+      if ((dir === 1 && nextX > goal.x) || (dir === -1 && nextX < goal.x)) {
+        nextX = goal.x;
+      }
 
       // A wall in the way → climb it (that's the fun part).
       const wall = world.wallNear(body.x, body.y, dir);
@@ -235,11 +241,21 @@ export function step(
 
     case 'jumping':
     case 'falling': {
-      // Air control toward the goal.
+      // Air control toward the goal — WITH a deadzone. Recomputing the
+      // direction every frame with `goal.x >= body.x` meant that the
+      // moment the body crossed the goal line, dir (and vx, and facing)
+      // flipped sign EVERY FRAME — the window vibrated left-right and
+      // the model whipped its yaw ±90° at frame rate (THE jump wobble).
       if (body.goal) {
-        const dir: 1 | -1 = body.goal.x >= body.x ? 1 : -1;
-        body.facing = dir;
-        body.vx = dir * cfg.walkSpeed * 0.85;
+        const dx = body.goal.x - body.x;
+        if (Math.abs(dx) > ARRIVE_EPS) {
+          const dir: 1 | -1 = dx >= 0 ? 1 : -1;
+          body.facing = dir;
+          body.vx = dir * cfg.walkSpeed * 0.85;
+        } else {
+          // Close enough horizontally — kill lateral drive, keep facing.
+          body.vx *= 0.8;
+        }
       }
       body.vy += cfg.gravity * dt;
       if (body.vy > 0) body.state = 'falling';

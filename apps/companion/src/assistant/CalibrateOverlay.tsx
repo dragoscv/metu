@@ -14,15 +14,45 @@
  */
 import { useEffect, useState } from 'react';
 import { getFootOffsetLogical, getFootTune, setFootTune } from '../avatar/footAnchor';
+import { getMonitors, type MonitorInfo } from './spatial';
+import { isTauri } from '../state/runtime';
 
 export function CalibrateOverlay({ winH, onClose }: { winH: number; onClose: () => void }) {
   const [tune, setTune] = useState(getFootTune());
   const [measured, setMeasured] = useState(getFootOffsetLogical());
+  const [workInfo, setWorkInfo] = useState<string>('…');
 
   useEffect(() => {
     const t = setInterval(() => setMeasured(getFootOffsetLogical()), 500);
     return () => clearInterval(t);
   }, []);
+
+  // Live work-area diagnostics: window bottom vs work-area floor delta —
+  // THE number that must be ≈ 0 for feet to sit on the taskbar.
+  useEffect(() => {
+    if (!isTauri()) return;
+    const probe = () => {
+      void getMonitors()
+        .then((mons: MonitorInfo[]) => {
+          const dpr = window.devicePixelRatio || 1;
+          const winBottomPhys = (window.screenY + window.innerHeight) * dpr;
+          const cx = (window.screenX + window.innerWidth / 2) * dpr;
+          const mon = mons.find((m) => cx >= m.x && cx < m.x + m.w) ?? mons.find((m) => m.primary);
+          if (!mon) return setWorkInfo('no monitor?');
+          const floorPhys = (mon.workY ?? mon.y) + (mon.workH ?? mon.h);
+          const feetPhys = winBottomPhys - (measured + tune) * dpr;
+          setWorkInfo(
+            `workarea floor ${floorPhys}px · feet ${Math.round(feetPhys)}px · Δ ${Math.round(
+              feetPhys - floorPhys,
+            )}px`,
+          );
+        })
+        .catch(() => setWorkInfo('probe failed'));
+    };
+    probe();
+    const t = setInterval(probe, 1_000);
+    return () => clearInterval(t);
+  }, [measured, tune]);
 
   const nudge = (d: number) => {
     setFootTune(getFootTune() + d);
@@ -75,6 +105,7 @@ export function CalibrateOverlay({ winH, onClose }: { winH: number; onClose: () 
           {tune >= 0 ? '+' : ''}
           {tune}px)
         </div>
+        <div style={{ marginTop: 2, color: '#9aa7c4' }}>{workInfo}</div>
         <div style={{ display: 'flex', gap: 6, marginTop: 6 }}>
           {[-5, -1, +1, +5].map((d) => (
             <button
