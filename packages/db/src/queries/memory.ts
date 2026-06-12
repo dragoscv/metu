@@ -179,8 +179,14 @@ export async function recallByEmbedding({
     kinds && kinds.length > 0
       ? sql`and ${memoryChunk.sourceKind} = any(${sql.raw(`array[${kinds.map((k) => `'${k.replace(/'/g, "''")}'`).join(',')}]::text[]`)})`
       : sql``;
-  const sinceFilter = since ? sql`and ${memoryChunk.createdAt} >= ${since}` : sql``;
-  const untilFilter = until ? sql`and ${memoryChunk.createdAt} <= ${until}` : sql``;
+  // NOTE: interpolate ISO strings, not Date objects — drizzle 0.45 raw-sql
+  // param serialization breaks on Dates (see repo memory, Round 6).
+  const sinceFilter = since
+    ? sql`and ${memoryChunk.createdAt} >= ${since instanceof Date ? since.toISOString() : since}`
+    : sql``;
+  const untilFilter = until
+    ? sql`and ${memoryChunk.createdAt} <= ${until instanceof Date ? until.toISOString() : until}`
+    : sql``;
   const minScoreFilter =
     minScore > 0 ? sql`and (1 - (embedding <=> ${vec})) >= ${minScore}` : sql``;
 

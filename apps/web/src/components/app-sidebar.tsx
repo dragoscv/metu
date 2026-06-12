@@ -142,7 +142,7 @@ export function AppSidebar({
           {collapsed ? <ChevronsRight className="h-3 w-3" /> : <ChevronsLeft className="h-3 w-3" />}
         </button>
 
-        <div className="relative flex-1 overflow-hidden">
+        <nav aria-label="Primary" className="relative flex-1 overflow-hidden">
           <AnimatePresence initial={false}>
             {!openGroup || collapsed ? (
               <NavPanel
@@ -171,7 +171,7 @@ export function AppSidebar({
               />
             )}
           </AnimatePresence>
-        </div>
+        </nav>
 
         <div className="mt-auto border-t border-[var(--color-border)] p-2">
           {autonomyPaused ? <SidebarAutonomyPausedChip collapsed={collapsed} /> : null}

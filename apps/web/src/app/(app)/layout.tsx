@@ -100,6 +100,12 @@ export default async function AppLayout({ children }: { children: React.ReactNod
   return (
     <SidebarProvider>
       <div className="flex min-h-screen">
+        <a
+          href="#main-content"
+          className="sr-only focus:not-sr-only focus:fixed focus:left-3 focus:top-3 focus:z-[60] focus:rounded-lg focus:bg-[var(--color-bg-elevated)] focus:px-4 focus:py-2 focus:text-sm focus:shadow-lg"
+        >
+          Skip to content
+        </a>
         <AppSidebar
           user={session.user}
           metuConversations={metuConversations}
@@ -110,7 +116,7 @@ export default async function AppLayout({ children }: { children: React.ReactNod
         />
         <div className="flex min-w-0 flex-1 flex-col">
           <MobileTopbar />
-          <main className="flex-1 overflow-y-auto">
+          <main id="main-content" className="flex-1 overflow-y-auto">
             <div className="mx-auto w-full max-w-6xl px-4 py-6 md:px-6 md:py-8">
               <TrialBanner />
               <PageTransition>{children}</PageTransition>
