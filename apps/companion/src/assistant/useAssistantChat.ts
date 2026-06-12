@@ -26,6 +26,8 @@ export interface ChatMessage {
   content: string;
   /** Tool names the agent called on this turn (assistant messages only). */
   tools?: string[];
+  /** Live tool activity while streaming: name → running|done. */
+  toolActivity?: Array<{ name: string; status: 'running' | 'done' }>;
   /** True while this assistant message is still streaming. */
   pending?: boolean;
   /** Set when the turn escalated to the Conductor (async background work). */
@@ -46,12 +48,15 @@ export interface AssistantChatState {
 }
 
 interface TurnEvent {
-  type: 'triage' | 'ack' | 'escalated' | 'delta' | 'final' | 'error';
+  type: 'triage' | 'ack' | 'escalated' | 'delta' | 'tool' | 'final' | 'error';
   text?: string;
   message?: string;
   toolCallNames?: string[];
   eventId?: string;
   triage?: { lane?: string; reason?: string };
+  /** tool events */
+  name?: string;
+  status?: 'start' | 'done';
 }
 
 const HISTORY_LIMIT = 16;
@@ -169,6 +174,22 @@ export function useAssistantChat(auth: AuthState, personaSlug: string) {
                   }));
                 }
                 break;
+              case 'tool':
+                // Live tool lifecycle → IDE-agent-style activity rows.
+                if (ev.name) {
+                  setStatus('streaming');
+                  patch(assistantId, (m) => {
+                    const acts = [...(m.toolActivity ?? [])];
+                    const i = acts.findIndex((a) => a.name === ev.name && a.status === 'running');
+                    if (ev.status === 'done' && i >= 0) {
+                      acts[i] = { name: ev.name!, status: 'done' };
+                    } else if (ev.status === 'start') {
+                      acts.push({ name: ev.name!, status: 'running' });
+                    }
+                    return { ...m, toolActivity: acts };
+                  });
+                }
+                break;
               case 'ack':
                 // Escalation path: show the ack as the assistant body.
                 if (ev.text && !gotDelta) {
@@ -195,6 +216,7 @@ export function useAssistantChat(auth: AuthState, personaSlug: string) {
                     pending: false,
                     content: text,
                     tools: ev.toolCallNames && ev.toolCallNames.length ? ev.toolCallNames : m.tools,
+                    toolActivity: m.toolActivity?.map((a) => ({ ...a, status: 'done' as const })),
                   };
                 });
                 setStatus('idle');

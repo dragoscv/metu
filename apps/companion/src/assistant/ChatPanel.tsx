@@ -44,6 +44,24 @@ const STATUS_HINT: Record<ChatStatus, string | null> = {
   error: null,
 };
 
+/** Friendly labels for tool activity rows (VS Code agent style). */
+const TOOL_LABELS: Record<string, string> = {
+  recall: 'Searching memory',
+  list_projects: 'Reading projects',
+  list_tasks: 'Reading tasks',
+  restore_continuity: 'Restoring context',
+  'device.screenshot': 'Taking a screenshot',
+  'device.list_windows': 'Listing windows',
+  'device.a11y_tree': 'Reading the UI',
+  'device.a11y_find': 'Finding elements',
+  'device.observe_window': 'Observing the window',
+  'device.see': 'Looking at the screen',
+};
+
+function toolLabel(name: string): string {
+  return TOOL_LABELS[name] ?? name.replace(/^device\./, '').replace(/_/g, ' ');
+}
+
 export function ChatPanel({
   messages,
   status,
@@ -175,7 +193,22 @@ export function ChatPanel({
                 )}
               </div>
             )}
-            {m.pending && !m.content && (
+            {/* Live agent activity rows — visible WHILE tools run, the
+                "it's actually doing something" signal (Copilot-style). */}
+            {m.toolActivity && m.toolActivity.length > 0 && (m.pending || !m.content) && (
+              <div className="msg__activity">
+                {m.toolActivity.map((a, i) => (
+                  <div key={`${a.name}_${i}`} className={`msg__act msg__act--${a.status}`}>
+                    <span className="msg__act-icon">
+                      {a.status === 'done' ? '✓' : <span className="msg__act-spin" aria-hidden />}
+                    </span>
+                    {toolLabel(a.name)}
+                    {a.status === 'running' ? '…' : ''}
+                  </div>
+                ))}
+              </div>
+            )}
+            {m.pending && !m.content && (!m.toolActivity || m.toolActivity.length === 0) && (
               <div className="msg__body msg__body--skeleton" aria-label="thinking">
                 <span className="msg__skel" style={{ width: '82%' }} />
                 <span className="msg__skel" style={{ width: '64%' }} />

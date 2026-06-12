@@ -450,6 +450,23 @@ function AssistantSkin({
       setProgressLabel(null);
       return;
     }
+    // Live tool activity beats the canned narration — show what the
+    // agent is ACTUALLY doing ("Reading tasks…"), Copilot-agent style.
+    const lastMsg = chat.messages[chat.messages.length - 1];
+    const running = lastMsg?.toolActivity?.filter((a) => a.status === 'running') ?? [];
+    if (running.length > 0) {
+      const labels: Record<string, string> = {
+        recall: 'Searching memory',
+        list_projects: 'Reading projects',
+        list_tasks: 'Reading tasks',
+        restore_continuity: 'Restoring context',
+        'device.see': 'Looking at the screen',
+        'device.screenshot': 'Taking a screenshot',
+      };
+      const last = running[running.length - 1]!;
+      setProgressLabel(`${labels[last.name] ?? last.name.replace(/_/g, ' ')}…`);
+      return;
+    }
     const stages =
       chat.status === 'thinking'
         ? ['Reading your screen…', 'Gathering context…', 'Thinking it through…']
@@ -461,7 +478,7 @@ function AssistantSkin({
       setProgressLabel(stages[i] ?? null);
     }, 2_200);
     return () => clearInterval(t);
-  }, [chatBusy, chat.status]);
+  }, [chatBusy, chat.status, chat.messages]);
 
   const handlePoint = useCallback((req: PointRequest | null) => {
     if (req?.rect) {

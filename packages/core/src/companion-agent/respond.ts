@@ -155,6 +155,7 @@ export async function respondLocal(input: CompanionTurnInput): Promise<RespondLo
 
 export type LocalStreamEvent =
   | { type: 'delta'; text: string }
+  | { type: 'tool'; name: string; status: 'start' | 'done' }
   | { type: 'final'; text: string; toolCallNames: string[] }
   | { type: 'error'; message: string };
 
@@ -197,9 +198,18 @@ export async function* streamLocal(input: CompanionTurnInput): AsyncGenerator<Lo
 
   let assembled = '';
   try {
-    for await (const delta of result.textStream) {
-      assembled += delta;
-      yield { type: 'delta', text: delta };
+    // fullStream (not textStream): we want TOOL lifecycle parts too, so
+    // the client can render live "⚒ recall…" activity like an IDE agent
+    // instead of dead air while tools run.
+    for await (const part of result.fullStream) {
+      if (part.type === 'text-delta') {
+        assembled += part.text;
+        yield { type: 'delta', text: part.text };
+      } else if (part.type === 'tool-call') {
+        yield { type: 'tool', name: part.toolName, status: 'start' };
+      } else if (part.type === 'tool-result') {
+        yield { type: 'tool', name: part.toolName, status: 'done' };
+      }
     }
   } catch (err) {
     yield {

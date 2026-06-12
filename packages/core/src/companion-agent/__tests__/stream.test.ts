@@ -68,10 +68,11 @@ describe('streamCompanionTurn', () => {
   it('local path: emits triage → delta(s) → final and never calls onEscalate', async () => {
     const chunks = ['Hi', ' there', '!'];
     mockedStreamText.mockReturnValue({
-      textStream: (async function* () {
-        for (const c of chunks) yield c;
+      // streamLocal consumes fullStream (text + tool lifecycle parts).
+      fullStream: (async function* () {
+        for (const c of chunks) yield { type: 'text-delta', text: c };
       })(),
-      // streamLocal awaits these promises after the textStream drains.
+      // streamLocal awaits these promises after the stream drains.
       text: Promise.resolve('Hi there!'),
       steps: Promise.resolve([]),
     });
