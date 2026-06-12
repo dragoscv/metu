@@ -1,10 +1,9 @@
 /**
  * /docs/sdk — bearer token usage + a runnable curl per endpoint.
  */
-export const dynamic = 'force-static';
-export const revalidate = 3600;
 
-export default function DocsSdkPage() {
+export default async function DocsSdkPage() {
+  'use cache';
   return (
     <article className="prose prose-invert max-w-none">
       <h1>SDK</h1>

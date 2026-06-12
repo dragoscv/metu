@@ -9,8 +9,6 @@ const schema = z.object({
   ext: z.string().max(8).optional(),
 });
 
-export const runtime = 'nodejs';
-
 export async function POST(req: Request) {
   const session = await auth();
   if (!session) return NextResponse.json({ ok: false, error: 'Unauthenticated' }, { status: 401 });

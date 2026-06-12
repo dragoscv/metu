@@ -7,8 +7,6 @@ import { Page, PageHeader } from '@metu/ui';
 import { Sparkles } from 'lucide-react';
 import { AutonomyPresetWizard } from '@/components/autonomy-preset-wizard';
 
-export const dynamic = 'force-dynamic';
-
 export default async function AgentOnboardingPage() {
   const session = await auth();
   if (!session) redirect('/sign-in');

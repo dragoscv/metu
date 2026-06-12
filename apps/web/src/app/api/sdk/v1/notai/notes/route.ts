@@ -26,8 +26,6 @@ import { forbidden, hasScope, resolveSession, unauthorized } from '@/lib/bearer'
 import { rateLimit } from '@/lib/ratelimit';
 import { inngest } from '@/inngest/client';
 
-export const runtime = 'nodejs';
-
 const UpsertSchema = z.object({
   title: z.string().max(200).optional(),
   body: z.string().max(50_000).optional(),

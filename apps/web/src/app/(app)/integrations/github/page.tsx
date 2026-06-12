@@ -5,8 +5,6 @@ import { redirect } from 'next/navigation';
 import { listGithubAccountsAction } from '@/app/actions/github';
 import { GithubBrowser } from '@/components/integrations/github-browser';
 
-export const dynamic = 'force-dynamic';
-
 export default async function GithubIntegrationPage() {
   const session = await auth();
   if (!session) redirect('/sign-in');

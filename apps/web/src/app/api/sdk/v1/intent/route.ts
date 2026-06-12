@@ -15,8 +15,6 @@ import { forbidden, hasScope, resolveSession, unauthorized } from '@/lib/bearer'
 import { rateLimit } from '@/lib/ratelimit';
 import { inngest } from '@/inngest/client';
 
-export const runtime = 'nodejs';
-
 export async function POST(req: Request) {
   const session = await resolveSession(req);
   if (!session) return unauthorized();

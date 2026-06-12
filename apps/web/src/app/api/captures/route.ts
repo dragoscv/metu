@@ -5,8 +5,6 @@ import { createCaptureSchema } from '@metu/types';
 import { inngest } from '@/inngest/client';
 import { resolveSession, unauthorized } from '@/lib/bearer';
 
-export const runtime = 'nodejs';
-
 export async function POST(req: Request) {
   const session = await resolveSession(req);
   if (!session) return unauthorized();

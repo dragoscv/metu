@@ -12,8 +12,6 @@ import { rateLimit } from '@/lib/ratelimit';
 import { notify } from '@/lib/notify';
 import { inngest } from '@/inngest/client';
 
-export const runtime = 'nodejs';
-
 export async function POST(req: Request) {
   const session = await resolveSession(req);
   if (!session) return unauthorized();

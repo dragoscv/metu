@@ -5,8 +5,6 @@ import { redirect } from 'next/navigation';
 import { ProfileWizard } from '@/components/profile-wizard/profile-wizard';
 import { getProfileWizardStateAction } from '@/app/actions/profile-wizard';
 
-export const dynamic = 'force-dynamic';
-
 export default async function AboutMePage() {
   const session = await auth();
   if (!session) redirect('/sign-in');

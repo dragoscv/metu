@@ -7,11 +7,9 @@
  * UA detection runs on the client to avoid burning the page cache per visitor.
  * Server-rendered first paint shows all platforms equally.
  */
+import { cacheLife } from 'next/cache';
 import { Page, PageHeader, PageSection } from '@metu/ui';
 import { DownloadClient } from './download-client';
-
-export const dynamic = 'force-dynamic';
-export const revalidate = 300;
 
 interface ReleaseAsset {
   name: string;
@@ -50,6 +48,8 @@ async function getLatestRelease(): Promise<Release | null> {
 }
 
 export default async function DownloadPage() {
+  'use cache';
+  cacheLife('minutes');
   const release = await getLatestRelease();
 
   return (

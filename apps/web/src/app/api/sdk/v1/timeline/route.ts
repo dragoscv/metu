@@ -21,8 +21,6 @@ import { NextResponse } from 'next/server';
 import { forbidden, hasScope, resolveSession, unauthorized } from '@/lib/bearer';
 import { listTimelineFiltered } from '@metu/db/queries';
 
-export const runtime = 'nodejs';
-
 const DEFAULT_SINCE_DAYS = 7;
 const MAX_SINCE_DAYS = 365;
 const DEFAULT_LIMIT = 40;

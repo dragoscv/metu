@@ -13,8 +13,6 @@ import { notification } from '@metu/db/schema';
 import { ProposalActions } from '@/components/proposal-actions';
 import { formatDistanceToNow } from 'date-fns';
 
-export const dynamic = 'force-dynamic';
-
 interface ToolProposal {
   tool: string;
   args: Record<string, unknown>;

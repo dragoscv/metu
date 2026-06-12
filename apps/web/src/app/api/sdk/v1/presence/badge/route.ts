@@ -17,8 +17,6 @@ import { forbidden, hasScope, resolveSession, unauthorized } from '@/lib/bearer'
 import { getDb } from '@metu/db';
 import { personaActivation, sensoryRing } from '@metu/db/schema';
 
-export const runtime = 'nodejs';
-
 export async function GET(req: Request) {
   const session = await resolveSession(req);
   if (!session) return unauthorized();

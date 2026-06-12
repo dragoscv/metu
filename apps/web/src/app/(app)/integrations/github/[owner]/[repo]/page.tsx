@@ -6,8 +6,6 @@ import { redirect } from 'next/navigation';
 import { getGithubRepoDetailAction } from '@/app/actions/github';
 import { GithubRepoActions } from '@/components/integrations/github-repo-actions';
 
-export const dynamic = 'force-dynamic';
-
 interface PageProps {
   params: Promise<{ owner: string; repo: string }>;
 }

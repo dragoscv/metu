@@ -20,8 +20,6 @@ import { listRecentBriefings } from '@metu/db/queries';
 import { timelineEvent } from '@metu/db/schema';
 import { forbidden, hasScope, resolveSession, unauthorized } from '@/lib/bearer';
 
-export const runtime = 'nodejs';
-
 const querySchema = z.object({
   since: z.enum(['3d', '3w', '3m']).optional(),
   limit: z.coerce.number().int().min(1).max(20).default(5),

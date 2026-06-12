@@ -15,9 +15,6 @@ import { getDb } from '@metu/db';
 import { workspaceSubscription } from '@metu/db/schema';
 import { stripe } from '@metu/integrations';
 
-export const runtime = 'nodejs';
-export const dynamic = 'force-dynamic';
-
 export async function GET() {
   const session = await auth();
   if (!session) redirect('/sign-in?next=/settings/billing/portal');

@@ -14,8 +14,6 @@ import { newPkce, randomUrlSafe } from '@/lib/oauth/pkce';
 
 const COOKIE_TTL_S = 600;
 
-export const runtime = 'nodejs';
-
 const CODAI_AUTH_BASE = process.env.CODAI_AUTH_URL ?? 'https://auth.codai.ro';
 const CODAI_CLIENT_ID = process.env.CODAI_OAUTH_CLIENT_ID ?? 'metu';
 const CODAI_SCOPES = 'openid profile email inference keys:manage usage:read subscriptions:read';

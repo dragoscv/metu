@@ -7,8 +7,6 @@ import { Page, PageHeader, Card, Badge } from '@metu/ui';
 import { Inbox } from 'lucide-react';
 import { ReplayDlqButton } from '@/components/admin/replay-dlq-button';
 
-export const dynamic = 'force-dynamic';
-
 export default async function HubDlqAdminPage() {
   const session = await auth();
   if (!session) redirect('/sign-in');

@@ -18,7 +18,6 @@ import { requireVoiceProviderKey } from '@/lib/voice-keys';
 import { assertVoiceCap, recordVoiceUsage } from '@/lib/voice-billing';
 import { getWorkspacePreferences } from '@/app/actions/workspace-preferences';
 
-export const runtime = 'nodejs';
 export const maxDuration = 30;
 
 const MAX_BYTES = 10 * 1024 * 1024; // 10 MB hard cap — single utterance.

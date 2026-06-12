@@ -16,9 +16,6 @@ import { getProviderCredential } from '@metu/ai';
 import { rateLimit } from '@/lib/ratelimit';
 import { log } from '@/lib/logger';
 
-export const runtime = 'nodejs';
-export const dynamic = 'force-dynamic';
-
 const MAX_BYTES = 25 * 1024 * 1024; // OpenAI hard limit
 const FETCH_TIMEOUT_MS = 30_000;
 const OPENAI_AUDIO_URL = 'https://api.openai.com/v1/audio/transcriptions';

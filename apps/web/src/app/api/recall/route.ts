@@ -3,8 +3,6 @@ import { z } from 'zod';
 import { memory } from '@metu/core';
 import { resolveSession, unauthorized } from '@/lib/bearer';
 
-export const runtime = 'nodejs';
-
 const schema = z.object({
   query: z.string().min(2).max(500),
   projectId: z.uuid().optional(),

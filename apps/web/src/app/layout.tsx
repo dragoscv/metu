@@ -19,17 +19,17 @@ export const viewport: Viewport = {
   maximumScale: 1,
 };
 
-import { getLocale } from '@/lib/i18n/server';
-
-export default async function RootLayout({ children }: { children: React.ReactNode }) {
-  const locale = await getLocale();
+export default function RootLayout({ children }: { children: React.ReactNode }) {
+  // Locale is resolved client-side from the cookie (see Providers) so the
+  // root layout stays prerenderable under cacheComponents. `lang` is set
+  // to the default and corrected on hydration for non-default locales.
   return (
-    <html lang={locale} suppressHydrationWarning>
+    <html lang="en" suppressHydrationWarning>
       <head>
         <ThemeScript />
       </head>
       <body className="min-h-screen bg-[var(--color-bg)] text-[var(--color-fg)] antialiased">
-        <Providers locale={locale}>
+        <Providers>
           <NuqsAdapter>{children}</NuqsAdapter>
           <ErrorCatcher />
           <Toaster

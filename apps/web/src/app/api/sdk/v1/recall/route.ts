@@ -10,8 +10,6 @@ import { forbidden, hasScope, resolveSession, unauthorized } from '@/lib/bearer'
 import { rateLimit } from '@/lib/ratelimit';
 import { trace } from '@/lib/request-id';
 
-export const runtime = 'nodejs';
-
 export async function POST(req: Request) {
   const session = await resolveSession(req);
   if (!session) return trace(req, unauthorized());

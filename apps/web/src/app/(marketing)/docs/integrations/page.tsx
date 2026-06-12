@@ -1,10 +1,9 @@
 /**
  * /docs/integrations — third-party integrations metu can drive.
  */
-export const dynamic = 'force-static';
-export const revalidate = 3600;
 
-export default function DocsIntegrationsPage() {
+export default async function DocsIntegrationsPage() {
+  'use cache';
   return (
     <article className="prose prose-invert max-w-none">
       <h1>Integrations</h1>

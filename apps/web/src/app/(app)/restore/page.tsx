@@ -28,8 +28,6 @@ import { listRecentBriefings } from '@metu/db/queries';
 import { formatDistanceToNow } from 'date-fns';
 import { GenerateBriefingButton } from '@/components/generate-briefing-button';
 
-export const dynamic = 'force-dynamic';
-
 const WINDOWS = [
   { key: 'today', label: 'A few hours', hours: 8 },
   { key: 'yesterday', label: 'A day or two', hours: 48 },

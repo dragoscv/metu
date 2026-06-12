@@ -21,7 +21,6 @@ import { auth } from '@metu/auth';
 import { getModel } from '@metu/ai';
 import { getBuiltInPersona } from '@metu/presence';
 
-export const runtime = 'nodejs';
 export const maxDuration = 60;
 
 const Body = z.object({

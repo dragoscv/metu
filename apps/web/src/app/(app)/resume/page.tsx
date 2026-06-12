@@ -22,8 +22,6 @@ import { RegenerateBriefingButton } from './regenerate-button';
 import { PresencePill } from '@/components/presence-pill';
 import { GenerateBriefingButton } from '@/components/generate-briefing-button';
 
-export const dynamic = 'force-dynamic';
-
 type Window = '3d' | '3w' | '3m';
 const WINDOWS: { key: Window; label: string; days: number }[] = [
   { key: '3d', label: '3 days', days: 3 },

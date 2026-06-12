@@ -11,9 +11,6 @@ import { and, eq, isNull, isNotNull, sql } from 'drizzle-orm';
 import { getDb } from '@metu/db';
 import { goal, workspace } from '@metu/db/schema';
 
-export const dynamic = 'force-dynamic';
-export const runtime = 'nodejs';
-
 function pad(n: number): string {
   return n.toString().padStart(2, '0');
 }

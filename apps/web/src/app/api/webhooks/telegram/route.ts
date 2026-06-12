@@ -27,8 +27,6 @@ import { telegram } from '@metu/integrations';
 import { safeEqual } from '@/lib/safe-equal';
 import { log } from '@metu/logger';
 
-export const runtime = 'nodejs';
-
 interface TelegramMessage {
   message_id: number;
   from?: { id: number; username?: string; first_name?: string };
@@ -95,7 +93,10 @@ export async function POST(req: Request) {
           },
         });
       await db.delete(telegramLinkCode).where(eq(telegramLinkCode.code, code));
-      await telegram.sendTextMessage(chatId, 'Linked. Send anything to capture, or /recall <query>.');
+      await telegram.sendTextMessage(
+        chatId,
+        'Linked. Send anything to capture, or /recall <query>.',
+      );
       return NextResponse.json({ ok: true });
     }
 

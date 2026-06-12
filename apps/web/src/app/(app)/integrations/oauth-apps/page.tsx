@@ -7,8 +7,6 @@ import Link from 'next/link';
 import { INTEGRATIONS_CATALOG } from '@/lib/integrations/catalog';
 import { OauthAppsKindForm } from '@/components/oauth-apps-kind-form';
 
-export const dynamic = 'force-dynamic';
-
 /**
  * Per-kind OAuth client credentials manager. Pasting a client_id +
  * client_secret here lets the workspace use any built-in integration's

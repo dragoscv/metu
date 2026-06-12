@@ -16,8 +16,6 @@ import { getProviderCredential, CODAI_BASE_URL } from '@metu/ai';
 import { rateLimit } from '@/lib/ratelimit';
 import { assertSafeOutboundUrl } from '@/lib/safe-equal';
 
-export const runtime = 'nodejs';
-
 const Body = z.object({
   provider: z.enum([
     'anthropic',
@@ -60,37 +58,61 @@ async function testProvider(provider: string, key: string, endpoint?: string): P
         const r = await tryFetch('https://api.openai.com/v1/models', {
           headers: { authorization: `Bearer ${key}` },
         });
-        return { ok: r.ok, latencyMs: Date.now() - t0, message: r.ok ? undefined : `HTTP ${r.status}` };
+        return {
+          ok: r.ok,
+          latencyMs: Date.now() - t0,
+          message: r.ok ? undefined : `HTTP ${r.status}`,
+        };
       }
       case 'anthropic': {
         const r = await tryFetch('https://api.anthropic.com/v1/models', {
           headers: { 'x-api-key': key, 'anthropic-version': '2023-06-01' },
         });
-        return { ok: r.ok, latencyMs: Date.now() - t0, message: r.ok ? undefined : `HTTP ${r.status}` };
+        return {
+          ok: r.ok,
+          latencyMs: Date.now() - t0,
+          message: r.ok ? undefined : `HTTP ${r.status}`,
+        };
       }
       case 'google': {
         const r = await tryFetch(
           `https://generativelanguage.googleapis.com/v1beta/models?key=${encodeURIComponent(key)}`,
           { method: 'GET' },
         );
-        return { ok: r.ok, latencyMs: Date.now() - t0, message: r.ok ? undefined : `HTTP ${r.status}` };
+        return {
+          ok: r.ok,
+          latencyMs: Date.now() - t0,
+          message: r.ok ? undefined : `HTTP ${r.status}`,
+        };
       }
       case 'deepgram': {
         const r = await tryFetch('https://api.deepgram.com/v1/projects', {
           headers: { authorization: `Token ${key}` },
         });
-        return { ok: r.ok, latencyMs: Date.now() - t0, message: r.ok ? undefined : `HTTP ${r.status}` };
+        return {
+          ok: r.ok,
+          latencyMs: Date.now() - t0,
+          message: r.ok ? undefined : `HTTP ${r.status}`,
+        };
       }
       case 'elevenlabs': {
         const r = await tryFetch('https://api.elevenlabs.io/v1/user', {
           headers: { 'xi-api-key': key },
         });
-        return { ok: r.ok, latencyMs: Date.now() - t0, message: r.ok ? undefined : `HTTP ${r.status}` };
+        return {
+          ok: r.ok,
+          latencyMs: Date.now() - t0,
+          message: r.ok ? undefined : `HTTP ${r.status}`,
+        };
       }
       case 'ollama': {
         const base = (endpoint || 'http://localhost:11434').replace(/\/+$/, '');
         const r = await tryFetch(`${base}/api/tags`, {});
-        return { ok: r.ok, latencyMs: Date.now() - t0, message: r.ok ? undefined : `HTTP ${r.status}` };
+        return {
+          ok: r.ok,
+          latencyMs: Date.now() - t0,
+          message: r.ok ? undefined : `HTTP ${r.status}`,
+        };
       }
       case 'custom': {
         // Generic OpenAI-compatible gateway. Probe GET {base}/models.

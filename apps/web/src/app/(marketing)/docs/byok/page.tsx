@@ -1,10 +1,9 @@
 /**
  * /docs/byok — bring your own AI key model.
  */
-export const dynamic = 'force-static';
-export const revalidate = 3600;
 
-export default function DocsByokPage() {
+export default async function DocsByokPage() {
+  'use cache';
   return (
     <article className="prose prose-invert max-w-none">
       <h1>Bring your own key (BYOK)</h1>

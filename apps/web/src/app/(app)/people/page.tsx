@@ -18,8 +18,6 @@ import { capture, timelineEvent } from '@metu/db/schema';
 import Link from 'next/link';
 import { formatDistanceToNow } from 'date-fns';
 
-export const dynamic = 'force-dynamic';
-
 interface PageProps {
   searchParams: Promise<{ days?: string }>;
 }

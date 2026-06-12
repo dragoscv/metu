@@ -13,8 +13,6 @@ import { rateLimit } from '@/lib/ratelimit';
 import { requireVoiceProviderKey } from '@/lib/voice-keys';
 import { assertVoiceCap, recordVoiceUsage } from '@/lib/voice-billing';
 
-export const runtime = 'nodejs';
-
 const Body = z.object({
   personaSlug: z.string().min(1).max(80),
   text: z.string().min(1).max(4_000),

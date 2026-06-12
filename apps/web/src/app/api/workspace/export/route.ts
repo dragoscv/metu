@@ -43,9 +43,6 @@ import {
 import { log } from '@/lib/logger';
 import { rateLimit, clientKey } from '@/lib/ratelimit';
 
-export const runtime = 'nodejs';
-export const dynamic = 'force-dynamic';
-
 type ExportTable = {
   name: string;
   table: PgTable & { workspaceId: AnyColumn };

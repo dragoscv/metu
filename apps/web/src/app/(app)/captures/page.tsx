@@ -7,8 +7,6 @@ import Link from 'next/link';
 import { formatDistanceToNow } from 'date-fns';
 import { KeyboardFocus } from '@/components/keyboard-focus';
 
-export const dynamic = 'force-dynamic';
-
 const VALID_KINDS = ['text', 'voice', 'image', 'link', 'code', 'screenshot'] as const;
 
 interface PageProps {

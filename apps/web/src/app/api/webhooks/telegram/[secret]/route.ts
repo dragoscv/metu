@@ -12,8 +12,6 @@ import { transcribeRemoteAudio } from '@/lib/transcribe';
 import { inngest } from '@/inngest/client';
 import { log } from '@/lib/logger';
 
-export const runtime = 'nodejs';
-
 const START_CMD_RE = /^\/start(?:@\w+)?\s+(\d{6})\b/;
 
 /**

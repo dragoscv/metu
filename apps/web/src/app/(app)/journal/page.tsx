@@ -25,8 +25,6 @@ import {
   labelForKind as labelFor,
 } from '@/lib/journal-helpers';
 
-export const dynamic = 'force-dynamic';
-
 interface PageProps {
   searchParams: Promise<{ range?: string }>;
 }

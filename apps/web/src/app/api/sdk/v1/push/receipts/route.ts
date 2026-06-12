@@ -16,8 +16,6 @@ import { pushReceipt } from '@metu/db/schema';
 import { forbidden, hasScope, resolveSession, unauthorized } from '@/lib/bearer';
 import { rateLimit } from '@/lib/ratelimit';
 
-export const runtime = 'nodejs';
-
 const schema = z.object({
   since: z
     .string()

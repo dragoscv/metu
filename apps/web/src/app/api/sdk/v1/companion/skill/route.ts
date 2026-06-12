@@ -22,7 +22,6 @@ import { forbidden, hasScope, resolveSession, unauthorized } from '@/lib/bearer'
 import { rateLimit } from '@/lib/ratelimit';
 import { assertVoiceCap } from '@/lib/voice-billing';
 
-export const runtime = 'nodejs';
 export const maxDuration = 30;
 
 /**

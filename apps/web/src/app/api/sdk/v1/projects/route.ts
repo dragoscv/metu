@@ -13,8 +13,6 @@ import { NextResponse } from 'next/server';
 import { listProjects } from '@metu/db/queries';
 import { forbidden, hasScope, resolveSession, unauthorized } from '@/lib/bearer';
 
-export const runtime = 'nodejs';
-
 export async function GET(req: Request) {
   const session = await resolveSession(req);
   if (!session) return unauthorized();

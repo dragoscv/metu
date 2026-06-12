@@ -6,8 +6,6 @@ import { redirect } from 'next/navigation';
 import { StreakCard, type StreakRow } from '@/components/streaks/streak-card';
 import { StreakComposer } from '@/components/streaks/streak-composer';
 
-export const dynamic = 'force-dynamic';
-
 export default async function StreaksPage({
   searchParams,
 }: {

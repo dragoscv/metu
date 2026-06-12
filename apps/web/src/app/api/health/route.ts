@@ -9,9 +9,6 @@
 import { sql } from 'drizzle-orm';
 import { getDb } from '@metu/db';
 
-export const runtime = 'nodejs';
-export const dynamic = 'force-dynamic';
-
 interface ProbeResult {
   ok: boolean;
   latencyMs?: number;

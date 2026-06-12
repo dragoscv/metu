@@ -4,8 +4,6 @@ import { getDb } from '@metu/db';
 import { focusState } from '@metu/db/schema';
 import { resolveSession, unauthorized } from '@/lib/bearer';
 
-export const runtime = 'nodejs';
-
 export async function GET(req: Request) {
   const session = await resolveSession(req);
   if (!session) return unauthorized();

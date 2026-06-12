@@ -31,8 +31,6 @@ import { AuditMtdCost } from '@/components/audit/audit-mtd-cost';
 import { AgentRunPanel } from '@/components/audit/agent-run-panel';
 import { CompanionAgentPanel } from '@/components/audit/companion-agent-panel';
 
-export const dynamic = 'force-dynamic';
-
 interface PageProps {
   searchParams: Promise<{
     tools?: string;

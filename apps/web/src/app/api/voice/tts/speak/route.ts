@@ -16,8 +16,6 @@ import { hasScope, resolveSession } from '@/lib/bearer';
 import { getBuiltInPersona } from '@metu/presence';
 import { requireVoiceProviderKey } from '@/lib/voice-keys';
 
-export const runtime = 'nodejs';
-
 const Body = z.object({
   personaSlug: z.string().min(1).max(80),
   text: z.string().min(1).max(4_000),

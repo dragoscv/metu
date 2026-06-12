@@ -24,8 +24,6 @@ import { forbidden, hasScope, resolveSession, unauthorized } from '@/lib/bearer'
 import { rateLimit } from '@/lib/ratelimit';
 import { inngest } from '@/inngest/client';
 
-export const runtime = 'nodejs';
-
 const BorrowSchema = z.object({
   integrationId: z.string().uuid(),
   /** Free-form purpose recorded in audit log: 'reconcile-stripe-payouts' etc. */

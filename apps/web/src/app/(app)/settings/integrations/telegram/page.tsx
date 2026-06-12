@@ -9,8 +9,6 @@ import { Card, CardTitle, Page, PageHeader, PageSection } from '@metu/ui';
 import { listTelegramLinksAction } from '@/app/actions/telegram';
 import { TelegramLinkPanel } from '@/components/telegram-link-panel';
 
-export const dynamic = 'force-dynamic';
-
 export default async function TelegramIntegrationPage() {
   const session = await auth();
   if (!session) redirect('/sign-in');

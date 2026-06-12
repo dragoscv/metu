@@ -16,8 +16,6 @@ import { KeyboardFocus } from '@/components/keyboard-focus';
 const BTN_PRIMARY =
   'inline-flex h-8 items-center gap-2 rounded-md bg-[var(--color-brand)] px-3 text-sm font-medium text-[var(--color-brand-fg)] hover:opacity-90';
 
-export const dynamic = 'force-dynamic';
-
 interface PageProps {
   searchParams: Promise<{
     kinds?: string;

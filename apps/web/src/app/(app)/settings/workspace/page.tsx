@@ -7,8 +7,6 @@ import { getDb } from '@metu/db';
 import { workspace, workspaceMember } from '@metu/db/schema';
 import { WorkspaceSettingsForm } from '@/components/workspace-settings-form';
 
-export const dynamic = 'force-dynamic';
-
 export default async function WorkspaceSettingsPage() {
   const session = await auth();
   if (!session) redirect('/sign-in');

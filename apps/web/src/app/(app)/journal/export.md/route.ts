@@ -10,8 +10,6 @@ import { format, isSameDay, startOfDay } from 'date-fns';
 import { getDb } from '@metu/db';
 import { timelineEvent, project } from '@metu/db/schema';
 
-export const dynamic = 'force-dynamic';
-
 const RANGES: Record<string, number> = { '7d': 7, '30d': 30, '90d': 90 };
 
 export async function GET(request: Request) {

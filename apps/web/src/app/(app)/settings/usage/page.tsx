@@ -5,8 +5,6 @@ import { getDb } from '@metu/db';
 import { agentRun, voiceUsage, workspace, workspaceMember } from '@metu/db/schema';
 import { Page, PageHeader, Card, CardTitle, CardValue, CardDescription } from '@metu/ui';
 
-export const dynamic = 'force-dynamic';
-
 function startOfMonthUtc(): Date {
   const now = new Date();
   return new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), 1));

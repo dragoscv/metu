@@ -29,7 +29,6 @@ import { rateLimit } from '@/lib/ratelimit';
 import { assertVoiceCap } from '@/lib/voice-billing';
 import { inngest } from '@/inngest/client';
 
-export const runtime = 'nodejs';
 export const maxDuration = 60;
 
 const Body = z.object({

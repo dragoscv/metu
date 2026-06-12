@@ -20,8 +20,6 @@ import { BUILT_IN_PERSONAS } from '@metu/presence';
 import { getVoiceCapState, getWorkspaceBillingTier } from '@/lib/voice-billing';
 import { isQuietHoursActive } from '@/lib/quiet-hours';
 
-export const runtime = 'nodejs';
-
 export async function GET(req: Request) {
   const session = await resolveSession(req);
   if (!session) return unauthorized();

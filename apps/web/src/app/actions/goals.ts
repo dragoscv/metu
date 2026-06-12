@@ -3,7 +3,7 @@
  * Goals + Targets server actions. All workspace-scoped via session.
  */
 import { revalidatePath } from 'next/cache';
-import { and, eq } from 'drizzle-orm';
+import { and, eq, inArray } from 'drizzle-orm';
 import { z } from 'zod';
 import { auth } from '@metu/auth';
 import { getDb } from '@metu/db';
@@ -272,18 +272,15 @@ export async function bulkUpdateGoalStatusAction(input: {
   if (!session) return { ok: false as const, error: 'Unauthenticated' };
   if (input.ids.length === 0) return { ok: true as const, count: 0 };
   const db = getDb();
-  let count = 0;
-  for (const id of input.ids) {
-    const patch: Record<string, unknown> = { status: input.status };
-    if (input.status === 'achieved') patch.achievedAt = new Date();
-    await db
-      .update(goal)
-      .set(patch)
-      .where(and(eq(goal.id, id), eq(goal.workspaceId, session.user.workspaceId)));
-    count++;
-  }
+  const patch: Record<string, unknown> = { status: input.status };
+  if (input.status === 'achieved') patch.achievedAt = new Date();
+  const updated = await db
+    .update(goal)
+    .set(patch)
+    .where(and(inArray(goal.id, input.ids), eq(goal.workspaceId, session.user.workspaceId)))
+    .returning();
   revalidatePath('/goals');
-  return { ok: true as const, count };
+  return { ok: true as const, count: updated.length };
 }
 
 export async function bulkDeleteGoalsAction(ids: string[]) {
@@ -291,14 +288,13 @@ export async function bulkDeleteGoalsAction(ids: string[]) {
   if (!session) return { ok: false as const, error: 'Unauthenticated' };
   if (ids.length === 0) return { ok: true as const, count: 0 };
   const db = getDb();
-  for (const id of ids) {
-    await db
-      .update(goal)
-      .set({ deletedAt: new Date(), status: 'dropped' })
-      .where(and(eq(goal.id, id), eq(goal.workspaceId, session.user.workspaceId)));
-  }
+  const deleted = await db
+    .update(goal)
+    .set({ deletedAt: new Date(), status: 'dropped' })
+    .where(and(inArray(goal.id, ids), eq(goal.workspaceId, session.user.workspaceId)))
+    .returning();
   revalidatePath('/goals');
-  return { ok: true as const, count: ids.length };
+  return { ok: true as const, count: deleted.length };
 }
 
 const updateTargetSchema = z.object({

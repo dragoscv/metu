@@ -4,8 +4,6 @@ import { Page, PageHeader } from '@metu/ui';
 import { getMetuOverviewAction, getRecentAgentActivityAction } from '@/app/actions/metu';
 import { MetuDashboard } from '@/components/metu/metu-dashboard';
 
-export const dynamic = 'force-dynamic';
-
 export default async function MetuPage() {
   const session = await auth();
   if (!session) redirect('/sign-in');

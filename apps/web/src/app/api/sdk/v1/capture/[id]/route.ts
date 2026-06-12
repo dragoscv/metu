@@ -18,8 +18,6 @@ import { capture, timelineEvent } from '@metu/db/schema';
 import { forbidden, hasScope, resolveSession, unauthorized } from '@/lib/bearer';
 import { rateLimit } from '@/lib/ratelimit';
 
-export const runtime = 'nodejs';
-
 export async function DELETE(req: Request, { params }: { params: Promise<{ id: string }> }) {
   const session = await resolveSession(req);
   if (!session) return unauthorized();

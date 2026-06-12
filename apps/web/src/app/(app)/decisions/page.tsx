@@ -17,8 +17,6 @@ import { decision, project } from '@metu/db/schema';
 import { formatDistanceToNow } from 'date-fns';
 import { DecisionForm } from './decision-form';
 
-export const dynamic = 'force-dynamic';
-
 interface PageProps {
   searchParams: Promise<{ q?: string; projectId?: string }>;
 }

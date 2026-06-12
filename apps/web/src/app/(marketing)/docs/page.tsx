@@ -3,10 +3,9 @@
  * via plain JSX (no MDX runtime dependency yet). Linked from the
  * marketing header and from the SDK error pages.
  */
-export const dynamic = 'force-static';
-export const revalidate = 3600;
 
-export default function DocsIndex() {
+export default async function DocsIndex() {
+  'use cache';
   return (
     <article className="prose prose-invert max-w-none">
       <h1>metu in 60 seconds</h1>

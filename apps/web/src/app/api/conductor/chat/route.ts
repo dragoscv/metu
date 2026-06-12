@@ -19,7 +19,6 @@ import { agent } from '@metu/core';
 import { log } from '@/lib/logger';
 import { rateLimit } from '@/lib/ratelimit';
 
-export const runtime = 'nodejs';
 export const maxDuration = 120;
 
 const HISTORY_LIMIT = 60;

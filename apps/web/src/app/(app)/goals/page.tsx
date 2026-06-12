@@ -17,8 +17,6 @@ import { TargetsList } from '@/components/goals/targets-list';
 import { CreateGoalForm } from '@/components/goals/create-goal-form';
 import { GoalsSummary } from '@/components/goals/goals-summary';
 
-export const dynamic = 'force-dynamic';
-
 const VALID_SORT = new Set(['weight', 'progress', 'recent', 'due']);
 
 export default async function GoalsPage({

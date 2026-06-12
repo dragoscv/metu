@@ -8,9 +8,6 @@
 import { auth } from '@metu/auth';
 import { getVoiceUsageCsvAction } from '@/app/actions/billing';
 
-export const runtime = 'nodejs';
-export const dynamic = 'force-dynamic';
-
 export async function GET() {
   const session = await auth();
   if (!session) return new Response('unauthorized', { status: 401 });

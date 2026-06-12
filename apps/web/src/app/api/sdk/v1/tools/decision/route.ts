@@ -14,8 +14,6 @@ import { inngest } from '@/inngest/client';
 import { forbidden, hasScope, resolveSession, unauthorized } from '@/lib/bearer';
 import { rateLimit } from '@/lib/ratelimit';
 
-export const runtime = 'nodejs';
-
 const schema = z.object({
   toolCallId: z.string().uuid(),
   decision: z.enum(['approve', 'reject']),

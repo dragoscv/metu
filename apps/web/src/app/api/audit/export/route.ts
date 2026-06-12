@@ -13,9 +13,6 @@ import { exportToolCalls, type ToolCallStatusFilter } from '@metu/db/queries';
 import { requireTier } from '@/lib/tier-gate';
 import { NextResponse, type NextRequest } from 'next/server';
 
-export const dynamic = 'force-dynamic';
-export const runtime = 'nodejs';
-
 const VALID_STATUSES: ToolCallStatusFilter[] = [
   'pending',
   'awaiting_approval',

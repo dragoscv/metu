@@ -22,7 +22,6 @@ import { assertVoiceCap } from '@/lib/voice-billing';
 import { loadPromptContext } from '@/lib/prompt-context';
 import { inngest } from '@/inngest/client';
 
-export const runtime = 'nodejs';
 export const maxDuration = 60;
 
 const Body = z.object({

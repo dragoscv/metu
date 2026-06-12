@@ -15,8 +15,6 @@ import { inngest } from '@/inngest/client';
 import { safeEqual } from '@/lib/safe-equal';
 import { resolvePendingDeviceTool } from '@/lib/device-bridge';
 
-export const runtime = 'nodejs';
-
 const schema = z.object({
   workspaceId: z.string().uuid(),
   deviceId: z.string().uuid(),

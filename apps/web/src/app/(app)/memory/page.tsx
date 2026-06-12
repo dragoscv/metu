@@ -5,8 +5,6 @@ import { Brain } from 'lucide-react';
 import { getMemoryOverviewAction, listRecentMemoriesAction } from '@/app/actions/memory';
 import { MemoryWorkspace } from '@/components/memory/memory-workspace';
 
-export const dynamic = 'force-dynamic';
-
 export default async function MemoryPage() {
   const session = await auth();
   if (!session) redirect('/sign-in');

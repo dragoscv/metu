@@ -28,8 +28,6 @@ import { getBuiltInPersona } from '@metu/presence';
 import { getWorkspaceBillingTier } from '@/lib/voice-billing';
 import { isVoiceProviderAllowed } from '@metu/voice';
 
-export const runtime = 'nodejs';
-
 const REQUEST_TTL_SEC = 60;
 const REALTIME_DEFAULT_MODEL = 'gpt-realtime';
 

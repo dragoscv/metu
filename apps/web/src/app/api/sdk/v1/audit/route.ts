@@ -19,8 +19,6 @@ import { timelineEvent } from '@metu/db/schema';
 import { forbidden, hasScope, resolveSession, unauthorized } from '@/lib/bearer';
 import { rateLimit } from '@/lib/ratelimit';
 
-export const runtime = 'nodejs';
-
 const querySchema = z.object({
   limit: z.coerce.number().int().min(1).max(200).default(50),
   since: z.string().datetime().optional(),

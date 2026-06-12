@@ -16,8 +16,6 @@ import { safeEqual } from '@/lib/safe-equal';
 import { log } from '@/lib/logger';
 import { connectCodai } from '@/app/actions/codai';
 
-export const runtime = 'nodejs';
-
 const CODAI_AUTH_BASE = (process.env.CODAI_AUTH_URL ?? 'https://auth.codai.ro').replace(/\/+$/, '');
 const CODAI_CLIENT_ID = process.env.CODAI_OAUTH_CLIENT_ID ?? 'metu';
 
@@ -107,7 +105,10 @@ export async function GET(req: Request) {
   // 3. Store it as the workspace codai provider credential.
   const stored = await connectCodai({ apiKey: keyJson.api_key });
   if (!stored.ok) {
-    return settingsRedirect(req, `codai_error=${encodeURIComponent(stored.error ?? 'store_failed')}`);
+    return settingsRedirect(
+      req,
+      `codai_error=${encodeURIComponent(stored.error ?? 'store_failed')}`,
+    );
   }
 
   return settingsRedirect(req, 'codai_connected=1');

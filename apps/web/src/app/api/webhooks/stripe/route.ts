@@ -13,8 +13,6 @@ import { buildSubscriptionUpsertValues, extractWorkspaceId } from '@/lib/stripe-
 import { inngest } from '@/inngest/client';
 import { log } from '@/lib/logger';
 
-export const runtime = 'nodejs';
-
 type TimelineKind = 'subscription.activated' | 'subscription.updated' | 'subscription.canceled';
 
 async function writeBillingTimelineEvent(

@@ -17,8 +17,6 @@ import { getDb } from '@metu/db';
 import { notification } from '@metu/db/schema';
 import { forbidden, hasScope, resolveSession, unauthorized } from '@/lib/bearer';
 
-export const runtime = 'nodejs';
-
 const querySchema = z.object({
   limit: z.coerce.number().int().min(1).max(100).default(30),
   unreadOnly: z

@@ -6,8 +6,6 @@ import { project } from '@metu/db/schema';
 import { continuity } from '@metu/core';
 import { resolveSession, unauthorized } from '@/lib/bearer';
 
-export const runtime = 'nodejs';
-
 const schema = z.object({ name: z.string().min(1).max(120) });
 
 /**

@@ -4,8 +4,6 @@ import { decision, timelineEvent } from '@metu/db/schema';
 import { createDecisionSchema } from '@metu/types';
 import { resolveSession, unauthorized } from '@/lib/bearer';
 
-export const runtime = 'nodejs';
-
 export async function POST(req: Request) {
   const session = await resolveSession(req);
   if (!session) return unauthorized();

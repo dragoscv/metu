@@ -14,8 +14,6 @@ import { forbidden, hasScope, resolveSession, unauthorized } from '@/lib/bearer'
 import { rateLimit } from '@/lib/ratelimit';
 import { inngest } from '@/inngest/client';
 
-export const runtime = 'nodejs';
-
 const schema = z.object({
   kind: z.string().min(1).max(120),
   title: z.string().max(200).optional(),

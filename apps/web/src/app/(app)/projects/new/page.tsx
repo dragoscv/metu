@@ -4,8 +4,6 @@ import { Page, PageHeader } from '@metu/ui';
 import { redirect } from 'next/navigation';
 import { ProjectStarter } from '@/components/projects/project-starter';
 
-export const dynamic = 'force-dynamic';
-
 export default async function NewProjectPage({
   searchParams,
 }: {

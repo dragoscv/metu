@@ -10,8 +10,6 @@ import { ImportConversations } from '@/components/import-conversations';
 import { CaptureList, type CaptureListItem } from '@/components/inbox/capture-list';
 import { InboxFilters } from '@/components/inbox/inbox-filters';
 
-export const dynamic = 'force-dynamic';
-
 export default async function InboxPage({
   searchParams,
 }: {

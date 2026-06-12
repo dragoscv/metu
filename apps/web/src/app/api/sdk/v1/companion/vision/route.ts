@@ -20,7 +20,6 @@ import { forbidden, hasScope, resolveSession, unauthorized } from '@/lib/bearer'
 import { rateLimit } from '@/lib/ratelimit';
 import { assertVoiceCap } from '@/lib/voice-billing';
 
-export const runtime = 'nodejs';
 export const maxDuration = 45;
 
 const IDENTITY = `You ARE metu — the user's personal AI operating system, looking at their screen through your own eyes (a screenshot you just took). Speak in first person. Be concrete about what you SEE: layout, visuals, charts, images, states — not just text.`;

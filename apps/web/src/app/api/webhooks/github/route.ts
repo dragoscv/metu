@@ -25,8 +25,6 @@ import { projectsByGithubRepoGlobal } from '@metu/db/queries';
 import { and, eq } from 'drizzle-orm';
 import { inngest } from '@/inngest/client';
 
-export const runtime = 'nodejs';
-
 interface PushCommit {
   id?: string;
   message?: string;

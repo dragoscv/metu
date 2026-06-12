@@ -11,9 +11,6 @@ import { getDb } from '@metu/db';
 import { device } from '@metu/db/schema';
 import { forbidden, hasScope, resolveSession, unauthorized } from '@/lib/bearer';
 
-export const runtime = 'nodejs';
-export const dynamic = 'force-dynamic';
-
 const FRESH_MS = 5 * 60 * 1000;
 
 export async function GET(req: Request) {

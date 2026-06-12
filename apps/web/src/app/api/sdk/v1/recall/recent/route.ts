@@ -12,9 +12,6 @@ import { timelineEvent } from '@metu/db/schema';
 import { forbidden, hasScope, resolveSession, unauthorized } from '@/lib/bearer';
 import { trace } from '@/lib/request-id';
 
-export const runtime = 'nodejs';
-export const dynamic = 'force-dynamic';
-
 export async function GET(req: Request) {
   const session = await resolveSession(req);
   if (!session) return trace(req, unauthorized());

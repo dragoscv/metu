@@ -6,8 +6,6 @@ import { timelineEvent, user, workspaceMember } from '@metu/db/schema';
 import { Page, PageHeader, Card, Badge, EmptyState } from '@metu/ui';
 import { ScrollText } from 'lucide-react';
 
-export const dynamic = 'force-dynamic';
-
 const AUDIT_KINDS = [
   'workspace.member.added',
   'workspace.member.role_changed',

@@ -16,8 +16,6 @@ import { getDb } from '@metu/db';
 import { capture, project, timelineEvent } from '@metu/db/schema';
 import { formatDistanceToNow } from 'date-fns';
 
-export const dynamic = 'force-dynamic';
-
 interface PageProps {
   params: Promise<{ name: string }>;
 }

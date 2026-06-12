@@ -22,8 +22,6 @@ import { getWorkspaceBillingTier } from '@/lib/voice-billing';
 import { isVoiceProviderAllowed } from '@metu/voice';
 import { log } from '@/lib/logger';
 
-export const runtime = 'nodejs';
-
 const Body = z.object({
   personaSlug: z.string().min(1).max(80),
 });

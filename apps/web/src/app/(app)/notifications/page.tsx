@@ -12,8 +12,6 @@ import { ProposalActions } from '@/components/proposal-actions';
 import Link from 'next/link';
 import { formatDistanceToNow } from 'date-fns';
 
-export const dynamic = 'force-dynamic';
-
 const URGENCY_VALUES = ['low', 'normal', 'high', 'critical'] as const;
 type Urgency = (typeof URGENCY_VALUES)[number];
 

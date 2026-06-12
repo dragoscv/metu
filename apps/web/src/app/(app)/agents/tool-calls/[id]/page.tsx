@@ -15,8 +15,6 @@ import { getDb } from '@metu/db';
 import { toolCall } from '@metu/db/schema';
 import { ToolCallUndoButton } from '@/components/tool-call-undo-button';
 
-export const dynamic = 'force-dynamic';
-
 const STATUS_TONE: Record<string, string> = {
   success: 'text-emerald-300',
   failed: 'text-red-300',

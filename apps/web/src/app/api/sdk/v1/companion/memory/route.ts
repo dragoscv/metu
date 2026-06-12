@@ -20,7 +20,6 @@ import { and, eq, inArray } from 'drizzle-orm';
 import { forbidden, hasScope, resolveSession, unauthorized } from '@/lib/bearer';
 import { rateLimit } from '@/lib/ratelimit';
 
-export const runtime = 'nodejs';
 export const maxDuration = 30;
 
 const Body = z.object({

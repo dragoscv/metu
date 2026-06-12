@@ -23,8 +23,6 @@ import {
   toolCallTopByCost,
 } from '@metu/db/queries';
 
-export const runtime = 'nodejs';
-
 const DEFAULT_SINCE_DAYS = 7;
 const MAX_SINCE_DAYS = 365;
 

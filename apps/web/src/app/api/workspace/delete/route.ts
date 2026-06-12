@@ -22,9 +22,6 @@ import { getDb } from '@metu/db';
 import { workspace, workspaceMember } from '@metu/db/schema';
 import { log } from '@/lib/logger';
 
-export const runtime = 'nodejs';
-export const dynamic = 'force-dynamic';
-
 const BodySchema = z.object({
   confirm: z.string().uuid(),
 });

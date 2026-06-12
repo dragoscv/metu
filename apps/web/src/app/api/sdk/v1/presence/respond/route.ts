@@ -18,7 +18,6 @@ import { getBuiltInPersona } from '@metu/presence';
 import { forbidden, hasScope, resolveSession, unauthorized } from '@/lib/bearer';
 import { rateLimit } from '@/lib/ratelimit';
 
-export const runtime = 'nodejs';
 export const maxDuration = 60;
 
 const Body = z.object({

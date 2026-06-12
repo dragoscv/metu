@@ -24,9 +24,6 @@ function csvEscape(v: unknown): string {
   return s;
 }
 
-export const dynamic = 'force-dynamic';
-export const runtime = 'nodejs';
-
 export async function GET(req: Request) {
   const session = await auth();
   if (!session) return new Response('unauthorized', { status: 401 });

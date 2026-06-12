@@ -18,8 +18,6 @@ import { ProjectsToolbar } from '@/components/projects/projects-toolbar';
 import { SeedDemoButton } from '@/components/dashboard/seed-demo-button';
 import { KeyboardFocus } from '@/components/keyboard-focus';
 
-export const dynamic = 'force-dynamic';
-
 const VALID_SORT = new Set(['momentum', 'name', 'recent']);
 const VALID_ACTIVITY = new Set(['today', 'week', 'month', 'stale']);
 

@@ -1,10 +1,9 @@
 /**
  * /docs/mcp — Model Context Protocol bridge.
  */
-export const dynamic = 'force-static';
-export const revalidate = 3600;
 
-export default function DocsMcpPage() {
+export default async function DocsMcpPage() {
+  'use cache';
   return (
     <article className="prose prose-invert max-w-none">
       <h1>Model Context Protocol (MCP)</h1>

@@ -1,10 +1,9 @@
 /**
  * /docs/companion — Tauri desktop companion overview + capability gating.
  */
-export const dynamic = 'force-static';
-export const revalidate = 3600;
 
-export default function DocsCompanionPage() {
+export default async function DocsCompanionPage() {
+  'use cache';
   return (
     <article className="prose prose-invert max-w-none">
       <h1>Companion (desktop)</h1>

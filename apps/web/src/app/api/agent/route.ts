@@ -5,7 +5,6 @@ import { getModel } from '@metu/ai';
 import { listProjects } from '@metu/db/queries';
 import { resolveSession, unauthorized } from '@/lib/bearer';
 
-export const runtime = 'nodejs';
 export const maxDuration = 60;
 
 export async function POST(req: Request) {

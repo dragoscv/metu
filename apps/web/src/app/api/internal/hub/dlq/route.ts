@@ -17,8 +17,6 @@ import { safeEqual } from '@/lib/safe-equal';
 import { hubBroadcast, type DeviceKindFilter } from '@/lib/hub';
 import type { ServerEvent } from '@/lib/hub';
 
-export const runtime = 'nodejs';
-
 function authed(req: Request): boolean {
   const secret = process.env.HUB_INTERNAL_SECRET;
   if (!secret) return false;

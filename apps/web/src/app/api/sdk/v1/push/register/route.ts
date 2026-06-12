@@ -13,8 +13,6 @@ import { forbidden, hasScope, resolveSession, unauthorized } from '@/lib/bearer'
 import { rateLimit } from '@/lib/ratelimit';
 import { inngest } from '@/inngest/client';
 
-export const runtime = 'nodejs';
-
 const schema = z.discriminatedUnion('channel', [
   z.object({
     channel: z.literal('web_push'),

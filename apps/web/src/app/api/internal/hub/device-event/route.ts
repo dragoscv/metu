@@ -17,8 +17,6 @@ import { safeEqual } from '@/lib/safe-equal';
 import { hubBroadcast } from '@/lib/hub';
 import { randomUUID } from 'node:crypto';
 
-export const runtime = 'nodejs';
-
 const schema = z.object({
   workspaceId: z.string().uuid(),
   deviceId: z.string().uuid(),

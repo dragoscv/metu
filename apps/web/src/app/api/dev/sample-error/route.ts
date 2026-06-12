@@ -11,8 +11,6 @@
  */
 import { log } from '@/lib/logger';
 
-export const runtime = 'nodejs';
-
 export function GET(req: Request) {
   if (process.env.NODE_ENV === 'production') {
     return Response.json({ ok: false, error: 'disabled_in_production' }, { status: 404 });

@@ -5,8 +5,6 @@ import { Badge, Card, EmptyState, Page, PageHeader } from '@metu/ui';
 import { CalendarDays, Gavel, Sparkles, Target } from 'lucide-react';
 import Link from 'next/link';
 
-export const dynamic = 'force-dynamic';
-
 interface PageProps {
   searchParams: Promise<{ window?: string }>;
 }
@@ -52,7 +50,7 @@ export default async function ReviewPage({ searchParams }: PageProps) {
                 href={`/review?window=${d}`}
                 className={`rounded-md border px-2 py-1 transition ${
                   d === windowDays
-                    ? 'border-[var(--color-brand)] bg-[var(--color-brand)]/10 text-[var(--color-brand)]'
+                    ? 'bg-[var(--color-brand)]/10 border-[var(--color-brand)] text-[var(--color-brand)]'
                     : 'border-[var(--color-border)] text-[var(--color-fg-muted)] hover:bg-[var(--color-bg-elevated)]'
                 }`}
               >
@@ -200,10 +198,7 @@ export default async function ReviewPage({ searchParams }: PageProps) {
                       </div>
                     </div>
                     <div className="h-1 overflow-hidden rounded-full bg-[var(--color-bg-elevated)]">
-                      <div
-                        className={`h-full ${driftTone}`}
-                        style={{ width: `${pct}%` }}
-                      />
+                      <div className={`h-full ${driftTone}`} style={{ width: `${pct}%` }} />
                     </div>
                   </Link>
                 </li>
@@ -262,9 +257,7 @@ function Stat({ label, value, sub }: { label: string; value: number; sub?: strin
         {label}
       </div>
       <div className="mt-0.5 text-2xl font-semibold tabular-nums">{value}</div>
-      {sub && (
-        <div className="mt-0.5 text-[11px] text-[var(--color-fg-subtle)]">{sub}</div>
-      )}
+      {sub && <div className="mt-0.5 text-[11px] text-[var(--color-fg-subtle)]">{sub}</div>}
     </Card>
   );
 }

@@ -13,8 +13,6 @@ import { Card, Page, PageHeader } from '@metu/ui';
 import { revokeApiTokenAction } from '@/app/actions/api-tokens';
 import { IssueApiTokenForm } from '@/components/issue-api-token-form';
 
-export const dynamic = 'force-dynamic';
-
 export default async function ApiTokensPage() {
   const session = await auth();
   if (!session) redirect('/sign-in');

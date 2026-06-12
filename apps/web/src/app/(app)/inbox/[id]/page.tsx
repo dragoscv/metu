@@ -3,8 +3,6 @@ import { getCaptureById, listProjects } from '@metu/db/queries';
 import { notFound, redirect } from 'next/navigation';
 import { CaptureDetail } from '@/components/inbox/capture-detail';
 
-export const dynamic = 'force-dynamic';
-
 export default async function CaptureDetailPage({ params }: { params: Promise<{ id: string }> }) {
   const session = await auth();
   if (!session) redirect('/sign-in');

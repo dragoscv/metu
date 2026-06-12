@@ -32,7 +32,6 @@ import { rateLimit } from '@/lib/ratelimit';
 import { log } from '@/lib/logger';
 import { inngest } from '@/inngest/client';
 
-export const runtime = 'nodejs';
 export const maxDuration = 30;
 
 const Body = z.object({

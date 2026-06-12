@@ -16,9 +16,6 @@
  */
 import { NextResponse } from 'next/server';
 
-export const runtime = 'nodejs';
-export const dynamic = 'force-dynamic';
-
 const FIVE_MIN_S = 60 * 5;
 
 interface ReleaseAsset {
