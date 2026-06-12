@@ -82,7 +82,16 @@ export const MODEL_CATALOG: Record<AiProvider, ModelEntry[]> = {
     { id: 'codai-fast', label: 'Codai (fast)', intents: ['fast', 'agentic'] },
     { id: 'codai-vision', label: 'Codai (vision)', intents: ['vision', 'agentic'] },
     { id: 'claude-opus-4-8', label: 'Claude Opus 4.8 (Codai)', intents: reasoning },
+    // Embeddings: codai serves text-embedding-3-small natively (Azure-backed,
+    // 1536-dim — matches the pgvector column) plus the codai-embed sentinel
+    // that routes to the platform default. Keep 3-small as the metu default
+    // so dims never drift.
     { id: 'text-embedding-3-small', label: 'Embed: 3-small (1536)', intents: ['embed'] },
+    { id: 'codai-embed', label: 'Embed: codai default', intents: ['embed'] },
+    // Audio: whisper-compatible STT at /v1/audio/transcriptions and TTS at
+    // /v1/audio/speech (gateway proxies to Azure codai-foundry deployments).
+    { id: 'codai-transcribe', label: 'Transcribe: Whisper (Codai)', intents: ['transcribe'] },
+    { id: 'gpt-4o-mini-transcribe', label: 'Transcribe: 4o-mini (Codai)', intents: ['transcribe'] },
   ],
   // Voice providers — no LLM models. Listed only so MODEL_CATALOG matches
   // the AiProvider union (extended for BYOK voice keys in slice 5b).

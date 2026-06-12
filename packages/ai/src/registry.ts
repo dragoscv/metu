@@ -107,6 +107,8 @@ const DEFAULTS: Record<AiProvider, Partial<Record<AiIntent, string>>> = {
     fast: 'codai-fast',
     vision: 'codai-vision',
     embed: 'text-embedding-3-small',
+    // Whisper-compatible STT served by the gateway at /v1/audio/transcriptions.
+    transcribe: 'codai-transcribe',
   },
   // Voice providers — no LLM intents. Empty maps so DEFAULTS matches the
   // AiProvider union (extended for BYOK voice keys in slice 5b).
@@ -123,8 +125,9 @@ const FALLBACK_CHAIN: Record<AiIntent, AiProvider[]> = {
   agentic: ['codai', 'custom', 'copilot', 'anthropic', 'openai', 'google', 'azure_openai'],
   fast: ['codai', 'custom', 'copilot', 'google', 'openai', 'anthropic', 'azure_openai'],
   embed: ['codai', 'custom', 'openai', 'azure_openai', 'google', 'ollama'],
-  // codai has no transcription endpoint — keep Whisper-compatible providers.
-  transcribe: ['openai', 'google'],
+  // codai now serves /v1/audio/transcriptions (Whisper-compatible, Azure-
+  // backed) — prefer it like the other intents, with direct providers after.
+  transcribe: ['codai', 'openai', 'google'],
   vision: ['codai', 'custom', 'copilot', 'anthropic', 'openai', 'google'],
 };
 

@@ -85,7 +85,31 @@ export async function transcribeFromUrl(input: { url: string; language?: string 
     log.warn('worker.stt.google_failed_fallback_whisper', undefined, err);
   }
 
-  // Fallback: OpenAI Whisper via REST
+  // Fallback 1: codai gateway (Whisper-compatible /v1/audio/transcriptions,
+  // Azure-backed). Preferred over direct OpenAI: one bill, one key, and the
+  // gateway's usage accounting. Configure with CODAI_API_KEY (+ optional
+  // CODAI_BASE_URL override).
+  if (process.env.CODAI_API_KEY) {
+    try {
+      const base = (process.env.CODAI_BASE_URL ?? 'https://ai.codai.ro/v1').replace(/\/+$/, '');
+      const fd = new FormData();
+      fd.append('file', new Blob([buf], { type: 'audio/webm' }), 'audio.webm');
+      fd.append('model', 'codai-transcribe');
+      if (input.language) fd.append('language', input.language);
+      const r = await fetch(`${base}/audio/transcriptions`, {
+        method: 'POST',
+        headers: { Authorization: `Bearer ${process.env.CODAI_API_KEY}` },
+        body: fd,
+      });
+      if (!r.ok) throw new Error(`codai transcription failed ${r.status}`);
+      const json = (await r.json()) as { text: string };
+      return { text: json.text, source: 'codai' as const };
+    } catch (err) {
+      log.warn('worker.stt.codai_failed_fallback_whisper', undefined, err);
+    }
+  }
+
+  // Fallback 2: OpenAI Whisper via REST
   if (!process.env.OPENAI_API_KEY) throw new Error('No transcription provider available');
   const fd = new FormData();
   fd.append('file', new Blob([buf], { type: 'audio/webm' }), 'audio.webm');
