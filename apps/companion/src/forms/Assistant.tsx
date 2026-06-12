@@ -20,7 +20,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { invoke } from '@tauri-apps/api/core';
 import { listen } from '@tauri-apps/api/event';
-import { getCurrentWindow, PhysicalPosition } from '@tauri-apps/api/window';
+import { getCurrentWindow, LogicalSize, PhysicalPosition } from '@tauri-apps/api/window';
 import { ensureFreshAuth, loadAuth, type AuthState } from '../state/auth';
 import { isTauri } from '../state/runtime';
 import { useVoiceSession } from '../state/useVoiceSession';
@@ -211,6 +211,18 @@ function AssistantSkin({
   const dpr = typeof window !== 'undefined' ? window.devicePixelRatio || 1 : 1;
   const physW = Math.round(WIN_W * dpr);
   const physH = Math.round(WIN_H * dpr);
+
+  // Size invariant: the physics positions the window as `feet − height`,
+  // so a mismatch between the REAL window size and WIN_W/WIN_H silently
+  // offsets the avatar from the taskbar (the "hovers above the bar" bug:
+  // tauri.conf.json said 560 while JS assumed 720). Enforce the JS size
+  // at mount — config drift can no longer break placement.
+  useEffect(() => {
+    if (!isTauri()) return;
+    void getCurrentWindow()
+      .setSize(new LogicalSize(WIN_W, WIN_H))
+      .catch(() => {});
+  }, []);
 
   const conversing = speaking || !!listening;
 

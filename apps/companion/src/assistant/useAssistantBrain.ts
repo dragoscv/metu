@@ -281,11 +281,24 @@ export function useAssistantBrain(opts: Options): AssistantBrainState {
         bodyRef.current.state = 'falling';
       }
     })();
+    // Refresh monitor/work-area geometry every 5s (taskbar auto-hide,
+    // resolution/DPI changes, monitor plug). The work-area floor feeds
+    // both the dock target and the placement invariant, so staleness
+    // here = avatar standing at the WRONG height for up to the interval.
     const monTimer = setInterval(() => {
       void getMonitors().then((m) => {
-        if (m.length) monitorsRef.current = m;
+        if (!m.length) return;
+        const prev = monitorsRef.current;
+        monitorsRef.current = m;
+        // Work-area changed (taskbar moved/resized/auto-hidden)? Force a
+        // re-dock so the unit relocates to the new floor immediately.
+        const key = (xs: typeof m) =>
+          xs.map((mm) => `${mm.workX},${mm.workY},${mm.workW},${mm.workH}`).join('|');
+        if (prev.length && key(prev) !== key(m)) {
+          window.dispatchEvent(new CustomEvent('metu:workarea-changed'));
+        }
       });
-    }, 30_000);
+    }, 5_000);
     return () => {
       alive = false;
       clearInterval(monTimer);
@@ -386,9 +399,19 @@ export function useAssistantBrain(opts: Options): AssistantBrainState {
     };
 
     timer = setTimeout(decide, 2_000);
+    // Work-area changed (taskbar resize/auto-hide/monitor change) →
+    // re-dock NOW instead of waiting for the next 5s decide cycle, and
+    // bust the hysteresis key so the new dock target always applies.
+    const onWorkareaChange = () => {
+      lastDockKey = '';
+      clearTimeout(timer);
+      void decide();
+    };
+    window.addEventListener('metu:workarea-changed', onWorkareaChange);
     return () => {
       cancelled = true;
       clearTimeout(timer);
+      window.removeEventListener('metu:workarea-changed', onWorkareaChange);
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [width, height, dockTarget]);
@@ -545,8 +568,36 @@ export function useAssistantBrain(opts: Options): AssistantBrainState {
         void w.setPosition(new PhysicalPosition(wx, wy)).catch(() => {});
       }
     }, FRAME_MS);
+
+    // ── Placement invariant (Jarvis v4.5) ─────────────────────────────
+    // Every 3s while idle/standing: the feet must sit ON the work-area
+    // floor of their monitor (±4px). Catches ANY source of drift — DPI
+    // change, taskbar resize/auto-hide, config/window-size mismatch,
+    // stale foot measurements — and eases the body back. This is the
+    // self-correcting layer that keeps the unit grounded forever.
+    const invariant = setInterval(() => {
+      if (pausedRef.current || lockedRef.current) return;
+      const body2 = bodyRef.current;
+      if (body2.state !== 'idle' && body2.state !== 'sitting') return;
+      const mons = monitorsRef.current;
+      const mon = mons.find(
+        (m) => body2.x >= m.x && body2.x < m.x + m.w && body2.y >= m.y && body2.y <= m.y + m.h + 80,
+      );
+      if (!mon) return;
+      const floorY = (mon.workY ?? mon.y) + (mon.workH ?? mon.h);
+      // Only correct when the body claims to stand on the TASKBAR floor
+      // (not perched on a window platform).
+      const onWindowPlatform = body2.ground && body2.ground.kind === 'window';
+      if (onWindowPlatform) return;
+      const delta = floorY - body2.y;
+      if (Math.abs(delta) > 4 && Math.abs(delta) < 300) {
+        body2.y = floorY;
+        if (body2.ground) body2.ground = { ...body2.ground, y: floorY };
+      }
+    }, 3_000);
     return () => {
       clearInterval(timer);
+      clearInterval(invariant);
       screenWorld.stop();
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps

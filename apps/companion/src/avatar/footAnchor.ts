@@ -44,6 +44,26 @@ export function getFootOffsetLogical(): number {
 export function reportFootOffset(logicalPx: number): void {
   if (Number.isFinite(logicalPx) && logicalPx >= 0 && logicalPx <= 400) {
     footOffsetLogical = logicalPx;
+    // Auto-calibrate once per app version: the measured offset becomes
+    // the trusted baseline after an update (stage layout/camera/geometry
+    // changes move the feet) — manual tune persists ON TOP of it, but a
+    // stale tune from a previous version's wrong baseline is cleared.
+    try {
+      // __APP_VERSION__ is a Vite define (compile-time constant).
+      const ver = typeof __APP_VERSION__ !== 'undefined' ? __APP_VERSION__ : 'dev';
+      const seenKey = 'metu.footCalibratedVersion';
+      if (localStorage.getItem(seenKey) !== ver) {
+        localStorage.setItem(seenKey, ver);
+        if (Math.abs(tuneLogical) > 20) {
+          // A large tune was probably compensating for an OLD bug —
+          // reset so the fresh measurement stands on its own.
+          tuneLogical = 0;
+          localStorage.setItem(TUNE_KEY, '0');
+        }
+      }
+    } catch {
+      /* storage unavailable */
+    }
   }
 }
 
