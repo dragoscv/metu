@@ -46,10 +46,16 @@ async function probeHub(): Promise<ProbeResult> {
 
 export async function GET(req: Request) {
   const url = new URL(req.url);
+  // Server version for client About/Settings displays (companion shows
+  // "App vX · Server vY"). Build-time env, falls back to dev.
+  const version = process.env.NEXT_PUBLIC_APP_VERSION ?? process.env.npm_package_version ?? 'dev';
   if (url.searchParams.get('deep') !== '1') {
-    return Response.json({ ok: true, ts: Date.now() });
+    return Response.json({ ok: true, ts: Date.now(), version });
   }
   const [db, hub] = await Promise.all([probeDb(), probeHub()]);
   const ok = db.ok && hub.ok;
-  return Response.json({ ok, ts: Date.now(), checks: { db, hub } }, { status: ok ? 200 : 503 });
+  return Response.json(
+    { ok, ts: Date.now(), version, checks: { db, hub } },
+    { status: ok ? 200 : 503 },
+  );
 }

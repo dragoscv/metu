@@ -22,6 +22,7 @@ import { info, warn } from './state/debug';
 import { Titlebar } from './ui/Titlebar';
 import { Splash } from './ui/Splash';
 import { DebugPanel } from './ui/DebugPanel';
+import { applyAppearance, onAppearanceChange } from './state/appearance';
 
 export function App() {
   const [auth, setAuth] = useState<AuthState | null | 'loading'>('loading');
@@ -31,6 +32,13 @@ export function App() {
 
   useEffect(() => {
     loadAuth().then(setAuth);
+  }, []);
+
+  // Appearance CSS vars (window opacity etc.) — applied at boot and on
+  // any change (including cross-window via the storage event).
+  useEffect(() => {
+    applyAppearance();
+    return onAppearanceChange(() => {});
   }, []);
 
   // Minimum splash dwell so the wake-up animation never flickers.

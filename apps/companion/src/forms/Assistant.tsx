@@ -56,6 +56,7 @@ import { assistantLines } from '../assistant/assistantMessages';
 import { fromPath } from '../assistant/attachments';
 import { executeOpen, parseOpenIntent, readClipboard } from '../assistant/desktopActions';
 import { getMood, moodGreetingSuffix, recordMoodEvent } from '../assistant/mood';
+import { applyAppearance, onAppearanceChange } from '../state/appearance';
 import { startAutonomy } from '../assistant/autonomy';
 import { getSmartChips } from '../assistant/smartChips';
 import { showHighlight } from '../assistant/overlay-bridge';
@@ -1152,6 +1153,34 @@ function AssistantSkin({
         .catch(() => {});
     }
   }, [chatOpen]);
+
+  // Appearance (Jarvis v9): avatar opacity + glass intensity CSS vars,
+  // synced live from the main window's sliders via the storage event.
+  useEffect(() => {
+    applyAppearance();
+    return onAppearanceChange(() => {});
+  }, []);
+
+  // Open-chat requests from the main window (Home dashboard cards).
+  useEffect(() => {
+    if (!isTauri()) return;
+    let unlisten: (() => void) | undefined;
+    void listen<{ prefill?: string }>('metu://assistant-open-chat', (e) => {
+      setAmbient(null);
+      setChatBubble(null);
+      setChatOpen(true);
+      const prefill = e.payload?.prefill;
+      if (prefill) {
+        // Give the panel a tick to mount, then prefill the composer.
+        setTimeout(() => {
+          window.dispatchEvent(new CustomEvent('metu:chat-prefill', { detail: prefill }));
+        }, 350);
+      }
+    }).then((fn) => {
+      unlisten = fn;
+    });
+    return () => unlisten?.();
+  }, []);
 
   // Single click → conversational bubble with quick actions.
   // Double click → morph into the chat panel.

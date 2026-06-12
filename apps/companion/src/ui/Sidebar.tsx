@@ -11,7 +11,8 @@
 import { AvatarHost } from '../avatar/AvatarHost';
 import type { AvatarState } from '../avatar/types';
 import type { HubStatus } from '../state/useHubConnection';
-import { NAV_ITEMS, type ViewId } from './nav';
+import { getNavItems, type ViewId } from './nav';
+import { useT } from '../state/locale';
 
 const statusLabels: Record<HubStatus, string> = {
   idle: 'Idle',
@@ -33,6 +34,8 @@ export function Sidebar({
   avatarState: AvatarState;
 }) {
   const ok = status === 'open';
+  // Subscribe to UI locale switches so nav labels re-render.
+  useT();
 
   return (
     <nav className="sidebar">
@@ -47,7 +50,7 @@ export function Sidebar({
       </div>
 
       <div className="sidebar__items">
-        {NAV_ITEMS.map((item) => {
+        {getNavItems().map((item) => {
           const isActive = item.id === active;
           return (
             <button

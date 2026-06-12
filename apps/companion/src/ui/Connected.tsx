@@ -81,7 +81,7 @@ export function Connected({
           <motion.div key={view} className="console__view" {...viewFade}>
             {view === 'home' && <HomeView auth={auth} status={status} />}
             {view === 'avatar' && <AvatarView />}
-            {view === 'assistant' && <AssistantView />}
+            {view === 'assistant' && <AssistantView auth={auth} />}
             {view === 'sensors' && <SensorsView onChange={onSensorsChange} />}
             {view === 'activity' && <ActivityView auth={auth} status={status} />}
             {view === 'settings' && (

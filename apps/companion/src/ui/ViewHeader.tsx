@@ -3,10 +3,13 @@
  * Pulls its label/hint from the declarative nav model so the sidebar and the
  * view header never drift.
  */
-import { NAV_ITEMS, type ViewId } from './nav';
+import { getNavItems, type ViewId } from './nav';
+import { useT } from '../state/locale';
 
 export function ViewHeader({ id, actions }: { id: ViewId; actions?: React.ReactNode }) {
-  const item = NAV_ITEMS.find((n) => n.id === id);
+  // useT() subscribes to locale switches so the header re-renders.
+  useT();
+  const item = getNavItems().find((n) => n.id === id);
   if (!item) return null;
   return (
     <header className="view__header">
