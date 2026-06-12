@@ -225,7 +225,7 @@ export const onGithubRepoStatsSync = inngest.createFunction(
           const candidateShas = newCommits.map((c) => c.sha).filter(Boolean) as string[];
           const existingShas = new Set<string>();
           if (candidateShas.length > 0) {
-            const { sql: rawSql } = await import('drizzle-orm');
+            const { sql: rawSql, inArray: inArr } = await import('drizzle-orm');
             const seen = await db
               .select({ sha: rawSql<string>`payload->>'sha'` })
               .from(timelineEvent)
@@ -234,7 +234,7 @@ export const onGithubRepoStatsSync = inngest.createFunction(
                   eq(timelineEvent.workspaceId, workspaceId),
                   eq(timelineEvent.projectId, projectId),
                   eq(timelineEvent.kind, 'commit.pushed'),
-                  rawSql`payload->>'sha' = ANY(${candidateShas})`,
+                  inArr(rawSql`payload->>'sha'`, candidateShas),
                 ),
               );
             for (const r of seen) if (r.sha) existingShas.add(r.sha);

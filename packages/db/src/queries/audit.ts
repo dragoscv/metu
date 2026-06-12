@@ -44,9 +44,9 @@ export async function listToolCalls({
   const conditions: SQL[] = [eq(toolCall.workspaceId, workspaceId)];
   if (tools && tools.length > 0) conditions.push(inArray(toolCall.tool, tools));
   if (statuses && statuses.length > 0)
-    conditions.push(sql`${toolCall.status} = ANY(${statuses}::text[])`);
+    conditions.push(inArray(sql`${toolCall.status}::text`, statuses));
   if (runKinds && runKinds.length > 0)
-    conditions.push(sql`${agentRun.kind} = ANY(${runKinds}::text[])`);
+    conditions.push(inArray(sql`${agentRun.kind}::text`, runKinds));
   if (since) conditions.push(gte(toolCall.requestedAt, since));
   if (search && search.trim()) {
     const q = `%${search.trim()}%`;
@@ -130,7 +130,7 @@ export async function exportToolCalls({
   const conditions: SQL[] = [eq(toolCall.workspaceId, workspaceId)];
   if (tools && tools.length > 0) conditions.push(inArray(toolCall.tool, tools));
   if (statuses && statuses.length > 0)
-    conditions.push(sql`${toolCall.status} = ANY(${statuses}::text[])`);
+    conditions.push(inArray(sql`${toolCall.status}::text`, statuses));
   if (since) conditions.push(gte(toolCall.requestedAt, since));
   if (search && search.trim()) {
     const q = `%${search.trim()}%`;

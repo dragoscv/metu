@@ -64,7 +64,7 @@ export async function listProjectsFiltered({
 
   if (linkProviders.length > 0) {
     filters.push(
-      sql`exists (select 1 from project_link pl where pl.project_id = ${project.id} and pl.provider = any(${linkProviders}))`,
+      sql`exists (select 1 from project_link pl where pl.project_id = ${project.id} and pl.provider = any(${sql.raw(`array[${linkProviders.map((p) => `'${p.replace(/'/g, "''")}'`).join(',')}]::text[]`)}))`,
     );
   }
 
@@ -73,7 +73,7 @@ export async function listProjectsFiltered({
     filters.push(
       sql`exists (
         select 1 from jsonb_array_elements_text(coalesce(${project.metadata} -> 'stack', '[]'::jsonb)) tag
-        where tag = any(${stack})
+        where tag = any(${sql.raw(`array[${stack.map((s) => `'${s.replace(/'/g, "''")}'`).join(',')}]::text[]`)})
       )`,
     );
   }

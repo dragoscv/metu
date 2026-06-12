@@ -11,7 +11,7 @@
  * Pull-only — emits no notifications. The notification path runs through
  * `daily-digest-email` which is a separate, opt-in flow.
  */
-import { and, eq, gte, sql } from 'drizzle-orm';
+import { and, eq, gte, inArray } from 'drizzle-orm';
 import { getDb } from '@metu/db';
 import { timelineEvent } from '@metu/db/schema';
 import { listWorkspacesWithGithubRepos } from '@metu/db/queries';
@@ -59,7 +59,7 @@ async function runDigest(step: any) {
           and(
             eq(timelineEvent.workspaceId, ws.workspaceId),
             gte(timelineEvent.occurredAt, since),
-            sql`${timelineEvent.kind} = ANY(${ALL_KINDS})`,
+            inArray(timelineEvent.kind, ALL_KINDS),
           ),
         );
       const counts: Record<string, number> = {};

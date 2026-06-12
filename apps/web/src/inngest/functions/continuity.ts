@@ -8,7 +8,7 @@
  * call. Concurrency-limited per-workspace so a noisy workspace can't
  * starve everyone else.
  */
-import { and, desc, eq, gt, gte, isNull, sql } from 'drizzle-orm';
+import { and, desc, eq, gt, gte, inArray, isNull, sql } from 'drizzle-orm';
 import { restoreProjectContext } from '@metu/core/continuity';
 import { getDb } from '@metu/db';
 import { workspacesWithLiveDevices } from '@metu/db/queries';
@@ -233,7 +233,7 @@ export const continuityMorningDelivery = inngest.createFunction(
       const members = await db
         .select({ workspaceId: workspaceMember.workspaceId, userId: workspaceMember.userId })
         .from(workspaceMember)
-        .where(sql`${workspaceMember.workspaceId} = any(${wsIds})`);
+        .where(inArray(workspaceMember.workspaceId, wsIds));
 
       const byWs = new Map(briefings.map((b) => [b.workspace_id, b]));
       return members
@@ -272,7 +272,10 @@ export const continuityMorningDelivery = inngest.createFunction(
           and(
             eq(notification.source, 'conductor:morning-brief'),
             gte(notification.createdAt, since),
-            sql`${notification.userId} = any(${recipients.map((r) => r.userId)})`,
+            inArray(
+              notification.userId,
+              recipients.map((r) => r.userId),
+            ),
           ),
         );
       const seen = new Set(existing.map((e) => `${e.userId}:${e.briefingId}`));
@@ -318,7 +321,7 @@ export const continuityMorningDelivery = inngest.createFunction(
           workspaceId: telegramChatLink.workspaceId,
         })
         .from(telegramChatLink)
-        .where(sql`${telegramChatLink.workspaceId} = any(${wsIds})`);
+        .where(inArray(telegramChatLink.workspaceId, wsIds));
       if (links.length === 0) return 0;
 
       // Best-effort de-dup: one chat = one message per workspace.

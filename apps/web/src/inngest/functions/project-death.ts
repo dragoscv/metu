@@ -10,7 +10,7 @@
  * meaningful activity (or createdAt) is > 21d old, fans a conductor/notify
  * event per workspace member with three quick actions: keep / pause / kill.
  */
-import { and, eq, isNull, lt, or, sql } from 'drizzle-orm';
+import { and, eq, inArray, isNull, lt, or } from 'drizzle-orm';
 import { getDb } from '@metu/db';
 import { project, workspaceMember } from '@metu/db/schema';
 import { inngest } from '../client';
@@ -62,7 +62,7 @@ export const projectDeathDetectionWeekly = inngest.createFunction(
       return db
         .select({ workspaceId: workspaceMember.workspaceId, userId: workspaceMember.userId })
         .from(workspaceMember)
-        .where(sql`${workspaceMember.workspaceId} = any(${wsIds})`);
+        .where(inArray(workspaceMember.workspaceId, wsIds));
     });
 
     const byWs = new Map<string, typeof stale>();

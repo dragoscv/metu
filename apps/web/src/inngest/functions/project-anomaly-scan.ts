@@ -12,7 +12,7 @@
  * with weight ≥ 0.5 counts (commits, PRs merged, tasks completed,
  * decisions, issues closed, workflow failures).
  */
-import { and, eq, gte, lt, sql } from 'drizzle-orm';
+import { and, eq, gte, inArray, lt, sql } from 'drizzle-orm';
 import { getDb } from '@metu/db';
 import { project, timelineEvent } from '@metu/db/schema';
 import { inngest } from '../client';
@@ -76,7 +76,7 @@ async function runAnomalyScan(step: any) {
             eq(timelineEvent.workspaceId, p.workspaceId),
             eq(timelineEvent.projectId, p.id),
             gte(timelineEvent.occurredAt, recentSince),
-            sql`${timelineEvent.kind} = ANY(${MEANINGFUL_KINDS})`,
+            inArray(timelineEvent.kind, MEANINGFUL_KINDS),
           ),
         );
       const [prior] = await db
@@ -88,7 +88,7 @@ async function runAnomalyScan(step: any) {
             eq(timelineEvent.projectId, p.id),
             gte(timelineEvent.occurredAt, priorSince),
             lt(timelineEvent.occurredAt, recentSince),
-            sql`${timelineEvent.kind} = ANY(${MEANINGFUL_KINDS})`,
+            inArray(timelineEvent.kind, MEANINGFUL_KINDS),
           ),
         );
       const recentN = recent?.n ?? 0;

@@ -18,6 +18,11 @@ const isProd = process.env.NODE_ENV === 'production';
 const nextConfig: NextConfig = {
   reactStrictMode: true,
   reactCompiler: isProd,
+  // Pin the monorepo root explicitly — inference warns and has produced
+  // Turbopack panics when multiple lockfiles are visible on the machine.
+  turbopack: {
+    root: resolve(__dirname, '../..'),
+  },
   experimental: {
     turbopackFileSystemCacheForDev: true,
   },

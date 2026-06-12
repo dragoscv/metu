@@ -1,4 +1,4 @@
-import { and, desc, eq, isNull, sql, type SQL, asc } from 'drizzle-orm';
+import { and, desc, eq, inArray, isNull, sql, type SQL, asc } from 'drizzle-orm';
 import { getDb } from '../client';
 import {
   decision,
@@ -181,7 +181,7 @@ export async function goalPinnedCounts(
         and(
           eq(task.workspaceId, workspaceId),
           isNull(task.deletedAt),
-          sql`${task.goalId} = any(${goalIds})`,
+          inArray(task.goalId, goalIds),
         ),
       )
       .groupBy(task.goalId),
@@ -192,7 +192,7 @@ export async function goalPinnedCounts(
         and(
           eq(project.workspaceId, workspaceId),
           isNull(project.deletedAt),
-          sql`${project.goalId} = any(${goalIds})`,
+          inArray(project.goalId, goalIds),
         ),
       )
       .groupBy(project.goalId),
@@ -203,7 +203,7 @@ export async function goalPinnedCounts(
         and(
           eq(decision.workspaceId, workspaceId),
           isNull(decision.deletedAt),
-          sql`${decision.goalId} = any(${goalIds})`,
+          inArray(decision.goalId, goalIds),
         ),
       )
       .groupBy(decision.goalId),
