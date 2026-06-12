@@ -23,7 +23,14 @@ export interface LoadMoreInput {
 }
 
 const LoadMoreInputSchema = z.object({
-  cursor: z.object({ occurredAt: z.string(), id: z.string().uuid() }).nullable(),
+  cursor: z
+    .object({
+      // Strict ISO datetime — `new Date('garbage')` would otherwise
+      // produce Invalid Date and break the keyset predicate silently.
+      occurredAt: z.iso.datetime({ offset: true }),
+      id: z.string().uuid(),
+    })
+    .nullable(),
   kinds: z.array(z.string()),
   projectId: z.string().uuid().nullable(),
   since: z.string().nullable(),

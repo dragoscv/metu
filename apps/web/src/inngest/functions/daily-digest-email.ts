@@ -13,6 +13,7 @@
 import { and, desc, eq, gte, isNull, sql } from 'drizzle-orm';
 import { inngest } from '../client';
 import { getDb } from '@metu/db';
+import { log } from '@/lib/logger';
 import {
   agentPolicy,
   notification,
@@ -43,7 +44,11 @@ async function sendEmail(input: { to: string; subject: string; text: string }): 
       }),
     });
     return r.ok;
-  } catch {
+  } catch (err) {
+    log.warn('digest.email.send_failed', {
+      to: input.to,
+      error: err instanceof Error ? err.message : String(err),
+    });
     return false;
   }
 }

@@ -57,6 +57,7 @@ import { vercelSyncCron, onVercelSync } from '@/inngest/functions/vercel-sync';
 import { onSyncFailed } from '@/inngest/functions/sync-failure-recorder';
 import { onDeviceEventReact } from '@/inngest/functions/device-event-reactor';
 import { integrationStaleDetector } from '@/inngest/functions/integration-stale-detector';
+import { hubDlqReplay } from '@/inngest/functions/hub-dlq-replay';
 
 export const runtime = 'nodejs';
 export const maxDuration = 300;
@@ -97,6 +98,7 @@ export const { GET, POST, PUT } = serve({
     weeklyDigestEmailCron,
     gcsCleanupCron,
     memoryJanitorWeekly,
+    hubDlqReplay,
     projectDeathDetectionWeekly,
     nightlyHousekeepingCron,
     pushReceiptPollCron,

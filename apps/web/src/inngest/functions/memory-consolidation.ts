@@ -55,6 +55,22 @@ export const memoryConsolidation = inngest.createFunction(
     for (const wsId of workspaces) {
       const inserted = await step.run(`consolidate-${wsId}`, async () => {
         const db = getDb();
+        // Idempotency: if this workspace already has consolidation
+        // output from the current window (e.g. a manual replay of the
+        // cron), skip — re-running would create duplicate insights.
+        const [already] = await db
+          .select({ id: memoryChunk.id })
+          .from(memoryChunk)
+          .where(
+            and(
+              eq(memoryChunk.workspaceId, wsId),
+              gte(memoryChunk.createdAt, cutoff),
+              sql`${memoryChunk.metadata} ->> 'origin' = 'consolidation'`,
+            ),
+          )
+          .limit(1);
+        if (already) return 0;
+
         const rows = await db
           .select({ content: memoryChunk.content, metadata: memoryChunk.metadata })
           .from(memoryChunk)

@@ -6,6 +6,7 @@
  */
 import { and, eq } from 'drizzle-orm';
 import { open as openSealed } from '@metu/ai';
+import { log } from '@/lib/logger';
 import { getDb } from '@metu/db';
 import { integration } from '@metu/db/schema';
 
@@ -46,7 +47,15 @@ export async function getIntegrationToken(
       externalId: row.externalId ?? null,
       config: (row.config ?? {}) as Record<string, unknown>,
     };
-  } catch {
+  } catch (err) {
+    // Unseal failure is actionable (key rotation / corrupt row) — don't
+    // swallow silently or the sync just quietly stops forever.
+    log.warn('integration.token.unseal_failed', {
+      workspaceId,
+      integrationId,
+      kind,
+      error: err instanceof Error ? err.message : String(err),
+    });
     return null;
   }
 }

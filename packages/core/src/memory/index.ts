@@ -12,6 +12,9 @@ import { getModel } from '@metu/ai';
 
 const TARGET_TOKENS = 512;
 const APPROX_CHARS_PER_TOKEN = 4;
+// Hard ceiling on a single embedding provider round-trip; prevents a
+// hung provider from stalling Inngest workers or request handlers.
+const EMBED_TIMEOUT_MS = 30_000;
 
 export function chunkText(content: string): string[] {
   if (!content?.trim()) return [];
@@ -70,9 +73,13 @@ export async function indexMemory(input: IndexInput) {
     intent: 'embed',
   });
 
+  // Guard against a slow/hung embedding provider starving the caller
+  // (Inngest step or request handler). 30s is generous for any batch
+  // we produce (chunks are capped well below provider batch limits).
   const { embeddings } = await embedMany({
     model: model as Parameters<typeof embedMany>[0]['model'],
     values: chunks,
+    abortSignal: AbortSignal.timeout(EMBED_TIMEOUT_MS),
   });
 
   const db = getDb();
@@ -132,6 +139,7 @@ export async function recall(params: {
   const { embedding } = await embed({
     model: model as Parameters<typeof embed>[0]['model'],
     value: params.query,
+    abortSignal: AbortSignal.timeout(EMBED_TIMEOUT_MS),
   });
 
   const result = await recallByEmbedding({

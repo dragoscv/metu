@@ -12,6 +12,7 @@ import {
   markIntegrationSyncSuccess,
 } from '@metu/db/queries';
 import { getIntegrationToken } from './_integration-token';
+import { log } from '@/lib/logger';
 
 const UA = 'metu/0.1.0';
 
@@ -100,7 +101,12 @@ export const onSlackSync = inngest.createFunction(
               { types: 'im,mpim', limit: '50', exclude_archived: 'true' },
             );
             return (data.channels ?? []).filter((c) => c.id);
-          } catch {
+          } catch (err) {
+            log.warn('slack.sync.dms_failed', {
+              workspaceId,
+              integrationId,
+              error: err instanceof Error ? err.message : String(err),
+            });
             return [];
           }
         })
@@ -121,7 +127,13 @@ export const onSlackSync = inngest.createFunction(
             },
           );
           return data.messages ?? [];
-        } catch {
+        } catch (err) {
+          log.warn('slack.sync.channel_failed', {
+            workspaceId,
+            integrationId,
+            channelId: ch.id,
+            error: err instanceof Error ? err.message : String(err),
+          });
           return [];
         }
       });
