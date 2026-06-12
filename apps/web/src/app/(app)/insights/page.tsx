@@ -11,7 +11,7 @@ import { Card, EmptyState, Page, PageHeader, PageSection } from '@metu/ui';
 import { Sparkles } from 'lucide-react';
 import { getDb } from '@metu/db';
 import { project, timelineEvent } from '@metu/db/schema';
-import { and, asc, desc, eq, gte, ilike, isNull, or, sql } from 'drizzle-orm';
+import { and, asc, desc, eq, gte, ilike, isNull, lt, or, sql } from 'drizzle-orm';
 import { InsightsFilters } from '@/components/insights/insights-filters';
 import { InsightsSidebar } from '@/components/insights/insights-sidebar';
 import { InsightsExportButtons } from '@/components/insights/insights-export-buttons';
@@ -122,7 +122,7 @@ export default async function InsightsPage({
         and(
           eq(timelineEvent.workspaceId, workspaceId),
           gte(timelineEvent.occurredAt, new Date(Date.now() - 14 * 24 * 60 * 60_000)),
-          sql`${timelineEvent.occurredAt} < ${new Date(Date.now() - 7 * 24 * 60 * 60_000)}`,
+          lt(timelineEvent.occurredAt, new Date(Date.now() - 7 * 24 * 60 * 60_000)),
         ),
       )
       .groupBy(timelineEvent.kind),

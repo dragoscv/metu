@@ -2,7 +2,7 @@
  * Month-to-date cost summary + naive end-of-month projection.
  * Helps the user spot a runaway spend mid-month before the bill lands.
  */
-import { and, eq, sql } from 'drizzle-orm';
+import { and, eq, gte, sql } from 'drizzle-orm';
 import { Card, CardTitle } from '@metu/ui';
 import { DollarSign, TrendingUp } from 'lucide-react';
 import { getDb } from '@metu/db';
@@ -23,9 +23,7 @@ export async function AuditMtdCost({ workspaceId }: { workspaceId: string }) {
       calls: sql<number>`count(*)::int`,
     })
     .from(toolCall)
-    .where(
-      and(eq(toolCall.workspaceId, workspaceId), sql`${toolCall.requestedAt} >= ${monthStart}`),
-    );
+    .where(and(eq(toolCall.workspaceId, workspaceId), gte(toolCall.requestedAt, monthStart)));
 
   const mtdCost = typeof agg?.cost === 'string' ? Number(agg.cost) : (agg?.cost ?? 0);
   const mtdCalls = typeof agg?.calls === 'string' ? Number(agg.calls) : (agg?.calls ?? 0);

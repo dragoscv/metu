@@ -22,7 +22,9 @@ const nextConfig: NextConfig = {
   // Pin the monorepo root explicitly — inference warns and has produced
   // Turbopack panics when multiple lockfiles are visible on the machine.
   turbopack: {
-    root: resolve(__dirname, '../..'),
+    // `next dev` runs with cwd = apps/web; __dirname is unreliable for the
+    // compiled config (resolved to src/app in next 16.2.9).
+    root: resolve(process.cwd(), '../..'),
   },
   experimental: {
     turbopackFileSystemCacheForDev: true,

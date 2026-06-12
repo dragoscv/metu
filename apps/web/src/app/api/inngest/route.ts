@@ -58,6 +58,7 @@ import { onSyncFailed } from '@/inngest/functions/sync-failure-recorder';
 import { onDeviceEventReact } from '@/inngest/functions/device-event-reactor';
 import { integrationStaleDetector } from '@/inngest/functions/integration-stale-detector';
 import { hubDlqReplay } from '@/inngest/functions/hub-dlq-replay';
+import { onCronFailed } from '@/inngest/functions/cron-failure-alert';
 
 export const maxDuration = 300;
 
@@ -98,6 +99,7 @@ export const { GET, POST, PUT } = serve({
     gcsCleanupCron,
     memoryJanitorWeekly,
     hubDlqReplay,
+    onCronFailed,
     projectDeathDetectionWeekly,
     nightlyHousekeepingCron,
     pushReceiptPollCron,

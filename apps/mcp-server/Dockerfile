@@ -26,4 +26,6 @@ COPY apps/mcp-server/package.json ./apps/mcp-server/package.json
 # Drop root — the node:alpine image ships a non-root `node` user.
 USER node
 EXPOSE 8080
+HEALTHCHECK --interval=30s --timeout=5s --start-period=10s --retries=3 \
+  CMD node -e "fetch('http://localhost:8080/health').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"
 CMD ["node", "apps/mcp-server/dist/index.js"]

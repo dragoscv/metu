@@ -4,7 +4,7 @@
  * 80 capture.classify in one day = something is misfiring).
  */
 import Link from 'next/link';
-import { and, desc, eq, sql } from 'drizzle-orm';
+import { and, desc, eq, gte, sql } from 'drizzle-orm';
 import { Card, CardTitle } from '@metu/ui';
 import { Activity } from 'lucide-react';
 import { getDb } from '@metu/db';
@@ -19,9 +19,7 @@ export async function TimelineTopSources({ workspaceId }: { workspaceId: string 
       count: sql<number>`count(*)::int`,
     })
     .from(timelineEvent)
-    .where(
-      and(eq(timelineEvent.workspaceId, workspaceId), sql`${timelineEvent.occurredAt} >= ${since}`),
-    )
+    .where(and(eq(timelineEvent.workspaceId, workspaceId), gte(timelineEvent.occurredAt, since)))
     .groupBy(timelineEvent.kind)
     .orderBy(desc(sql`count(*)`))
     .limit(6);
