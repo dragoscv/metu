@@ -12,7 +12,7 @@ catalog:
   tsx: ^4.19.2
 
   # Next.js / React
-  next: ^16.0.0
+  next: ^16.2.9
   react: ^19.2.0
   react-dom: ^19.2.0
   '@types/react': ^19.2.0
@@ -27,7 +27,7 @@ catalog:
   '@types/pg': ^8.11.0
 
   # Auth
-  next-auth: 5.0.0-beta.25
+  next-auth: 5.0.0-beta.30
   '@auth/drizzle-adapter': ^1.7.0
 
   # Validation
@@ -88,9 +88,9 @@ catalog:
   '@modelcontextprotocol/sdk': ^1.0.4
 
   # Hub (WS)
-  'hono': ^4.6.13
+  'hono': ^4.12.18
   '@hono/node-server': ^1.13.7
-  'ws': ^8.18.0
+  'ws': ^8.20.1
   '@types/ws': ^8.5.13
 
   # Notifications

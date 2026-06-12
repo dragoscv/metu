@@ -13,7 +13,7 @@
   "dependencies": {
     "@metu/sdk": "workspace:*",
     "next": "catalog:",
-    "next-auth": "^5.0.0-beta.25",
+    "next-auth": "catalog:",
     "react": "catalog:",
     "react-dom": "catalog:",
     "zod": "catalog:"
