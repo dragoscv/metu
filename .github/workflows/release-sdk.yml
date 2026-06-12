@@ -1,0 +1,84 @@
+name: release-sdk
+
+# Publishes @metu/protocol + @metu/sdk to npm. Gate: version bump in
+# packages/sdk/package.json (tag sdk-vX.Y.Z must not already exist).
+#
+# Required repository secret:
+#   NPM_TOKEN — npm automation token with publish rights on the @metu scope.
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'packages/sdk/**'
+      - 'packages/protocol/**'
+      - '.github/workflows/release-sdk.yml'
+  workflow_dispatch:
+    inputs:
+      dry_run:
+        description: 'Build + pack but do not publish'
+        type: boolean
+        default: false
+
+concurrency:
+  group: release-sdk-${{ github.ref }}
+  cancel-in-progress: false
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with: { fetch-depth: 0 }
+
+      - id: ver
+        shell: bash
+        run: |
+          VERSION=$(node -p "require('./packages/sdk/package.json').version")
+          TAG="sdk-v$VERSION"
+          echo "version=$VERSION" >> "$GITHUB_OUTPUT"
+          echo "tag=$TAG" >> "$GITHUB_OUTPUT"
+          if git rev-parse "$TAG" >/dev/null 2>&1; then
+            echo "should_release=false" >> "$GITHUB_OUTPUT"
+            echo "Tag $TAG already exists — skipping."
+          else
+            echo "should_release=true" >> "$GITHUB_OUTPUT"
+          fi
+
+      - if: steps.ver.outputs.should_release == 'true'
+        uses: pnpm/action-setup@v4
+
+      - if: steps.ver.outputs.should_release == 'true'
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+          registry-url: https://registry.npmjs.org
+
+      - if: steps.ver.outputs.should_release == 'true'
+        run: pnpm install --frozen-lockfile
+
+      - if: steps.ver.outputs.should_release == 'true'
+        name: Test + build
+        run: |
+          pnpm --filter @metu/protocol test
+          pnpm --filter @metu/sdk test
+          pnpm --filter @metu/protocol build
+          pnpm --filter @metu/sdk build
+
+      - if: steps.ver.outputs.should_release == 'true' && github.event.inputs.dry_run != 'true'
+        name: Publish to npm
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+        run: |
+          pnpm --filter @metu/protocol publish --no-git-checks --access public
+          pnpm --filter @metu/sdk publish --no-git-checks --access public
+
+      - if: steps.ver.outputs.should_release == 'true' && github.event.inputs.dry_run != 'true'
+        name: Tag release
+        run: |
+          git tag "${{ steps.ver.outputs.tag }}"
+          git push origin "${{ steps.ver.outputs.tag }}"

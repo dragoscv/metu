@@ -23,7 +23,12 @@ import { authenticateHello } from './auth';
 import { registerInternalRoutes } from './internal';
 import { handleSocket } from './socket';
 import { registry } from './registry';
-import { consumeHandshakeBudget, exceedsConnectionCap, ipFromReq } from './limits';
+import {
+  consumeDistributedHandshakeBudget,
+  consumeHandshakeBudget,
+  exceedsConnectionCap,
+  ipFromReq,
+} from './limits';
 
 await initNodeSentry({ service: 'hub' });
 
@@ -85,6 +90,16 @@ wss.on('connection', (ws, req) => {
     }
     return;
   }
+  // Cross-instance budget (no-op unless Upstash is configured; fail-open).
+  void consumeDistributedHandshakeBudget(ip).then((ok) => {
+    if (!ok) {
+      try {
+        ws.close(4008, 'rate_limited');
+      } catch {
+        /* ignore */
+      }
+    }
+  });
   handleSocket(ws, req, { authenticateHello }).catch((err) => {
     log.error('hub.socket.error', undefined, err);
     try {

@@ -54,6 +54,6 @@ export function proxy(req: NextRequest) {
 // middleware on every poll is the dominant cost during local development.
 export const config = {
   matcher: [
-    '/((?!_next/|favicon.ico|sign-in|docs|download|api/auth|api/webhooks|api/inngest|api/health|api/companion|api/sdk/v1|api/internal|api/calendar|api/voice|api/push/vapid-public-key|api/oauth/token|api/oauth/userinfo|api/oauth/revoke|api/oauth/device|api/oauth/jwks|api/oauth/.well-known|.*\\.(?:png|jpg|jpeg|svg|webp|ico|gif|woff2?|map)$).*)',
+    '/((?!_next/|favicon.ico|sign-in|docs|download|\\.well-known|api/auth|api/webhooks|api/inngest|api/health|api/companion|api/sdk/v1|api/internal|api/calendar|api/voice|api/push/vapid-public-key|api/oauth/token|api/oauth/userinfo|api/oauth/revoke|api/oauth/device|api/oauth/jwks|api/oauth/.well-known|.*\\.(?:png|jpg|jpeg|svg|webp|ico|gif|woff2?|map)$).*)',
   ],
 };

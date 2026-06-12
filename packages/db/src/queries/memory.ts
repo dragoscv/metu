@@ -115,6 +115,32 @@ export async function captureFacets(workspaceId: string) {
 
 export type RecallMode = 'hybrid' | 'semantic' | 'keyword';
 
+/**
+ * Retrieval-time composite weighting (Jarvis v3.2):
+ *
+ *   score = similarity × recency_decay × type_boost
+ *
+ *  - recency_decay: e^(-age_days / 30), floored at 0.2 so durable old
+ *    insights never fully vanish from ranking.
+ *  - type_boost: consolidation-distilled insights ×1.5, decisions /
+ *    project summaries ×1.3, raw companion-activity ×0.7, else ×1.0.
+ *
+ * The raw `similarity` column is still returned unchanged so callers'
+ * `minScore` semantics stay stable — only the ORDER BY uses the
+ * composite score.
+ */
+const RECENCY_DECAY_SQL = sql.raw(
+  `greatest(0.2, exp(-extract(epoch from (now() - created_at)) / 86400.0 / 30.0))`,
+);
+const TYPE_BOOST_SQL = sql.raw(`
+  case
+    when metadata ->> 'origin' = 'consolidation' then 1.5
+    when source_kind in ('decision', 'project_summary') then 1.3
+    when metadata ->> 'origin' = 'companion-activity' then 0.7
+    else 1.0
+  end
+`);
+
 export interface RecallParams {
   workspaceId: string;
   embedding: number[];
@@ -184,6 +210,11 @@ export async function recallByEmbedding({
     `);
   }
 
+  // Two-stage: stage 1 pulls a candidate pool ordered by raw cosine
+  // distance (uses the HNSW index); stage 2 re-ranks the pool by the
+  // composite score. Pool = 4× limit (capped 100) so re-ranking has
+  // headroom without scanning the table.
+  const pool = Math.min(limit * 4, 100);
   return db.execute<{
     id: string;
     content: string;
@@ -193,23 +224,28 @@ export async function recallByEmbedding({
     project_id: string | null;
     created_at: string;
   }>(sql`
-    select
-      id,
-      content,
-      source_kind,
-      source_id,
-      project_id,
-      created_at,
-      1 - (embedding <=> ${vec}) as similarity
-    from ${memoryChunk}
-    where ${memoryChunk.workspaceId} = ${workspaceId}
-      and embedding is not null
-      ${projectFilter}
-      ${kindsFilter}
-      ${sinceFilter}
-      ${untilFilter}
-      ${minScoreFilter}
-    order by embedding <=> ${vec}
+    select * from (
+      select
+        id,
+        content,
+        source_kind,
+        source_id,
+        project_id,
+        created_at,
+        metadata,
+        1 - (embedding <=> ${vec}) as similarity
+      from ${memoryChunk}
+      where ${memoryChunk.workspaceId} = ${workspaceId}
+        and embedding is not null
+        ${projectFilter}
+        ${kindsFilter}
+        ${sinceFilter}
+        ${untilFilter}
+        ${minScoreFilter}
+      order by embedding <=> ${vec}
+      limit ${pool}
+    ) candidates
+    order by similarity * ${RECENCY_DECAY_SQL} * ${TYPE_BOOST_SQL} desc
     limit ${limit}
   `);
 }

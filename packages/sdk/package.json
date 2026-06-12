@@ -1,13 +1,39 @@
 {
   "name": "@metu/sdk",
-  "version": "0.0.1",
-  "private": true,
+  "version": "0.1.0",
   "type": "module",
   "description": "Typed client for METU — auth, capture, recall, notify, devices, conversations, WS hub.",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/metu-app/metu.git",
+    "directory": "packages/sdk"
+  },
+  "keywords": [
+    "metu",
+    "ai",
+    "agent",
+    "sdk",
+    "personal-ai"
+  ],
+  "publishConfig": {
+    "access": "public",
+    "exports": {
+      ".": {
+        "types": "./dist/index.d.ts",
+        "default": "./dist/index.js"
+      }
+    }
+  },
+  "files": [
+    "dist",
+    "README.md"
+  ],
   "exports": {
     ".": "./src/index.ts"
   },
   "scripts": {
+    "build": "rimraf dist && tsc -p tsconfig.build.json",
     "typecheck": "tsc --noEmit",
     "test": "vitest run",
     "test:watch": "vitest"
@@ -18,6 +44,7 @@
   },
   "devDependencies": {
     "@metu/config": "workspace:*",
+    "rimraf": "catalog:",
     "typescript": "catalog:",
     "vitest": "catalog:"
   }

@@ -7,6 +7,8 @@ import { describe, expect, it, vi, afterEach } from 'vitest';
 import {
   consumeHandshakeBudget,
   consumeConnBudget,
+  consumeDistributedHandshakeBudget,
+  isDistributedLimitConfigured,
   newConnBudget,
   exceedsConnectionCap,
   ipFromReq,
@@ -80,5 +82,67 @@ describe('ipFromReq', () => {
   it('falls back to x-real-ip then anon', () => {
     expect(ipFromReq({ 'x-real-ip': '7.7.7.7' })).toBe('7.7.7.7');
     expect(ipFromReq({})).toBe('anon');
+  });
+});
+
+describe('consumeDistributedHandshakeBudget', () => {
+  const ENV = ['UPSTASH_REDIS_REST_URL', 'UPSTASH_REDIS_REST_TOKEN'] as const;
+  const saved: Record<string, string | undefined> = {};
+
+  afterEach(() => {
+    for (const k of ENV) {
+      if (saved[k] === undefined) delete process.env[k];
+      else process.env[k] = saved[k];
+    }
+    vi.unstubAllGlobals();
+  });
+
+  function configure() {
+    for (const k of ENV) saved[k] = process.env[k];
+    process.env.UPSTASH_REDIS_REST_URL = 'https://fake.upstash.io';
+    process.env.UPSTASH_REDIS_REST_TOKEN = 'tok';
+  }
+
+  it('is a no-op (allow) when Redis is unconfigured', async () => {
+    for (const k of ENV) {
+      saved[k] = process.env[k];
+      delete process.env[k];
+    }
+    expect(isDistributedLimitConfigured()).toBe(false);
+    await expect(consumeDistributedHandshakeBudget('1.1.1.1')).resolves.toBe(true);
+  });
+
+  it('allows when the shared count is within budget', async () => {
+    configure();
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async () => new Response(JSON.stringify([{ result: 5 }, { result: 1 }]))),
+    );
+    await expect(consumeDistributedHandshakeBudget('1.1.1.1')).resolves.toBe(true);
+  });
+
+  it('rejects when the shared count exceeds the budget', async () => {
+    configure();
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(
+        async () =>
+          new Response(
+            JSON.stringify([{ result: HUB_LIMITS.HANDSHAKE_PER_IP + 1 }, { result: 1 }]),
+          ),
+      ),
+    );
+    await expect(consumeDistributedHandshakeBudget('1.1.1.1')).resolves.toBe(false);
+  });
+
+  it('fails open on network error', async () => {
+    configure();
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async () => {
+        throw new Error('redis down');
+      }),
+    );
+    await expect(consumeDistributedHandshakeBudget('1.1.1.1')).resolves.toBe(true);
   });
 });

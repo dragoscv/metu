@@ -104,12 +104,10 @@ export async function POST(req: Request) {
   }
 
   // ── codai-realtime: Gemini Live via the codai gateway relay ───────────
-  // No ephemeral minting step exists on the codai side yet, so the broker
-  // returns the workspace's codai API key as the session token. This is
-  // weaker than OpenAI's 60s client secret but acceptable for now: the
-  // key is already exposed to trusted first-party runtimes (companion,
-  // desktop) for chat, and voice sessions are task-free on codai.
-  // TODO: swap to gateway-minted ephemeral voice tokens once available.
+  // The broker mints a SHORT-LIVED realtime-scoped token from the gateway
+  // (POST /v1/tokens) and returns THAT — the raw workspace key never
+  // reaches the webview. Falls back to the raw key only if minting fails
+  // (older gateway), so voice keeps working through gateway deploys.
   if (persona.voiceProvider === 'codai-realtime') {
     const codaiCred = await getProviderCredential(workspaceId, 'codai');
     if (!codaiCred) {
@@ -123,6 +121,33 @@ export async function POST(req: Request) {
       );
     }
     const codaiModel = 'codai-voice';
+    let sessionToken = codaiCred.apiKey;
+    let expiresInSec = 3600;
+    try {
+      const base = (
+        (codaiCred.config as { endpoint?: string })?.endpoint ?? 'https://ai.codai.ro/v1'
+      ).replace(/\/+$/, '');
+      const mint = await fetch(`${base}/tokens`, {
+        method: 'POST',
+        headers: {
+          authorization: `Bearer ${codaiCred.apiKey}`,
+          'content-type': 'application/json',
+        },
+        body: JSON.stringify({ scope: 'realtime', ttl_seconds: 900 }),
+        signal: AbortSignal.timeout(8_000),
+      });
+      if (mint.ok) {
+        const json = (await mint.json()) as { token?: string; expires_at?: string };
+        if (json.token) {
+          sessionToken = json.token;
+          expiresInSec = json.expires_at
+            ? Math.max(60, Math.floor((Date.parse(json.expires_at) - Date.now()) / 1000))
+            : 900;
+        }
+      }
+    } catch {
+      /* fall back to raw key */
+    }
     await getDb()
       .insert(timelineEvent)
       .values({
@@ -137,12 +162,12 @@ export async function POST(req: Request) {
     return NextResponse.json({
       ok: true,
       provider: 'codai-realtime',
-      sessionToken: codaiCred.apiKey,
+      sessionToken,
       sessionId: '',
       model: codaiModel,
       voice: persona.voiceId || 'default',
       url: 'wss://ai.codai.ro/v1/realtime',
-      expiresInSec: 3600,
+      expiresInSec,
       persona: {
         slug: persona.slug,
         name: persona.name,

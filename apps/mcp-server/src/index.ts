@@ -656,6 +656,23 @@ function startHttpTransport(port: number): void {
         .end(JSON.stringify({ ok: true, tools: MCP_TOOLS.length, version: '0.4.0' }));
       return;
     }
+    // RFC 9728 protected-resource metadata. MCP clients use this to
+    // discover the authorization server and run OAuth 2.1 + PKCE against
+    // the web app's existing provider, instead of requiring a manually
+    // minted metu_at_* token. Tokens issued by /api/oauth/token are the
+    // same metu_at_* format `resolveToken()` already accepts.
+    if (req.url === '/.well-known/oauth-protected-resource') {
+      res.writeHead(200, { 'content-type': 'application/json' }).end(
+        JSON.stringify({
+          resource: process.env.METU_MCP_PUBLIC_URL ?? `${WEB_URL}/mcp`,
+          authorization_servers: [WEB_URL],
+          bearer_methods_supported: ['header'],
+          scopes_supported: ['tools:invoke', 'recall:read', 'capture', 'notify'],
+          resource_documentation: `${WEB_URL}/docs/mcp`,
+        }),
+      );
+      return;
+    }
     if (!req.url?.startsWith('/mcp')) {
       res.writeHead(404).end('not found');
       return;
@@ -717,13 +734,17 @@ function headerValue(req: IncomingMessage, name: string): string | undefined {
 async function authorize(req: IncomingMessage, res: ServerResponse): Promise<ResolvedAuth | null> {
   const header = req.headers.authorization ?? '';
   const token = header.startsWith('Bearer ') ? header.slice(7).trim() : '';
+  const resourceMetadata = `${
+    process.env.METU_MCP_PUBLIC_URL?.replace(/\/mcp$/, '') ?? WEB_URL
+  }/.well-known/oauth-protected-resource`;
+  const challenge = `Bearer realm="metu", resource_metadata="${resourceMetadata}"`;
   if (!token) {
-    res.writeHead(401, { 'www-authenticate': 'Bearer realm="metu"' }).end('unauthorized');
+    res.writeHead(401, { 'www-authenticate': challenge }).end('unauthorized');
     return null;
   }
   const auth = await resolveToken(token);
   if (!auth) {
-    res.writeHead(401, { 'www-authenticate': 'Bearer realm="metu"' }).end('invalid token');
+    res.writeHead(401, { 'www-authenticate': challenge }).end('invalid token');
     return null;
   }
   return auth;

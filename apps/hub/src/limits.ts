@@ -86,3 +86,51 @@ export function consumeConnBudget(budget: ConnBudget): boolean {
 export function newConnBudget(): ConnBudget {
   return { count: 0, resetAt: Date.now() + MESSAGE_WINDOW_MS };
 }
+
+// ─── Distributed handshake budget (Upstash REST, optional) ────────────────
+// When the hub runs multiple replicas, the per-instance in-memory bucket
+// above undercounts (N instances → N× the intended budget). If Upstash
+// env vars are present (same ones redis-fanout uses), we ALSO consume a
+// shared fixed-window counter: INCR metu.hub.hs.<ip>.<window> + EXPIRE.
+// Fail-open: any Redis error falls back to the local decision so a Redis
+// outage can never lock devices out.
+
+const REDIS_URL_ENV = 'UPSTASH_REDIS_REST_URL';
+const REDIS_TOKEN_ENV = 'UPSTASH_REDIS_REST_TOKEN';
+
+export function isDistributedLimitConfigured(): boolean {
+  return !!(process.env[REDIS_URL_ENV] && process.env[REDIS_TOKEN_ENV]);
+}
+
+/**
+ * Consume one handshake from the shared cross-instance budget.
+ * Returns true (allowed) when Redis is unconfigured or errors.
+ */
+export async function consumeDistributedHandshakeBudget(ip: string): Promise<boolean> {
+  if (!isDistributedLimitConfigured()) return true;
+  const base = process.env[REDIS_URL_ENV]!.replace(/\/+$/, '');
+  const windowId = Math.floor(Date.now() / WINDOW_MS);
+  const key = `metu.hub.hs.${ip}.${windowId}`;
+  try {
+    // Upstash REST pipeline: INCR + EXPIRE in one round-trip.
+    const res = await fetch(`${base}/pipeline`, {
+      method: 'POST',
+      headers: {
+        authorization: `Bearer ${process.env[REDIS_TOKEN_ENV]}`,
+        'content-type': 'application/json',
+      },
+      body: JSON.stringify([
+        ['INCR', key],
+        ['EXPIRE', key, String(Math.ceil(WINDOW_MS / 1000) + 5)],
+      ]),
+      signal: AbortSignal.timeout(1500),
+    });
+    if (!res.ok) return true;
+    const data = (await res.json()) as Array<{ result?: number }>;
+    const count = data[0]?.result;
+    if (typeof count !== 'number') return true;
+    return count <= HANDSHAKE_PER_IP;
+  } catch {
+    return true; // fail-open
+  }
+}

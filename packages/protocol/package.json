@@ -1,12 +1,32 @@
 {
   "name": "@metu/protocol",
-  "version": "0.0.1",
-  "private": true,
+  "version": "0.1.0",
   "type": "module",
+  "description": "Zod event/message schemas shared across METU services and clients.",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/metu-app/metu.git",
+    "directory": "packages/protocol"
+  },
+  "publishConfig": {
+    "access": "public",
+    "exports": {
+      ".": {
+        "types": "./dist/index.d.ts",
+        "default": "./dist/index.js"
+      }
+    }
+  },
+  "files": [
+    "dist",
+    "README.md"
+  ],
   "exports": {
     ".": "./src/index.ts"
   },
   "scripts": {
+    "build": "rimraf dist && tsc -p tsconfig.build.json",
     "typecheck": "tsc --noEmit",
     "test": "vitest run",
     "test:watch": "vitest"
@@ -16,6 +36,7 @@
   },
   "devDependencies": {
     "@metu/config": "workspace:*",
+    "rimraf": "catalog:",
     "typescript": "catalog:",
     "vitest": "catalog:"
   }
