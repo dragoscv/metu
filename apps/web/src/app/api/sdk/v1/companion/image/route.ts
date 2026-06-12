@@ -30,7 +30,7 @@ export async function POST(req: NextRequest) {
   if (!session) return unauthorized();
   if (!hasScope(session, 'presence:talk')) return forbidden();
 
-  const limited = await rateLimit('voice-realtime', session.userId);
+  const limited = await rateLimit('companion-skill', session.userId);
   if (limited) return limited;
 
   const cap = await assertVoiceCap(session.workspaceId);

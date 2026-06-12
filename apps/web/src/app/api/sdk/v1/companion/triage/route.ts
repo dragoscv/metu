@@ -57,7 +57,7 @@ export async function POST(req: NextRequest) {
   if (!hasScope(session, 'presence:talk')) return forbidden();
 
   // Lighter limiter — triage is fire-and-forget from realtime.
-  const limited = await rateLimit('voice-realtime', session.userId);
+  const limited = await rateLimit('companion-skill', session.userId);
   if (limited) return limited;
 
   const json = await req.json().catch(() => null);

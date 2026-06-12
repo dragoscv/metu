@@ -55,7 +55,7 @@ export async function POST(req: NextRequest) {
   if (!session) return unauthorized();
   if (!hasScope(session, 'presence:talk')) return forbidden();
 
-  const limited = await rateLimit('voice-realtime', session.userId);
+  const limited = await rateLimit('companion-skill', session.userId);
   if (limited) return limited;
 
   // Local-lane LLM is metered too; treat the turn as voice spend so the

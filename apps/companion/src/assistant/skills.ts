@@ -222,7 +222,15 @@ export async function runSkill(
     body: JSON.stringify({ skill, context, personaSlug, language: loadAssistantLanguage() }),
   });
   if (!res.ok || !res.body) {
-    throw new Error(res.status === 402 ? 'Budget reached.' : `Request failed (${res.status}).`);
+    throw new Error(
+      res.status === 402
+        ? 'Budget reached.'
+        : res.status === 429
+          ? loadAssistantLanguage() === 'ro'
+            ? 'Prea multe cereri — o clipă și încerc din nou.'
+            : 'Too many requests — give me a moment.'
+          : `Request failed (${res.status}).`,
+    );
   }
 
   const reader = res.body.getReader();

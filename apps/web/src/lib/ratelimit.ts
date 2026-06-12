@@ -66,6 +66,12 @@ const limiters: Record<string, Limiter> = {
   // Voice broker: minting Realtime sessions hits a paid BYOK endpoint and a
   // human can only realistically open ~1 per minute. Cap fairly tightly.
   'voice-realtime': buildLimiter('rl:voice-realtime', 5, 60),
+  // Companion skill/turn lanes: fast-intent LLM calls fired by BOTH the
+  // user (chips, chat) and background loops (anticipate, deliberate,
+  // reflect, home insight). 5/min (the old shared voice-realtime cap)
+  // caused 429 storms the moment autonomy + a human overlapped. Cheap
+  // models, short outputs — 40/min absorbs bursts, still bounded.
+  'companion-skill': buildLimiter('rl:companion-skill', 40, 60),
   // Whisper transcription per push-to-talk press. Each call is a paid
   // upstream BYOK request — 30/min is plenty for human pace, low enough
   // to deter accidental loops.
