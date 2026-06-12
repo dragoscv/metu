@@ -10,6 +10,7 @@
     "./router": "./src/router.ts",
     "./openai-realtime": "./src/openai-realtime.ts",
     "./anthropic-realtime": "./src/anthropic-realtime.ts",
+    "./codai-realtime": "./src/codai-realtime.ts",
     "./deepgram": "./src/deepgram.ts",
     "./local-whisper": "./src/local-whisper.ts",
     "./tts-proxy": "./src/tts-proxy.ts",

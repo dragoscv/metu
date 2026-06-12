@@ -84,7 +84,7 @@ export async function POST(req: Request) {
   if (!persona) {
     return NextResponse.json({ ok: false, error: 'persona_not_found' }, { status: 404 });
   }
-  if (persona.voiceProvider !== 'openai-realtime') {
+  if (persona.voiceProvider !== 'openai-realtime' && persona.voiceProvider !== 'codai-realtime') {
     return NextResponse.json(
       { ok: false, error: 'persona_not_realtime', hint: 'use /api/voice/pipeline/session' },
       { status: 409 },
@@ -93,7 +93,7 @@ export async function POST(req: Request) {
 
   // Tier gate — realtime providers are restricted to pro_plus / enterprise.
   const billingTier = await getWorkspaceBillingTier(workspaceId);
-  if (!isVoiceProviderAllowed(billingTier, 'openai-realtime')) {
+  if (!isVoiceProviderAllowed(billingTier, persona.voiceProvider)) {
     return NextResponse.json(
       {
         ok: false,
@@ -103,6 +103,54 @@ export async function POST(req: Request) {
       },
       { status: 402 },
     );
+  }
+
+  // ── codai-realtime: Gemini Live via the codai gateway relay ───────────
+  // No ephemeral minting step exists on the codai side yet, so the broker
+  // returns the workspace's codai API key as the session token. This is
+  // weaker than OpenAI's 60s client secret but acceptable for now: the
+  // key is already exposed to trusted first-party runtimes (companion,
+  // desktop) for chat, and voice sessions are task-free on codai.
+  // TODO: swap to gateway-minted ephemeral voice tokens once available.
+  if (persona.voiceProvider === 'codai-realtime') {
+    const codaiCred = await getProviderCredential(workspaceId, 'codai');
+    if (!codaiCred) {
+      return NextResponse.json(
+        {
+          ok: false,
+          error: 'no_codai_credential',
+          hint: 'Add a codai API key on /settings/ai-providers (BYOK).',
+        },
+        { status: 412 },
+      );
+    }
+    const codaiModel = 'codai-voice';
+    await getDb()
+      .insert(timelineEvent)
+      .values({
+        workspaceId,
+        userId,
+        kind: 'voice.session_started',
+        title: `${persona.name}: voice session`,
+        body: `Codai realtime (Gemini Live) session for ${codaiModel}.`,
+        importance: 0.2,
+        payload: { personaSlug: persona.slug, model: codaiModel, provider: 'codai-realtime' },
+      });
+    return NextResponse.json({
+      ok: true,
+      provider: 'codai-realtime',
+      sessionToken: codaiCred.apiKey,
+      sessionId: '',
+      model: codaiModel,
+      voice: persona.voiceId || 'default',
+      url: 'wss://ai.codai.ro/v1/realtime',
+      expiresInSec: 3600,
+      persona: {
+        slug: persona.slug,
+        name: persona.name,
+        systemPrompt: persona.systemPrompt,
+      },
+    });
   }
 
   const cred = await getProviderCredential(workspaceId, 'openai');

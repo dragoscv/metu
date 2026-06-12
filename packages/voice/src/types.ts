@@ -143,7 +143,12 @@ export interface WakeWordProvider {
 
 // ─── Provider id catalog (locked v1) ──────────────────────────────────────
 
-export const REALTIME_PROVIDERS = ['openai-realtime', 'anthropic-realtime'] as const;
+export const REALTIME_PROVIDERS = [
+  'openai-realtime',
+  'anthropic-realtime',
+  // Gemini Live via the codai gateway relay (wss://ai.codai.ro/v1/realtime).
+  'codai-realtime',
+] as const;
 export type RealtimeProviderId = (typeof REALTIME_PROVIDERS)[number];
 
 export const STT_PROVIDERS = [

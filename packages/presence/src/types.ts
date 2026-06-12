@@ -50,6 +50,7 @@ export const PersonaInputSchema = z.object({
       z.enum([
         'openai-realtime',
         'anthropic-realtime',
+        'codai-realtime',
         'cartesia-sonic-turbo',
         'elevenlabs-flash',
         'deepgram-aura-2',

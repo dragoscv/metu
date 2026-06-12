@@ -44,6 +44,9 @@ const TIER_PROVIDERS: Record<BillingTier, ReadonlySet<string>> = {
     'openai-4o-mini-transcribe',
     'cartesia-sonic-turbo',
     'elevenlabs-flash',
+    // House realtime (Gemini Live via codai relay) — cheaper than
+    // openai-realtime, so available one tier earlier.
+    'codai-realtime',
   ]),
   pro_plus: new Set([
     'local-whisper-cpp',
@@ -55,6 +58,7 @@ const TIER_PROVIDERS: Record<BillingTier, ReadonlySet<string>> = {
     'cartesia-sonic-turbo',
     'elevenlabs-flash',
     'openai-realtime',
+    'codai-realtime',
   ]),
   enterprise: new Set([
     'local-whisper-cpp',
@@ -67,6 +71,7 @@ const TIER_PROVIDERS: Record<BillingTier, ReadonlySet<string>> = {
     'elevenlabs-flash',
     'openai-realtime',
     'anthropic-realtime',
+    'codai-realtime',
   ]),
 };
 
@@ -111,7 +116,11 @@ export type VoiceRoute = {
   fallbacks: VoiceAttempt[];
 };
 
-const REALTIME_IDS: ReadonlySet<string> = new Set(['openai-realtime', 'anthropic-realtime']);
+const REALTIME_IDS: ReadonlySet<string> = new Set([
+  'openai-realtime',
+  'anthropic-realtime',
+  'codai-realtime',
+]);
 
 function isRealtime(id: string): id is RealtimeProviderId {
   return REALTIME_IDS.has(id);

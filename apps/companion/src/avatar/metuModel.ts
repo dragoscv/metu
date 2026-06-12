@@ -76,15 +76,24 @@ export interface MetuRig {
   root: THREE.Group;
   hips: THREE.Group;
   torso: THREE.Group;
+  /** Neck pivot (v4.7) — head nods/tilts happen here AND on head for
+   *  layered motion (neck = slow posture, head = quick glances). */
+  neck: THREE.Group;
   head: THREE.Group;
   armL: THREE.Group;
   armR: THREE.Group;
   forearmL: THREE.Group;
   forearmR: THREE.Group;
+  /** Wrist pivots (v4.7) — hand gestures without moving the forearm. */
+  wristL: THREE.Group;
+  wristR: THREE.Group;
   legL: THREE.Group;
   legR: THREE.Group;
   shinL: THREE.Group;
   shinR: THREE.Group;
+  /** Ankle pivots (v4.7) — foot taps/settles without lifting the shin. */
+  ankleL: THREE.Group;
+  ankleR: THREE.Group;
   /** Face (v4.2): eye groups each contain 'ball' + happy 'arc' variants. */
   eyeL: THREE.Group;
   eyeR: THREE.Group;
@@ -182,10 +191,15 @@ export function buildMetuRig(palette: MetuPalette): MetuRig {
   thruster.position.set(0, 0.08, -0.115);
   torso.add(thruster);
 
+  // Neck pivot (v4.7): slow posture motion lives here; quick glances on
+  // `head`. Two stacked pivots read far more organic than one.
+  const neck = new THREE.Group();
+  neck.position.y = 0.27;
+  torso.add(neck);
   // Head: rounded helmet + visor screen with a FACE (v4.2).
   const head = new THREE.Group();
-  head.position.y = 0.31;
-  torso.add(head);
+  head.position.y = 0.04;
+  neck.add(head);
   const helmet = sphere(0.105, shell);
   helmet.scale.set(1, 0.92, 0.95);
   head.add(helmet);
@@ -244,7 +258,9 @@ export function buildMetuRig(palette: MetuPalette): MetuRig {
   // Arms (shoulder pivot at torso top corners).
   const mkArm = (side: 1 | -1) => {
     const arm = new THREE.Group();
-    arm.position.set(0.14 * side, 0.2, 0);
+    // v4.7: shoulders out to ±0.165 and a resting Z-splay applied in the
+    // pose code — the old 0.14 anchor read as "arms glued to the body".
+    arm.position.set(0.165 * side, 0.2, 0);
     torso.add(arm);
     const upper = capsule(0.034, 0.1, shell);
     upper.position.y = -0.07;
@@ -255,30 +271,34 @@ export function buildMetuRig(palette: MetuPalette): MetuRig {
     const lower = capsule(0.03, 0.09, joints);
     lower.position.y = -0.06;
     forearm.add(lower);
+    // Wrist pivot (v4.7): hand waves/twists without bending the forearm.
+    const wrist = new THREE.Group();
+    wrist.position.y = -0.115;
+    forearm.add(wrist);
     // Hand (v4.2): palm + 3 simple fingers that curl (fingers.rotation.x).
-    // An open pointing hand reads far better than the old ball.
     const palm = sphere(0.028, shell);
     palm.scale.set(1, 0.8, 0.6);
-    palm.position.y = -0.125;
-    forearm.add(palm);
+    palm.position.y = -0.01;
+    wrist.add(palm);
     const fingers = new THREE.Group();
-    fingers.position.y = -0.145;
-    forearm.add(fingers);
+    fingers.position.y = -0.03;
+    wrist.add(fingers);
     for (let f = 0; f < 3; f++) {
       const digit = capsule(0.0085, 0.03, shell);
       digit.position.set((f - 1) * 0.017, -0.022, 0.004);
       fingers.add(digit);
     }
     fingers.rotation.x = -0.5; // relaxed half-curl
-    return { arm, forearm, fingers };
+    return { arm, forearm, wrist, fingers };
   };
-  const { arm: armL, forearm: forearmL, fingers: fingersL } = mkArm(-1);
-  const { arm: armR, forearm: forearmR, fingers: fingersR } = mkArm(1);
+  const { arm: armL, forearm: forearmL, wrist: wristL, fingers: fingersL } = mkArm(-1);
+  const { arm: armR, forearm: forearmR, wrist: wristR, fingers: fingersR } = mkArm(1);
 
   // Legs (hip pivot).
   const mkLeg = (side: 1 | -1) => {
     const leg = new THREE.Group();
-    leg.position.set(0.06 * side, -0.02, 0);
+    // v4.7: slightly wider stance (±0.07) for a stabler silhouette.
+    leg.position.set(0.07 * side, -0.02, 0);
     hips.add(leg);
     const thigh = capsule(0.042, 0.11, shell);
     thigh.position.y = -0.08;
@@ -289,27 +309,36 @@ export function buildMetuRig(palette: MetuPalette): MetuRig {
     const calf = capsule(0.036, 0.1, joints);
     calf.position.y = -0.07;
     shin.add(calf);
+    // Ankle pivot (v4.7): foot taps / toe raises without moving the shin.
+    const ankle = new THREE.Group();
+    ankle.position.y = -0.155;
+    shin.add(ankle);
     const foot = new THREE.Mesh(new THREE.BoxGeometry(0.07, 0.035, 0.12), shell);
-    foot.position.set(0, -0.165, 0.025);
-    shin.add(foot);
-    return { leg, shin };
+    foot.position.set(0, -0.01, 0.025);
+    ankle.add(foot);
+    return { leg, shin, ankle };
   };
-  const { leg: legL, shin: shinL } = mkLeg(-1);
-  const { leg: legR, shin: shinR } = mkLeg(1);
+  const { leg: legL, shin: shinL, ankle: ankleL } = mkLeg(-1);
+  const { leg: legR, shin: shinR, ankle: ankleR } = mkLeg(1);
 
   return {
     root,
     hips,
     torso,
+    neck,
     head,
     armL,
     armR,
     forearmL,
     forearmR,
+    wristL,
+    wristR,
     legL,
     legR,
     shinL,
     shinR,
+    ankleL,
+    ankleR,
     eyeL,
     eyeR,
     mouth,
@@ -478,7 +507,26 @@ export function poseMetu(
   look?: { x: number; y: number } | null,
   phase = t * 5.5,
 ): void {
-  const { hips, torso, head, armL, armR, forearmL, forearmR, legL, legR, shinL, shinR } = rig;
+  const {
+    hips,
+    torso,
+    neck,
+    head,
+    armL,
+    armR,
+    forearmL,
+    forearmR,
+    wristL,
+    wristR,
+    legL,
+    legR,
+    shinL,
+    shinR,
+    ankleL,
+    ankleR,
+  } = rig;
+  /** Resting shoulder splay (v4.7) — keeps hands clearly OFF the body. */
+  const SPLAY = 0.22;
 
   // Defaults each frame (poses below override selectively).
   let hipsY = 0.46;
@@ -489,6 +537,15 @@ export function poseMetu(
   torso.rotation.y = 0; // reset gaze-follow twist from previous frames
   torso.rotation.z = 0; // reset dance sway from previous frames
   hips.position.x = 0; // reset idle weight-sway (set only in idle below)
+  // v4.7 pivots: default arm splay (hands off the body) + neutral resets
+  // for the new joints so poses below can't inherit stale rotations.
+  armL.rotation.z = SPLAY;
+  armR.rotation.z = -SPLAY;
+  neck.rotation.set(0, 0, 0);
+  wristL.rotation.set(0, 0, 0);
+  wristR.rotation.set(0, 0, 0);
+  ankleL.rotation.set(0, 0, 0);
+  ankleR.rotation.set(0, 0, 0);
 
   switch (motion) {
     case 'teleporting': {
@@ -614,10 +671,21 @@ export function poseMetu(
       shinR.rotation.x = 0.04;
       armL.rotation.x = 0.06 + breathe * 0.04 + drift * 0.02;
       armR.rotation.x = 0.06 + breathe * 0.04 - drift * 0.02;
-      armL.rotation.z = 0.1 + sway * 0.02;
-      armR.rotation.z = -0.1 + sway * 0.02;
-      forearmL.rotation.x = -0.15;
-      forearmR.rotation.x = -0.15;
+      // Splay breathes too — arms float slightly away on the inhale.
+      armL.rotation.z = SPLAY + sway * 0.02 + breathe * 0.03;
+      armR.rotation.z = -SPLAY + sway * 0.02 - breathe * 0.03;
+      forearmL.rotation.x = -0.15 - drift * 0.04;
+      forearmR.rotation.x = -0.15 + drift * 0.04;
+      // v4.7 joint life: wrists drift lazily, weighted ankle settles —
+      // the planted foot flexes under the weight shift, the light one
+      // relaxes. Tiny values; reads as standing, not dancing.
+      wristL.rotation.z = Math.sin(t * 0.62 + 0.9) * 0.1;
+      wristR.rotation.z = Math.sin(t * 0.58 + 2.1) * -0.1;
+      ankleL.rotation.x = Math.max(0, sway) * 0.06;
+      ankleR.rotation.x = Math.max(0, -sway) * 0.06;
+      // Neck carries the slow posture sway; head keeps quick glances.
+      neck.rotation.z = sway * 0.02;
+      neck.rotation.x = breathe * 0.015;
 
       // Expressive layer (only meaningful when stationary).
       if (expression === 'listening') {
