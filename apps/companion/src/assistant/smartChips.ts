@@ -32,6 +32,7 @@ const CHIP_RO: Record<string, string> = {
   'Catch me up': 'Pune-mă la curent',
   "What's next on my plate?": 'Ce urmează pentru mine?',
   'Suggest a break point': 'Sugerează o pauză',
+  'run git status': 'rulează git status',
 };
 const CHIP_RO_REVERSE = new Map(Object.entries(CHIP_RO).map(([en, ro]) => [ro, en]));
 
@@ -101,7 +102,9 @@ export function getSmartChips(): string[] {
 
   // Project context → continuity pulls.
   if (act.projectGuess) {
-    pool.push({ text: `Where was I on ${act.projectGuess.slice(0, 24)}?`, weight: 2.5 });
+    // Don't truncate mid-word — a chopped name reads broken in the chip.
+    const name = act.projectGuess.length > 24 ? null : act.projectGuess;
+    if (name) pool.push({ text: `Where was I on ${name}?`, weight: 2.5 });
   }
 
   // Long single-context stretch → maybe stuck; short → just switched.

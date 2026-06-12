@@ -555,6 +555,7 @@ function AssistantSkin({
           const clean = text.trim();
           if (!clean || /^PASS\b/i.test(clean)) return;
           setAmbient({ text: clean, quickReplies: chips.length ? chips : undefined });
+          chat.recordProactive(clean); // bubbles are part of THE conversation
         })
         .catch(() => {});
     },
@@ -610,6 +611,7 @@ function AssistantSkin({
       onSuggest: (s) => {
         lastSuggestionCatRef.current = suggestionCategory(s.id);
         setAmbient({ text: s.text, quickReplies: s.quickReplies });
+        chat.recordProactive(s.text);
         // Verbal interjection: chatty mode only, never while a voice
         // conversation is active (don't talk over the user or yourself).
         if (auth && audioEl && loadProactivity() === 'chatty' && !speaking && !listening) {
@@ -644,6 +646,7 @@ function AssistantSkin({
       onCard: (card) => {
         lastSuggestionCatRef.current = suggestionCategory(card.id);
         setAmbient({ text: card.text, quickReplies: card.actions });
+        chat.recordProactive(card.text);
         playGesture('nod', 1200);
       },
       // Ref-based: skillBusy is declared later in the component; a ref
@@ -676,6 +679,7 @@ function AssistantSkin({
           const clean = text.trim();
           if (!clean || /^PASS\b/i.test(clean)) return; // nothing valuable
           setAmbient({ text: clean, quickReplies: chips.length ? chips : undefined });
+          chat.recordProactive(clean);
           // Speak it in chatty mode (Jarvis v5) — it literally talks to
           // you when it notices something. Never over a live voice convo.
           if (audioEl && loadProactivity() === 'chatty' && !speaking && !listening) {

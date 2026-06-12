@@ -318,9 +318,10 @@ export function ChatPanel({
         {messages.map((m) => (
           <div
             key={m.id}
-            className={`msg msg--${m.role}${m.error ? 'msg--error' : ''}`}
+            className={`msg msg--${m.role}${m.error ? 'msg--error' : ''}${m.proactive ? 'msg--proactive' : ''}`}
             onContextMenu={(e) => openMenu(e, m)}
           >
+            {m.proactive && <span className="msg__proactive-tag">💡 spoke up</span>}
             {m.content && (
               <div className="msg__body">
                 {m.role === 'assistant' ? (

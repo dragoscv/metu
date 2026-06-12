@@ -65,23 +65,40 @@ function classify(app: string, title: string): AppClass {
 const APP_NAME_NOISE =
   /^(visual studio(?: code)?(?:\s*-?\s*insiders)?|vs ?code|code|chrome|google chrome|microsoft edge|edge|firefox|brave|notepad(?:\+\+)?|explorer|slack|discord|teams|telegram|outlook|spotify|terminal|powershell|cmd|wsl)$/i;
 
+/** Strip editor dirty-markers / decorations a title segment may carry. */
+function cleanSegment(seg: string | undefined): string | null {
+  const s = seg?.replace(/^[*●✳•○◌\s]+/, '').trim();
+  return s ? s.slice(0, 60) : null;
+}
+
+/**
+ * A plausible project/repo/folder name — short, no sentence-like spacing.
+ * Rejects tab titles like "Generated super-admin page" that aren't projects.
+ */
+function looksLikeProject(s: string): boolean {
+  return !APP_NAME_NOISE.test(s) && !/\s/.test(s) && s.length >= 2;
+}
+
 function guessProject(title: string): string | null {
   // VS Code style: "<file> - <folder> - Visual Studio Code"
   const parts = title.split(/\s[-—]\s/);
   const candidate =
     parts.length >= 3
-      ? (parts[parts.length - 2]?.trim().slice(0, 60) ?? null)
-      : (PROJECT_HINTS.exec(title)?.[1]?.trim() ?? null);
+      ? cleanSegment(parts[parts.length - 2])
+      : cleanSegment(PROJECT_HINTS.exec(title)?.[1]);
   // Reject app names ("Where was I on Visual Studio Code?" chip bug) —
   // a 2-part title like "metu - Visual Studio Code" has the APP last and
   // nothing project-like; titles can also end up with the app in the
   // middle segment on some windows.
-  if (!candidate || APP_NAME_NOISE.test(candidate)) {
+  if (!candidate || !looksLikeProject(candidate)) {
     // Salvage: for 2-part titles take the FIRST part when the last is an
     // app name ("metu - Visual Studio Code" → "metu").
     if (parts.length === 2 && APP_NAME_NOISE.test(parts[1]?.trim() ?? '')) {
-      const first = parts[0]?.trim().slice(0, 60);
-      return first && !APP_NAME_NOISE.test(first) ? first : null;
+      const first = cleanSegment(parts[0]);
+      // The first segment of a 2-part title is usually a FILE or tab
+      // title ("*Generated super-admin page"), not a project — only
+      // accept slug-like names with no whitespace.
+      return first && looksLikeProject(first) ? first : null;
     }
     return null;
   }
@@ -294,15 +311,30 @@ export async function catchMeUpContext(): Promise<string> {
 export async function fetchScreenContext(): Promise<string> {
   if (!isTauri()) return '';
   const act = getActivityState();
-  const recent = await invoke<string>('sense_recent_text', {
-    minutes: 5,
-    maxChars: 3_500,
-  }).catch(() => '');
+  const [recent, windows] = await Promise.all([
+    invoke<string>('sense_recent_text', { minutes: 5, maxChars: 3_200 }).catch(() => ''),
+    // Cross-window synthesis (Jarvis v10): ALL visible windows, not just
+    // the focused one — the orchestrator's parallel agent runs become
+    // visible to the model. Agent-chat windows are flagged explicitly.
+    invoke<Array<{ app: string; title: string; minimized: boolean }>>('sense_window_map')
+      .then((wins) =>
+        wins
+          .filter((w) => !w.minimized && w.title && !/^metu/i.test(w.app))
+          .slice(0, 12)
+          .map((w) => {
+            const isAgent =
+              /copilot|codai|chat|agent/i.test(w.title) && /code|cursor|insiders/i.test(w.app);
+            return `- ${w.app}: ${w.title.slice(0, 90)}${isAgent ? ' [AGENT SESSION]' : ''}`;
+          })
+          .join('\n'),
+      )
+      .catch(() => ''),
+  ]);
   const head = act.app
     ? `Focused: ${act.app}${act.title ? ` — ${act.title}` : ''} (${act.appClass}${
         act.projectGuess ? `, project: ${act.projectGuess}` : ''
       })`
     : '';
-  const ctx = [head, recent].filter(Boolean).join('\n');
+  const ctx = [head, windows ? `Open windows:\n${windows}` : '', recent].filter(Boolean).join('\n');
   return ctx.length > 5_800 ? ctx.slice(0, 5_800) : ctx;
 }

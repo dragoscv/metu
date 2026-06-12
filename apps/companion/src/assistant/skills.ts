@@ -22,6 +22,7 @@ export type SkillId =
   | 'whats_next'
   | 'anticipate'
   | 'deliberate'
+  | 'reflect'
   | 'morning_brief'
   | 'eod_wrap';
 
@@ -32,6 +33,7 @@ const SKILL_ACKS_EN: Record<SkillId, string> = {
   whats_next: 'Checking where you left off…',
   anticipate: '…',
   deliberate: '…',
+  reflect: '…',
   morning_brief: 'Putting your morning brief together…',
   eod_wrap: 'Wrapping up your day…',
 };
@@ -42,6 +44,7 @@ const SKILL_ACKS_RO: Record<SkillId, string> = {
   whats_next: 'Verific unde ai rămas…',
   anticipate: '…',
   deliberate: '…',
+  reflect: '…',
   morning_brief: 'Îți pregătesc brieful de dimineață…',
   eod_wrap: 'Îți închei ziua…',
 };

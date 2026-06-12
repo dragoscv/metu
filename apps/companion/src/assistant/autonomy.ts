@@ -285,8 +285,52 @@ export function startAutonomy(opts: AutonomyOpts): () => void {
     })();
   }, 25 * 60_000);
 
+  // ── Loop 5 (Jarvis v10): REFLECTION WRITER ──────────────────────────
+  // RMM "prospective reflection": every ~2h of active use, distill what
+  // happened into 1-3 durable memory statements and WRITE them to the
+  // console memory (kind 'continuity'). This is how intelligence
+  // compounds — tomorrow's recalls hit today's distilled experience.
+  let reflecting = false;
+  let lastReflectAt = Date.now();
+  const reflectTimer = setInterval(() => {
+    void (async () => {
+      if (reflecting || loadProactivity() === 'silent') return;
+      const act = getActivityState();
+      if (!act.watching || act.focusDepth === 'idle') return;
+      if (Date.now() - lastReflectAt < 2 * 3600_000) return;
+      reflecting = true;
+      try {
+        const full = await runSkill(opts.auth, 'reflect', 'metu', () => {});
+        const { text } = splitChips(full);
+        const clean = text.trim();
+        if (!clean || /^PASS\b/i.test(clean)) return;
+        lastReflectAt = Date.now();
+        const fresh = (await ensureFreshAuth(opts.auth)) ?? opts.auth;
+        for (const line of clean
+          .split('\n')
+          .map((l) => l.trim())
+          .filter(Boolean)
+          .slice(0, 3)) {
+          await fetch(`${fresh.apiBase.replace(/\/$/, '')}/api/sdk/v1/companion/memory`, {
+            method: 'POST',
+            headers: {
+              'content-type': 'application/json',
+              authorization: `Bearer ${fresh.accessToken}`,
+            },
+            body: JSON.stringify({ kind: 'continuity', statement: line.slice(0, 2_000) }),
+          }).catch(() => {});
+        }
+      } catch {
+        /* reflection is best-effort */
+      } finally {
+        reflecting = false;
+      }
+    })();
+  }, 15 * 60_000);
+
   return () => {
     clearInterval(scanTimer);
     clearInterval(deliberateTimer);
+    clearInterval(reflectTimer);
   };
 }

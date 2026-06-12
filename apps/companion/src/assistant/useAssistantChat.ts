@@ -35,6 +35,9 @@ export interface ChatMessage {
   id: string;
   role: ChatRole;
   content: string;
+  /** Proactive bubble (anticipate/deliberate/suggestion) recorded into
+   *  the thread — rendered with a distinct "spoke up on its own" style. */
+  proactive?: boolean;
   /** Attached file chips shown on user messages (names only persisted). */
   attachments?: Array<{ name: string; bytes: number }>;
   /** Tool names the agent called on this turn (assistant messages only). */
@@ -390,6 +393,24 @@ export function useAssistantChat(auth: AuthState, personaSlug: string) {
   }, []);
 
   /**
+   * Record a PROACTIVE bubble (anticipate/deliberate/suggestions) into the
+   * thread — no user message, marked `proactive`. The user asked for ALL
+   * bubble messages to live in the conversation, even unanswered ones.
+   */
+  const recordProactive = useCallback((text: string) => {
+    if (!text.trim()) return;
+    setMessages((prev) => {
+      // Dedupe: identical proactive text already last in thread → skip.
+      const last = prev[prev.length - 1];
+      if (last?.proactive && last.content === text.trim()) return prev;
+      return [
+        ...prev,
+        { id: uid(), role: 'assistant' as const, content: text.trim(), proactive: true },
+      ];
+    });
+  }, []);
+
+  /**
    * Run a LOCAL skill turn inside the thread (Jarvis v4.3): shows the
    * user's message + a pending assistant message immediately, streams
    * updates into it, and settles with chips. This is how skills
@@ -442,6 +463,7 @@ export function useAssistantChat(auth: AuthState, personaSlug: string) {
     clear,
     appendAssistant,
     recordExchange,
+    recordProactive,
     startLocalTurn,
     switchSession,
     newSession,
