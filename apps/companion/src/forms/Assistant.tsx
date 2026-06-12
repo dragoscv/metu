@@ -504,13 +504,38 @@ function AssistantSkin({
     }
   }, []);
 
+  // Self-triggered remarks (v4.8 — FULL LLM): greetings keep the canned
+  // persona one-liner (they're social, not informational), but idle nudges
+  // and window reactions route through the ANTICIPATE skill — screen +
+  // timeline + workspace aware, PASS-biased. The bubble text and its
+  // chips come from the SAME reply, so they always match. Rate-limited:
+  // one anticipate per 5 minutes regardless of trigger.
+  const lastAnticipateRef = useRef(0);
   const handleRemark = useCallback(
     (kind: 'greeting' | 'idleNudge' | 'windowReact') => {
-      const line = assistantLines[kind](personality);
-      if (line) setAmbient({ text: line });
-      if (kind === 'greeting') playGesture('wave');
+      if (kind === 'greeting') {
+        const line = assistantLines.greeting(personality);
+        if (line) setAmbient({ text: line });
+        playGesture('wave');
+        return;
+      }
+      if (!auth || loadProactivity() === 'silent') return;
+      if (Date.now() - lastAnticipateRef.current < 5 * 60_000) return;
+      lastAnticipateRef.current = Date.now();
+      // SILENT anticipate (same pattern as the 12-min engine): no ack
+      // bubble while it thinks; only a non-PASS result surfaces — with
+      // its OWN chips, so text and quick replies always match.
+      runSkill(auth, 'anticipate', personaSlug, () => {})
+        .then((full) => {
+          const { text, chips } = splitChips(full);
+          const clean = text.trim();
+          if (!clean || /^PASS\b/i.test(clean)) return;
+          setAmbient({ text: clean, quickReplies: chips.length ? chips : undefined });
+        })
+        .catch(() => {});
     },
-    [personality],
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [personality, auth, personaSlug],
   );
 
   // Lock interactivity whenever ANY clickable surface is on screen: the chat

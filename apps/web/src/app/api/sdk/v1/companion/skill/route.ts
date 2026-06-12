@@ -14,6 +14,10 @@ import { z } from 'zod';
 import { type NextRequest } from 'next/server';
 import { generateObject, generateText, streamText } from 'ai';
 import { getModel } from '@metu/ai';
+import { getDb } from '@metu/db';
+import { memoryChunk, project, task, workspaceRecentDigest } from '@metu/db/schema';
+import { recall } from '@metu/core/memory';
+import { and, desc, eq, inArray, like, sql } from 'drizzle-orm';
 import { forbidden, hasScope, resolveSession, unauthorized } from '@/lib/bearer';
 import { rateLimit } from '@/lib/ratelimit';
 import { assertVoiceCap } from '@/lib/voice-billing';
@@ -177,6 +181,97 @@ export async function POST(req: NextRequest) {
   }
 
   const skill = SKILLS[parsed.data.skill]!;
+
+  // ── Workspace knowledge (Jarvis v4.8) ──────────────────────────────
+  // Skills used to see ONLY device-local context (timeline/OCR) — the
+  // assistant didn't know what the user has in the metu console. Now
+  // every skill receives: recent digest, learned preferences, semantic
+  // memory recall (screen context as query), and for planning skills
+  // the LIVE open tasks + active projects.
+  const workspaceContext = await (async () => {
+    const db = getDb();
+    const wantsTasks = ['whats_next', 'morning_brief', 'eod_wrap', 'catch_up'].includes(
+      parsed.data.skill,
+    );
+    const [digestRow, prefRows, taskRows, projectRows, recalled] = await Promise.all([
+      db
+        .select({ digest: workspaceRecentDigest.digest })
+        .from(workspaceRecentDigest)
+        .where(eq(workspaceRecentDigest.workspaceId, session.workspaceId))
+        .limit(1),
+      db
+        .select({ content: memoryChunk.content })
+        .from(memoryChunk)
+        .where(
+          and(
+            eq(memoryChunk.workspaceId, session.workspaceId),
+            eq(memoryChunk.sourceKind, 'manual'),
+            like(memoryChunk.content, 'User %'),
+            sql`${memoryChunk.metadata} ->> 'origin' = 'companion-learning'`,
+          ),
+        )
+        .orderBy(desc(memoryChunk.createdAt))
+        .limit(5),
+      wantsTasks
+        ? db
+            .select({ title: task.title, status: task.status, dueAt: task.dueAt })
+            .from(task)
+            .where(
+              and(
+                eq(task.workspaceId, session.workspaceId),
+                inArray(task.status, ['next', 'doing', 'blocked']),
+              ),
+            )
+            .orderBy(desc(task.updatedAt))
+            .limit(8)
+        : Promise.resolve([]),
+      wantsTasks
+        ? db
+            .select({ name: project.name, status: project.status })
+            .from(project)
+            .where(and(eq(project.workspaceId, session.workspaceId), eq(project.status, 'active')))
+            .limit(5)
+        : Promise.resolve([]),
+      // Semantic recall: current screen/timeline context as the query.
+      parsed.data.context
+        ? recall({
+            workspaceId: session.workspaceId,
+            query: parsed.data.context.slice(0, 500),
+            limit: 3,
+          }).catch(() => null)
+        : Promise.resolve(null),
+    ]);
+    const parts: string[] = [];
+    if (digestRow[0]?.digest) parts.push(`[metu workspace digest]\n${digestRow[0].digest}`);
+    if (prefRows.length) {
+      parts.push(`[User preferences]\n${prefRows.map((p) => `- ${p.content}`).join('\n')}`);
+    }
+    if (taskRows.length) {
+      parts.push(
+        `[Open tasks in metu]\n${taskRows
+          .map(
+            (t) =>
+              `- [${t.status}] ${t.title}${t.dueAt ? ` (due ${new Date(t.dueAt).toLocaleDateString()})` : ''}`,
+          )
+          .join('\n')}`,
+      );
+    }
+    if (projectRows.length) {
+      parts.push(`[Active projects]\n${projectRows.map((p) => `- ${p.name}`).join('\n')}`);
+    }
+    const rows =
+      (recalled as { rows?: Array<{ content?: string }> } | null)?.rows ??
+      (Array.isArray(recalled) ? (recalled as Array<{ content?: string }>) : []);
+    const memories = rows
+      .map((r) => r.content)
+      .filter((c): c is string => !!c)
+      .slice(0, 3);
+    if (memories.length) {
+      parts.push(`[Relevant memories]\n${memories.map((m) => `- ${m.slice(0, 200)}`).join('\n')}`);
+    }
+    return parts.join('\n\n');
+  })().catch(() => '');
+
   const langDirective =
     parsed.data.language === 'ro' ? '\n\nIMPORTANT: Reply ONLY in Romanian (limba română).' : '';
   // Dynamic quick-reply chips (Jarvis v3): the model appends ONE trailer
@@ -186,7 +281,9 @@ export async function POST(req: NextRequest) {
   const result = streamText({
     model: model as Parameters<typeof streamText>[0]['model'],
     system: skill.system + langDirective + chipsDirective,
-    prompt: parsed.data.context || '(no context available)',
+    prompt:
+      [parsed.data.context, workspaceContext].filter(Boolean).join('\n\n') ||
+      '(no context available)',
     maxOutputTokens: skill.maxOutputTokens + 60,
   });
 
