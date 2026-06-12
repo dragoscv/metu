@@ -243,6 +243,58 @@ export async function generateImage(auth: AuthState, prompt: string): Promise<{ 
   return { src };
 }
 
+// ── Vision skill (Jarvis v5): real screenshot → vision model ──────────────
+
+/**
+ * Capture the screen natively and stream a vision-model answer. Falls
+ * back with a clear error when the screenshot capability is disabled.
+ */
+export async function runVision(
+  auth: AuthState,
+  question: string,
+  personaSlug: string,
+  onChunk: (full: string) => void,
+  signal?: AbortSignal,
+): Promise<string> {
+  const shot = await invoke<{ dataBase64: string }>('device_screenshot', {
+    args: { target: 'screen' },
+  }).catch((e: unknown) => {
+    throw new Error(
+      /capability/i.test(String(e))
+        ? 'Screenshot capability is disabled (METU_COMPANION_CAPS).'
+        : `Screenshot failed: ${String(e).slice(0, 120)}`,
+    );
+  });
+  const fresh = (await ensureFreshAuth(auth)) ?? auth;
+  const res = await fetch(`${fresh.apiBase.replace(/\/$/, '')}/api/sdk/v1/companion/vision`, {
+    method: 'POST',
+    signal,
+    headers: {
+      'content-type': 'application/json',
+      authorization: `Bearer ${fresh.accessToken}`,
+    },
+    body: JSON.stringify({
+      imageBase64: shot.dataBase64,
+      question,
+      personaSlug,
+      language: loadAssistantLanguage(),
+    }),
+  });
+  if (!res.ok || !res.body) {
+    throw new Error(res.status === 402 ? 'Budget reached.' : `Vision failed (${res.status}).`);
+  }
+  const reader = res.body.getReader();
+  const decoder = new TextDecoder();
+  let full = '';
+  for (;;) {
+    const { done, value } = await reader.read();
+    if (done) break;
+    full += decoder.decode(value, { stream: true });
+    onChunk(full);
+  }
+  return full;
+}
+
 // ── Act skill: instruction → ONE confirmed UIA action ─────────────────────
 
 export interface ActStep {

@@ -28,6 +28,7 @@ import {
   type MetuEmotion,
 } from './metuModel';
 import { TELEPORT_OUT_S, TELEPORT_IN_S } from '../assistant/avatarPhysics';
+import { moodIdleMultiplier } from '../assistant/mood';
 
 export function MetuStage({
   paletteId,
@@ -177,7 +178,8 @@ export function MetuStage({
           }
           scheduleIdleVariety();
         },
-        9_000 + Math.random() * 13_000,
+        // Mood-scaled cadence: energetic → more antics, low energy → calm.
+        (9_000 + Math.random() * 13_000) * moodIdleMultiplier(),
       );
     };
     if (anchor) scheduleIdleVariety();

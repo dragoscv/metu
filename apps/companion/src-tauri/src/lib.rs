@@ -296,6 +296,15 @@ async fn device_window_track_stop() -> Result<serde_json::Value, String> {
     Ok(serde_json::json!({ "ok": true }))
 }
 
+/// Home directory for the desktop-actions lanes (folder opens, file
+/// writes). Read-only environment probe — no capability gate needed.
+#[tauri::command]
+fn sense_home_dir() -> Result<String, String> {
+    std::env::var("USERPROFILE")
+        .or_else(|_| std::env::var("HOME"))
+        .map_err(|_| "no_home_dir".to_string())
+}
+
 #[tauri::command]
 async fn device_fs_watch_start(
     app: tauri::AppHandle,
@@ -393,6 +402,7 @@ pub fn run() {
             device_move_window,
             device_window_track_start,
             device_window_track_stop,
+            sense_home_dir,
             device_fs_watch_start,
             device_fs_watch_stop,
             device_sensors_status,

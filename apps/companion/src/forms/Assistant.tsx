@@ -37,6 +37,7 @@ import {
   planAct,
   planSteps,
   runSkill,
+  runVision,
   SKILL_ACKS,
   splitChips,
   type SkillId,
@@ -53,6 +54,8 @@ import { MetuTtsProxyProvider } from '@metu/voice/tts-proxy';
 import { SpeechBubble, type BubbleAction } from '../assistant/SpeechBubble';
 import { assistantLines } from '../assistant/assistantMessages';
 import { fromPath } from '../assistant/attachments';
+import { executeOpen, parseOpenIntent, readClipboard } from '../assistant/desktopActions';
+import { getMood, moodGreetingSuffix, recordMoodEvent } from '../assistant/mood';
 import { getSmartChips } from '../assistant/smartChips';
 import { showHighlight } from '../assistant/overlay-bridge';
 import { onProposal } from '../assistant/assistantActions';
@@ -515,8 +518,11 @@ function AssistantSkin({
     (kind: 'greeting' | 'idleNudge' | 'windowReact') => {
       if (kind === 'greeting') {
         const line = assistantLines.greeting(personality);
-        if (line) setAmbient({ text: line });
-        playGesture('wave');
+        // Mood continuity: streaks, absences, energy color the greeting.
+        const suffix = moodGreetingSuffix();
+        if (line) setAmbient({ text: suffix ? `${line}${suffix}` : line });
+        playGesture(getMood().energy > 0.7 ? 'celebrate' : 'wave');
+        recordMoodEvent('interaction');
         return;
       }
       if (!auth || loadProactivity() === 'silent') return;
@@ -631,6 +637,21 @@ function AssistantSkin({
           const clean = text.trim();
           if (!clean || /^PASS\b/i.test(clean)) return; // nothing valuable
           setAmbient({ text: clean, quickReplies: chips.length ? chips : undefined });
+          // Speak it in chatty mode (Jarvis v5) — it literally talks to
+          // you when it notices something. Never over a live voice convo.
+          if (audioEl && loadProactivity() === 'chatty' && !speaking && !listening) {
+            void MetuTtsProxyProvider.speakToAudioElement(
+              clean,
+              {
+                apiBase: auth.apiBase,
+                accessToken: auth.accessToken,
+                personaSlug,
+                voiceId: '',
+                language: loadAssistantLanguage(),
+              },
+              audioEl,
+            ).catch(() => {});
+          }
         })
         .catch(() => {})
         .finally(() => {
@@ -1023,6 +1044,46 @@ function AssistantSkin({
 
   /** Image generation lane: "draw/imagine <prompt>" → inline image card. */
   const lastImagePromptRef = useRef<string>('');
+  /** TRUE vision lane (Jarvis v5): screenshot → vision model → bubble. */
+  const fireVision = useCallback(
+    (question: string) => {
+      if (!auth) return;
+      skillAbortRef.current?.abort();
+      const ctrl = new AbortController();
+      skillAbortRef.current = ctrl;
+      setSkillBusy(true);
+      setUnreadReply(null);
+      setDynamicChips([]);
+      setChatBubble('Taking a look at your screen…');
+      playGesture('look-around', 2000);
+      runVision(
+        auth,
+        question,
+        personaSlug,
+        (full) => {
+          if (!ctrl.signal.aborted) setChatBubble(splitChips(full).text);
+        },
+        ctrl.signal,
+      )
+        .then((full) => {
+          if (ctrl.signal.aborted) return;
+          const { text, chips } = splitChips(full);
+          setChatBubble(text);
+          setDynamicChips(chips);
+        })
+        .catch((err: unknown) => {
+          if (ctrl.signal.aborted) return;
+          setChatBubble(err instanceof Error ? err.message : 'Vision failed.');
+        })
+        .finally(() => {
+          if (skillAbortRef.current === ctrl) {
+            skillAbortRef.current = null;
+            setSkillBusy(false);
+          }
+        });
+    },
+    [auth, personaSlug],
+  );
   const fireImage = useCallback(
     (prompt: string) => {
       if (!auth) return;
@@ -1034,6 +1095,7 @@ function AssistantSkin({
       playGesture('typing', 6000);
       generateImage(auth, prompt)
         .then(({ src }) => {
+          recordMoodEvent('win');
           // RichMessage renders the markdown image as a card w/ shimmer+zoom.
           setChatBubble(`![${prompt.slice(0, 80)}](${src})`);
           setDynamicChips([
@@ -1178,6 +1240,36 @@ function AssistantSkin({
           );
         if (drawMatch?.[1]) {
           fireImage(drawMatch[1]);
+          return;
+        }
+        // Desktop-action lanes (Jarvis v5):
+        // "look at my screen …" → TRUE vision (screenshot → vision model).
+        const visionMatch = /^(?:look at|what do you see|see)\b/i.test(text.trim());
+        if (visionMatch) {
+          fireVision(text.trim());
+          return;
+        }
+        // "open X" → allowlisted instant open.
+        const openIntent = parseOpenIntent(text);
+        if (openIntent) {
+          void executeOpen(openIntent)
+            .then(() => {
+              setChatBubble(`Opened ${openIntent.label}.`);
+              playGesture('nod');
+            })
+            .catch(() => setChatBubble(`Couldn't open ${openIntent.label}.`));
+          return;
+        }
+        // clipboard transforms → read clipboard, run through chat with it.
+        if (/clipboard/i.test(text)) {
+          void readClipboard().then((clip) => {
+            if (!clip.trim()) {
+              setChatBubble('Your clipboard is empty.');
+              return;
+            }
+            setChatBubble(null);
+            void chat.send(`${text}\n\n[Clipboard contents]\n${clip.slice(0, 8_000)}`);
+          });
           return;
         }
         // "do <instruction>" → act skill (plan → confirm → UIA execute).
