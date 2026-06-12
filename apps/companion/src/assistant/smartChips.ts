@@ -33,6 +33,10 @@ const CHIP_RO: Record<string, string> = {
   "What's next on my plate?": 'Ce urmează pentru mine?',
   'Suggest a break point': 'Sugerează o pauză',
   'run git status': 'rulează git status',
+  'What was I doing?': 'Ce făceam?',
+  'Suggest a fix': 'Sugerează o rezolvare',
+  'Find my last file': 'Găsește ultimul fișier',
+  'Summarize where I left off': 'Rezumă unde am rămas',
 };
 const CHIP_RO_REVERSE = new Map(Object.entries(CHIP_RO).map(([en, ro]) => [ro, en]));
 

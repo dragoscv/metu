@@ -18,6 +18,7 @@ import { fetchScreenContext } from './activityModel';
 import { loadAssistantLanguage } from '../state/language';
 import { splitChips } from './skills';
 import type { ChatAttachment } from './attachments';
+import { aT } from './aL10n';
 import {
   createSession,
   getActiveSessionId,
@@ -186,9 +187,7 @@ export function useAssistantChat(auth: AuthState, personaSlug: string) {
 
         if (!res.ok || !res.body) {
           const msg =
-            res.status === 402
-              ? 'Voice/agent budget reached for this workspace.'
-              : `Request failed (${res.status}).`;
+            res.status === 402 ? aT('err.budget') : aT('err.request', { status: res.status });
           patch(assistantId, (m) => ({ ...m, pending: false, error: msg }));
           setStatus('error');
           return;
@@ -253,9 +252,7 @@ export function useAssistantChat(auth: AuthState, personaSlug: string) {
                   ...m,
                   pending: false,
                   escalated: true,
-                  content:
-                    m.content ||
-                    "On it — I've handed this to your Conductor and will follow up here.",
+                  content: m.content || aT('escalate.ack'),
                 }));
                 setStatus('escalated');
                 break;
@@ -277,7 +274,7 @@ export function useAssistantChat(auth: AuthState, personaSlug: string) {
                 patch(assistantId, (m) => ({
                   ...m,
                   pending: false,
-                  error: ev.message ?? 'Something went wrong.',
+                  error: ev.message ?? aT('err.generic'),
                 }));
                 setStatus('error');
                 break;
@@ -298,7 +295,7 @@ export function useAssistantChat(auth: AuthState, personaSlug: string) {
         patch(assistantId, (m) => ({
           ...m,
           pending: false,
-          error: err instanceof Error ? err.message : 'Network error.',
+          error: err instanceof Error ? err.message : aT('err.network'),
         }));
         setStatus('error');
       } finally {

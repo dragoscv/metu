@@ -23,6 +23,8 @@ import { listen } from '@tauri-apps/api/event';
 import { isTauri } from '../state/runtime';
 import { getActivityState } from './activityModel';
 import { cooldownMultiplier, recordSuggestionShown, suggestionCategory } from './learning';
+import { aT } from './aL10n';
+import { localizeChip } from './smartChips';
 
 export type ProactivityMode = 'silent' | 'aware' | 'chatty';
 
@@ -137,8 +139,8 @@ export function startSuggestionEngine(opts: EngineOpts): () => void {
           errorStreak = 0;
           gate({
             id: `err_${Date.now()}`,
-            text: 'That error has been on screen for a bit — want me to look at it?',
-            quickReplies: ['What does this error mean?', 'Suggest a fix'],
+            text: aT('card.errorStuck'),
+            quickReplies: ['What does this error mean?', 'Suggest a fix'].map(localizeChip),
             confidence: 'high',
             approach: true,
           });
@@ -159,8 +161,8 @@ export function startSuggestionEngine(opts: EngineOpts): () => void {
         idleSince = null;
         gate({
           id: `back_${Date.now()}`,
-          text: 'Welcome back. Want a quick catch-up on where you left off?',
-          quickReplies: ['Catch me up', 'What was I doing?'],
+          text: aT('card.welcomeBack'),
+          quickReplies: ['Catch me up', 'What was I doing?'].map(localizeChip),
           confidence: 'high',
         });
       } else {
@@ -176,8 +178,8 @@ export function startSuggestionEngine(opts: EngineOpts): () => void {
         switchTimes = [];
         gate({
           id: `thrash_${Date.now()}`,
-          text: 'Lots of context switching — looking for something? I can help.',
-          quickReplies: ['What was I doing?', 'Find my last file'],
+          text: aT('card.thrash'),
+          quickReplies: ['What was I doing?', 'Find my last file'].map(localizeChip),
           confidence: 'low',
         });
       }

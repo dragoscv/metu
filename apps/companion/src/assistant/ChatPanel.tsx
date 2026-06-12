@@ -15,6 +15,7 @@ import type { ChatMessage, ChatStatus } from './useAssistantChat';
 import { RichMessage } from './RichMessage';
 import { addAttachments, fromFile, type ChatAttachment } from './attachments';
 import { loadAssistantLanguage } from '../state/language';
+import { aT, toolLabel } from './aL10n';
 
 /** Clipboard write that works in both Tauri (plugin) and browser dev. */
 async function copyText(text: string): Promise<void> {
@@ -38,30 +39,10 @@ interface MenuState {
   selection: string;
 }
 
-const STATUS_HINT: Record<ChatStatus, string | null> = {
-  idle: null,
-  thinking: 'Thinking…',
-  streaming: null,
-  escalated: 'Handed to your Conductor — running in the background.',
-  error: null,
-};
-
-/** Friendly labels for tool activity rows (VS Code agent style). */
-const TOOL_LABELS: Record<string, string> = {
-  recall: 'Searching memory',
-  list_projects: 'Reading projects',
-  list_tasks: 'Reading tasks',
-  restore_continuity: 'Restoring context',
-  'device.screenshot': 'Taking a screenshot',
-  'device.list_windows': 'Listing windows',
-  'device.a11y_tree': 'Reading the UI',
-  'device.a11y_find': 'Finding elements',
-  'device.observe_window': 'Observing the window',
-  'device.see': 'Looking at the screen',
-};
-
-function toolLabel(name: string): string {
-  return TOOL_LABELS[name] ?? name.replace(/^device\./, '').replace(/_/g, ' ');
+function statusHint(status: ChatStatus): string | null {
+  if (status === 'thinking') return aT('progress.thinking');
+  if (status === 'escalated') return aT('escalate.hint');
+  return null;
 }
 
 export function ChatPanel({
@@ -191,7 +172,7 @@ export function ChatPanel({
     inputRef.current?.focus();
   };
 
-  const hint = STATUS_HINT[status];
+  const hint = statusHint(status);
 
   return (
     <div
@@ -217,7 +198,7 @@ export function ChatPanel({
     >
       {dragOver && (
         <div className="chat__dropzone" aria-hidden>
-          <span>📎 Drop files to attach</span>
+          <span>{aT('panel.drop')}</span>
         </div>
       )}
       <div className="chat__head" onPointerDown={onDragPointerDown} style={{ cursor: 'grab' }}>
@@ -228,7 +209,7 @@ export function ChatPanel({
               className="chat__hbtn"
               onPointerDown={(e) => e.stopPropagation()}
               onClick={() => setShowSessions((v) => !v)}
-              title="Conversations"
+              title={aT('panel.conversations')}
             >
               ☰
             </button>
@@ -241,7 +222,7 @@ export function ChatPanel({
                 onNewSession();
                 setShowSessions(false);
               }}
-              title="New conversation"
+              title={aT('panel.newConversation')}
             >
               ＋
             </button>
@@ -270,7 +251,7 @@ export function ChatPanel({
           )}
           <div className={`chat__drawer ${showSessions ? 'chat__drawer--open' : ''}`}>
             <div className="chat__drawer-head">
-              <span>Conversations</span>
+              <span>{aT('panel.conversations')}</span>
               <button
                 type="button"
                 className="chat__hbtn"
@@ -278,7 +259,7 @@ export function ChatPanel({
                   onNewSession?.();
                   setShowSessions(false);
                 }}
-                title="New conversation"
+                title={aT('panel.newConversation')}
               >
                 ＋
               </button>
@@ -302,7 +283,7 @@ export function ChatPanel({
                   </span>
                 </button>
               ))}
-              {sessions.length === 0 && <p className="chat__empty">No previous conversations.</p>}
+              {sessions.length === 0 && <p className="chat__empty">{aT('panel.empty')}</p>}
             </div>
           </div>
         </>
@@ -466,7 +447,7 @@ export function ChatPanel({
                 setMenu(null);
               }}
             >
-              Copy
+              {aT('menu.copy')}
             </button>
           )}
           {menu.message?.content && (
@@ -477,7 +458,7 @@ export function ChatPanel({
                 setMenu(null);
               }}
             >
-              Copy message
+              {aT('menu.copyMessage')}
             </button>
           )}
           {menu.inComposer && (
@@ -491,7 +472,7 @@ export function ChatPanel({
                     setMenu(null);
                   }}
                 >
-                  Cut
+                  {aT('menu.cut')}
                 </button>
               )}
               <button
@@ -513,7 +494,7 @@ export function ChatPanel({
                   setMenu(null);
                 }}
               >
-                Paste
+                {aT('menu.paste')}
               </button>
             </>
           )}
@@ -529,7 +510,7 @@ export function ChatPanel({
                 setMenu(null);
               }}
             >
-              Copy conversation
+              {aT('menu.copyConversation')}
             </button>
           )}
           <button
@@ -548,7 +529,7 @@ export function ChatPanel({
               setMenu(null);
             }}
           >
-            Select all
+            {aT('menu.selectAll')}
           </button>
           {messages.length > 0 && (
             <button

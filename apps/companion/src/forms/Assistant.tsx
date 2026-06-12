@@ -59,6 +59,7 @@ import { getMood, moodGreetingSuffix, recordMoodEvent } from '../assistant/mood'
 import { applyAppearance, onAppearanceChange } from '../state/appearance';
 import { startAutonomy } from '../assistant/autonomy';
 import { canonicalChip, getSmartChips } from '../assistant/smartChips';
+import { aT, toolLabel } from '../assistant/aL10n';
 import { showHighlight } from '../assistant/overlay-bridge';
 import { onProposal } from '../assistant/assistantActions';
 import { useAssistantChat } from '../assistant/useAssistantChat';
@@ -491,22 +492,14 @@ function AssistantSkin({
     const lastMsg = chat.messages[chat.messages.length - 1];
     const running = lastMsg?.toolActivity?.filter((a) => a.status === 'running') ?? [];
     if (running.length > 0) {
-      const labels: Record<string, string> = {
-        recall: 'Searching memory',
-        list_projects: 'Reading projects',
-        list_tasks: 'Reading tasks',
-        restore_continuity: 'Restoring context',
-        'device.see': 'Looking at the screen',
-        'device.screenshot': 'Taking a screenshot',
-      };
       const last = running[running.length - 1]!;
-      setProgressLabel(`${labels[last.name] ?? last.name.replace(/_/g, ' ')}…`);
+      setProgressLabel(`${toolLabel(last.name)}…`);
       return;
     }
     const stages =
       chat.status === 'thinking'
-        ? ['Reading your screen…', 'Gathering context…', 'Thinking it through…']
-        : ['Writing the answer…'];
+        ? [aT('progress.readingScreen'), aT('progress.gatheringContext'), aT('progress.thinking')]
+        : [aT('progress.writing')];
     let i = 0;
     setProgressLabel(stages[0] ?? null);
     const t = setInterval(() => {
@@ -894,14 +887,14 @@ function AssistantSkin({
     (instruction: string) => {
       if (!auth) return;
       setUnreadReply(null);
-      setChatBubble('Working out how to do that…');
+      setChatBubble(aT('progress.planningAct'));
       setSkillBusy(true);
       planAct(auth, instruction, personaSlug)
         .then((plan) => {
           setSkillBusy(false);
           const steps = planSteps(plan);
           if (!plan.feasible || steps.length === 0) {
-            setChatBubble(plan.reason ?? "I couldn't find a safe way to do that.");
+            setChatBubble(plan.reason ?? aT('act.noSafeWay'));
             return;
           }
           setChatBubble(null);
@@ -930,14 +923,13 @@ function AssistantSkin({
                   ),
                 )
                   .then(({ verified }) => {
-                    const done = steps.length > 1 ? `Done — all ${steps.length} steps.` : 'Done.';
-                    setChatBubble(
-                      verified ? done : `${done} (I couldn't confirm the app reacted — check it.)`,
-                    );
+                    const done =
+                      steps.length > 1 ? aT('act.doneSteps', { n: steps.length }) : aT('act.done');
+                    setChatBubble(verified ? done : `${done} ${aT('act.unverified')}`);
                     playGesture(verified ? 'nod' : 'shrug');
                   })
                   .catch((err: unknown) =>
-                    setChatBubble(err instanceof Error ? err.message : 'That didn’t work.'),
+                    setChatBubble(err instanceof Error ? err.message : aT('act.failed')),
                   );
               },
               onDeny: () => {
@@ -1331,17 +1323,17 @@ function AssistantSkin({
         if (openIntent) {
           void executeOpen(openIntent)
             .then(() => {
-              setChatBubble(`Opened ${openIntent.label}.`);
+              setChatBubble(aT('open.ok', { label: openIntent.label }));
               playGesture('nod');
             })
-            .catch(() => setChatBubble(`Couldn't open ${openIntent.label}.`));
+            .catch(() => setChatBubble(aT('open.fail', { label: openIntent.label })));
           return;
         }
         // clipboard transforms → read clipboard, run through chat with it.
         if (/clipboard/i.test(text)) {
           void readClipboard().then((clip) => {
             if (!clip.trim()) {
-              setChatBubble('Your clipboard is empty.');
+              setChatBubble(aT('clipboard.empty'));
               return;
             }
             setChatBubble(null);
@@ -1591,7 +1583,7 @@ function AssistantSkin({
                 );
               }}
             >
-              🔎 Search screen history
+              {aT('menu.searchHistory')}
             </button>
           )}
           {bubbleText && (
@@ -1602,7 +1594,7 @@ function AssistantSkin({
                 setMenu(null);
               }}
             >
-              📋 Copy bubble text
+              {aT('menu.copyBubble')}
             </button>
           )}
           {(bubbleText || unreadReply) && (

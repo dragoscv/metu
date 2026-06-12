@@ -28,6 +28,8 @@ import { loadProactivity } from './proactivity';
 import type { AuthState } from '../state/auth';
 import { ensureFreshAuth } from '../state/auth';
 import { runSkill, splitChips } from './skills';
+import { aT } from './aL10n';
+import { localizeChip } from './smartChips';
 
 export interface ActionCard {
   /** Narrative line for the bubble. */
@@ -182,8 +184,8 @@ export function startAutonomy(opts: AutonomyOpts): () => void {
             if (ok) {
               opts.onCard({
                 id: `noticed_${Date.now()}`,
-                text: `I noted that ${label} you scrolled past — it's in your inbox.`,
-                actions: ['Catch me up', 'Analyze my screen'],
+                text: aT('card.noticed', { label }),
+                actions: ['Catch me up', 'Analyze my screen'].map(localizeChip),
               });
             }
           });
@@ -210,8 +212,10 @@ export function startAutonomy(opts: AutonomyOpts): () => void {
         agentCardAt = Date.now();
         opts.onCard({
           id: `agent_done_${Date.now()}`,
-          text: 'Looks like one of your agents just finished its run.',
-          actions: ['Catch me up', 'run git log --oneline -5', 'Analyze my screen'],
+          text: aT('card.agentDone'),
+          actions: ['Catch me up', 'run git log --oneline -5', 'Analyze my screen'].map(
+            localizeChip,
+          ),
         });
       }
 
@@ -228,8 +232,8 @@ export function startAutonomy(opts: AutonomyOpts): () => void {
         searchCardAt = Date.now();
         opts.onCard({
           id: `search_${Date.now()}`,
-          text: `You keep circling "${repeatedAcross}" — I can dig through my memory for it.`,
-          actions: [`Where was I on ${repeatedAcross}?`, 'Catch me up'],
+          text: aT('card.circling', { term: repeatedAcross }),
+          actions: [`Where was I on ${repeatedAcross}?`, 'Catch me up'].map(localizeChip),
         });
       }
 
@@ -245,8 +249,8 @@ export function startAutonomy(opts: AutonomyOpts): () => void {
         eodOfferedDate = today;
         opts.onCard({
           id: `eod_${Date.now()}`,
-          text: 'Winding down? I can wrap the day and note where to pick up tomorrow.',
-          actions: ['Wrap up my day', "What's next on my plate?"],
+          text: aT('card.eod'),
+          actions: ['Wrap up my day', "What's next on my plate?"].map(localizeChip),
         });
       }
     })();
