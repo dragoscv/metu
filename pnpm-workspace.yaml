@@ -6,7 +6,7 @@ catalog:
   # Core
   typescript: ^5.9.2
   '@types/node': ^22.10.5
-  turbo: ^2.5.0
+  turbo: ^2.9.14
   rimraf: ^6.0.1
   prettier: ^3.5.0
   tsx: ^4.19.2

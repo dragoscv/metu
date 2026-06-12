@@ -26,13 +26,21 @@ import { and, eq, gt, isNull, lt, or, sql } from 'drizzle-orm';
 import { Server } from '@modelcontextprotocol/sdk/server/index.js';
 import { StdioServerTransport } from '@modelcontextprotocol/sdk/server/stdio.js';
 import { StreamableHTTPServerTransport } from '@modelcontextprotocol/sdk/server/streamableHttp.js';
-import { CallToolRequestSchema, ListToolsRequestSchema } from '@modelcontextprotocol/sdk/types.js';
+import {
+  CallToolRequestSchema,
+  GetPromptRequestSchema,
+  ListPromptsRequestSchema,
+  ListToolsRequestSchema,
+  ListResourcesRequestSchema,
+  ReadResourceRequestSchema,
+} from '@modelcontextprotocol/sdk/types.js';
 import { z } from 'zod';
 import { initNodeSentry } from '@metu/logger';
 import { runTool, TOOLS, type ToolName } from '@metu/core/agent';
 import { runCompanionTurn } from '@metu/core/companion-agent';
 import { hashToken, parseScopes } from '@metu/auth/oauth';
 import { getDb } from '@metu/db';
+import { listProjects, listTimelineFiltered } from '@metu/db/queries';
 import { oauthToken } from '@metu/db/schema';
 
 await initNodeSentry({ service: 'mcp-server' });
@@ -413,8 +421,160 @@ async function dispatchToolCall(
   }
 }
 
+// ─── MCP prompts (workflow recipes) ────────────────────────────────────────
+// Most MCP clients (Claude Desktop, VS Code, Cursor) now surface prompts as
+// slash-commands. These encode metu's highest-value workflows so users don't
+// have to remember which tools to chain.
+
+const MCP_PROMPTS = [
+  {
+    name: 'resume-work',
+    description:
+      'Where did I leave off? Recalls recent context and proposes the next minimum-viable step.',
+    arguments: [
+      {
+        name: 'project',
+        description: 'Optional project name to focus on',
+        required: false,
+      },
+    ],
+  },
+  {
+    name: 'capture-thought',
+    description: 'Capture a thought/note/idea into metu memory with proper tagging.',
+    arguments: [{ name: 'text', description: 'The thought to capture', required: true }],
+  },
+  {
+    name: 'daily-review',
+    description: 'Summarize today: timeline events, decisions, open approvals, and goal progress.',
+    arguments: [],
+  },
+] as const;
+
+function promptMessages(
+  name: string,
+  args: Record<string, string>,
+): Array<{
+  role: 'user';
+  content: { type: 'text'; text: string };
+}> {
+  switch (name) {
+    case 'resume-work':
+      return [
+        {
+          role: 'user',
+          content: {
+            type: 'text',
+            text: `Use the metu recall and resume tools to figure out where I left off${
+              args.project ? ` on the project "${args.project}"` : ''
+            }. Then give me: (1) a 3-line summary of the last working state, (2) why I stopped if known, (3) the next minimum-viable step. Be concrete.`,
+          },
+        },
+      ];
+    case 'capture-thought':
+      return [
+        {
+          role: 'user',
+          content: {
+            type: 'text',
+            text: `Capture the following into metu using the capture tool, choosing a sensible kind and tags:\n\n${args.text ?? ''}`,
+          },
+        },
+      ];
+    case 'daily-review':
+      return [
+        {
+          role: 'user',
+          content: {
+            type: 'text',
+            text: 'Use metu timeline, audit, and goals tools to produce a daily review: what happened today, decisions made, tool calls awaiting approval, and goal drift. End with the single most important thing to do next.',
+          },
+        },
+      ];
+    default:
+      return [{ role: 'user', content: { type: 'text', text: `Unknown prompt: ${name}` } }];
+  }
+}
+
+// ─── MCP resources (read-only context) ─────────────────────────────────────
+// Resources let MCP clients attach workspace context to a conversation
+// without invoking a tool (no ACL run needed — these are read-only views,
+// still scope-gated on `recall:read`).
+
+const MCP_RESOURCES = [
+  {
+    uri: 'metu://projects',
+    name: 'Projects',
+    description: 'Active projects in the workspace with status and momentum.',
+    mimeType: 'application/json',
+  },
+  {
+    uri: 'metu://timeline/today',
+    name: "Today's timeline",
+    description: 'Timeline events from the last 24 hours (most recent first, max 50).',
+    mimeType: 'application/json',
+  },
+] as const;
+
+async function readResource(auth: ResolvedAuth, uri: string): Promise<string> {
+  if (!hasScope(auth, 'recall:read', 'recall')) {
+    throw new Error('token missing required scope: recall:read');
+  }
+  switch (uri) {
+    case 'metu://projects': {
+      const rows = await listProjects(auth.workspaceId);
+      return stringify(rows);
+    }
+    case 'metu://timeline/today': {
+      const since = new Date(Date.now() - 24 * 60 * 60 * 1000);
+      const { items } = await listTimelineFiltered({
+        workspaceId: auth.workspaceId,
+        since,
+        cursor: null,
+        limit: 50,
+      });
+      return stringify(
+        items.map((e) => ({
+          kind: e.kind,
+          title: e.title,
+          body: e.body,
+          occurredAt: e.occurredAt,
+          projectId: e.projectId,
+        })),
+      );
+    }
+    default:
+      throw new Error(`Unknown resource: ${uri}`);
+  }
+}
+
+const SERVER_CAPABILITIES = { capabilities: { tools: {}, prompts: {}, resources: {} } };
+
 function bindHandlers(s: Server, authProvider: () => ResolvedAuth | null): void {
   s.setRequestHandler(ListToolsRequestSchema, async () => ({ tools: MCP_TOOLS }));
+  s.setRequestHandler(ListResourcesRequestSchema, async () => ({
+    resources: [...MCP_RESOURCES],
+  }));
+  s.setRequestHandler(ReadResourceRequestSchema, async (req) => {
+    const auth = authProvider();
+    if (!auth) throw new Error('unauthorized');
+    const text = await readResource(auth, req.params.uri);
+    return {
+      contents: [{ uri: req.params.uri, mimeType: 'application/json', text }],
+    };
+  });
+  s.setRequestHandler(ListPromptsRequestSchema, async () => ({
+    prompts: MCP_PROMPTS.map((p) => ({ ...p, arguments: [...p.arguments] })),
+  }));
+  s.setRequestHandler(GetPromptRequestSchema, async (req) => {
+    const { name, arguments: args = {} } = req.params;
+    const known = MCP_PROMPTS.find((p) => p.name === name);
+    if (!known) throw new Error(`Unknown prompt: ${name}`);
+    return {
+      description: known.description,
+      messages: promptMessages(name, args as Record<string, string>),
+    };
+  });
   s.setRequestHandler(CallToolRequestSchema, async (req, extra) => {
     const auth = authProvider();
     if (!auth) {
@@ -444,7 +604,7 @@ if (stdioToken) {
     throw new Error('METU_API_TOKEN is invalid, expired, or revoked. Mint a new one in /apps.');
   }
   const stdio = new StdioServerTransport();
-  const server = new Server({ name: 'metu', version: '0.4.0' }, { capabilities: { tools: {} } });
+  const server = new Server({ name: 'metu', version: '0.5.0' }, SERVER_CAPABILITIES);
   bindHandlers(server, () => auth);
   await server.connect(stdio);
   console.error(
@@ -537,7 +697,7 @@ function startHttpTransport(port: number): void {
         sessions.delete(id);
       },
     });
-    const server = new Server({ name: 'metu', version: '0.4.0' }, { capabilities: { tools: {} } });
+    const server = new Server({ name: 'metu', version: '0.5.0' }, SERVER_CAPABILITIES);
     bindHandlers(server, () => auth);
     await server.connect(transport);
     await transport.handleRequest(req, res);
