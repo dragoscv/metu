@@ -4,6 +4,7 @@ import { listGoalsFiltered, listTimelineFiltered, weeklyReviewSummary } from '@m
 import { Badge, Card, EmptyState, Page, PageHeader } from '@metu/ui';
 import { CalendarDays, Gavel, Sparkles, Target } from 'lucide-react';
 import Link from 'next/link';
+import { ReviewNarrative } from '@/components/review/review-narrative';
 
 interface PageProps {
   searchParams: Promise<{ window?: string }>;
@@ -81,6 +82,8 @@ export default async function ReviewPage({ searchParams }: PageProps) {
           sub={summary.goalsAchieved > 0 ? `${summary.goalsAchieved} achieved` : 'active'}
         />
       </div>
+
+      {totalSignals > 0 ? <ReviewNarrative windowDays={windowDays as 7 | 14 | 30} /> : null}
 
       {totalSignals === 0 ? (
         <EmptyState

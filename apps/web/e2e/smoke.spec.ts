@@ -58,6 +58,16 @@ test.describe('authenticated flows', () => {
     await expect(page.locator('h1')).toHaveCount(1, { timeout: 20_000 });
   });
 
+  test('review page renders with window switcher', async ({ page }) => {
+    await signIn(page);
+    await page.goto('/review');
+    await expect(page.locator('h1')).toHaveCount(1, { timeout: 20_000 });
+    // Window switcher links (7/14/30 days).
+    await expect(page.locator('a[href="/review?window=30"]')).toBeVisible();
+    await page.goto('/review?window=30');
+    await expect(page.locator('h1')).toHaveCount(1, { timeout: 20_000 });
+  });
+
   test('oauth consent page renders validation error for unknown client', async ({ page }) => {
     await signIn(page);
     // Unknown client_id should render the error state — proves the consent

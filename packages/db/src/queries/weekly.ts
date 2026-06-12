@@ -4,7 +4,15 @@
  */
 import { and, between, count, desc, eq, gte, sql } from 'drizzle-orm';
 import { getDb } from '../client';
-import { capture, goal, project, task, timelineEvent, toolCall } from '../schema';
+import {
+  capture,
+  goal,
+  project,
+  task,
+  timelineEvent,
+  toolCall,
+  weeklyReviewNarrative,
+} from '../schema';
 
 export interface WeeklyReviewSummary {
   windowDays: number;
@@ -44,10 +52,7 @@ export async function weeklyReviewSummary(
       .select({ n: count() })
       .from(capture)
       .where(
-        and(
-          eq(capture.workspaceId, workspaceId),
-          between(capture.capturedAt, startedAt, endedAt),
-        ),
+        and(eq(capture.workspaceId, workspaceId), between(capture.capturedAt, startedAt, endedAt)),
       ),
     db
       .select({
@@ -145,4 +150,63 @@ export async function weeklyReviewSummary(
       events: Number(r.events),
     })),
   };
+}
+
+// ─── Narrative cache ────────────────────────────────────────────────────────
+
+export interface ReviewNarrative {
+  narrative: string;
+  inputsHash: string;
+  modelProvider: string | null;
+  modelId: string | null;
+  generatedAt: Date;
+}
+
+export async function getReviewNarrative(
+  workspaceId: string,
+  windowDays: number,
+): Promise<ReviewNarrative | null> {
+  const db = getDb();
+  const [row] = await db
+    .select()
+    .from(weeklyReviewNarrative)
+    .where(
+      and(
+        eq(weeklyReviewNarrative.workspaceId, workspaceId),
+        eq(weeklyReviewNarrative.windowDays, windowDays),
+      ),
+    )
+    .limit(1);
+  return row ?? null;
+}
+
+export async function upsertReviewNarrative(input: {
+  workspaceId: string;
+  windowDays: number;
+  narrative: string;
+  inputsHash: string;
+  modelProvider?: string | null;
+  modelId?: string | null;
+}): Promise<void> {
+  const db = getDb();
+  await db
+    .insert(weeklyReviewNarrative)
+    .values({
+      workspaceId: input.workspaceId,
+      windowDays: input.windowDays,
+      narrative: input.narrative,
+      inputsHash: input.inputsHash,
+      modelProvider: input.modelProvider ?? null,
+      modelId: input.modelId ?? null,
+    })
+    .onConflictDoUpdate({
+      target: [weeklyReviewNarrative.workspaceId, weeklyReviewNarrative.windowDays],
+      set: {
+        narrative: input.narrative,
+        inputsHash: input.inputsHash,
+        modelProvider: input.modelProvider ?? null,
+        modelId: input.modelId ?? null,
+        generatedAt: sql`now()`,
+      },
+    });
 }
