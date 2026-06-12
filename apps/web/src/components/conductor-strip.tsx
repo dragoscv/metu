@@ -74,7 +74,11 @@ export async function ConductorStrip({ workspaceId }: { workspaceId: string }) {
 
   return (
     <div
-      className="pointer-events-none fixed inset-x-0 bottom-3 z-30 flex justify-center px-3"
+      // left offset = live sidebar width (CSS var from SidebarProvider):
+      // the pill centers within the CONTENT area instead of the window,
+      // so it never slides under the expanded sidebar.
+      className="pointer-events-none fixed inset-x-0 bottom-3 z-30 flex justify-center px-3 transition-[left] duration-200"
+      style={{ left: 'var(--sidebar-w, 0px)' }}
       aria-live="polite"
     >
       <ConductorStripOpener

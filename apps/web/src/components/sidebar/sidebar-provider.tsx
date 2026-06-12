@@ -32,6 +32,22 @@ export function SidebarProvider({ children }: { children: React.ReactNode }) {
     }
   }, []);
 
+  // Expose the sidebar width as a CSS var so FIXED overlays (Conductor
+  // strip, toasts…) can offset themselves instead of sliding under the
+  // aside / centering against the full window. Matches the motion.aside
+  // animate widths (68 collapsed / 240 expanded); 0 on mobile where the
+  // sidebar is an off-canvas drawer.
+  useEffect(() => {
+    const apply = () => {
+      const w = window.matchMedia('(min-width: 768px)').matches ? (collapsed ? 68 : 240) : 0;
+      document.documentElement.style.setProperty('--sidebar-w', `${w}px`);
+    };
+    apply();
+    const mq = window.matchMedia('(min-width: 768px)');
+    mq.addEventListener('change', apply);
+    return () => mq.removeEventListener('change', apply);
+  }, [collapsed]);
+
   const setCollapsed = useCallback((v: boolean) => {
     setCollapsedState(v);
     try {
