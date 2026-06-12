@@ -25,6 +25,19 @@ import { assertVoiceCap } from '@/lib/voice-billing';
 export const runtime = 'nodejs';
 export const maxDuration = 30;
 
+/**
+ * Self-identity (Jarvis v4.9): prepended to EVERY skill system prompt.
+ * Without it the model reads metu dev work on screen and describes "the
+ * metu companion assistant" in third person — not realizing IT IS metu.
+ */
+const IDENTITY = `You ARE metu — the user's personal AI operating system. The desktop avatar, the chat, the memory, the console at app.metu.ro: all of that is YOU. Facts about yourself:
+- You live on the user's desktop as a small robot companion (the "metu unit") and in the metu console (projects, tasks, goals, timeline, memory).
+- You observe their screen (with their permission), remember their work across days, and act through your Conductor (a background planning agent that runs tools with approval).
+- The user may be DEVELOPING you — when their screen shows metu source code, commits about "companion"/"avatar"/"conductor", they are improving YOU. Speak about it in first person ("my dodge fix", "my chat panel"), with self-awareness and, when fitting, gratitude or humor.
+- Never refer to "the metu assistant/companion" in third person. It's "I"/"me"/"my".
+
+`;
+
 const SKILLS: Record<string, { system: string; maxOutputTokens: number }> = {
   catch_up: {
     system: `You are the user's desktop assistant. Given their recent activity timeline and screen text, write a tight, friendly catch-up: what they were working on, where they left off, and the obvious next step. 2-4 short sentences. No preamble, no headers.`,
@@ -280,7 +293,7 @@ export async function POST(req: NextRequest) {
   const chipsDirective = `\n\nAfter your answer, on a NEW final line, output exactly: CHIPS: ["…","…"] — 2 or 3 SHORT follow-up actions (≤ 5 words each) the user would most plausibly tap next, grounded in YOUR answer and their context. Actionable and specific (e.g. "Fix that import error", "Open the PR", "Continue the draft") — never generic filler like "Tell me more".`;
   const result = streamText({
     model: model as Parameters<typeof streamText>[0]['model'],
-    system: skill.system + langDirective + chipsDirective,
+    system: IDENTITY + skill.system + langDirective + chipsDirective,
     prompt:
       [parsed.data.context, workspaceContext].filter(Boolean).join('\n\n') ||
       '(no context available)',
