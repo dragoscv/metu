@@ -11,6 +11,7 @@ import Link from 'next/link';
 import { TimelineList } from '@/components/timeline/timeline-list';
 import { TimelineToolbar } from '@/components/timeline/timeline-toolbar';
 import { TimelineTopSources } from '@/components/timeline/timeline-top-sources';
+import { TimelineSavedViews } from '@/components/timeline/saved-views';
 import { KeyboardFocus } from '@/components/keyboard-focus';
 
 const BTN_PRIMARY =
@@ -79,6 +80,8 @@ export default async function TimelinePage({ searchParams }: PageProps) {
       />
 
       <TimelineTopSources workspaceId={wsId} />
+
+      <TimelineSavedViews />
 
       <div className="flex flex-wrap gap-1.5">
         {[

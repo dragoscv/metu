@@ -11,7 +11,7 @@
  * persona priming. Anything fresher would require a per-turn recall.
  */
 import { sql } from 'drizzle-orm';
-import { integer, pgTable, primaryKey, text, timestamp, uuid } from 'drizzle-orm/pg-core';
+import { index, integer, pgTable, primaryKey, text, timestamp, uuid } from 'drizzle-orm/pg-core';
 import { workspace } from './workspace';
 
 export const workspaceRecentDigest = pgTable('workspace_recent_digest', {
@@ -48,4 +48,28 @@ export const weeklyReviewNarrative = pgTable(
       .default(sql`now()`),
   },
   (t) => [primaryKey({ columns: [t.workspaceId, t.windowDays] })],
+);
+
+/**
+ * Per-user saved timeline views — a named bundle of /timeline filter
+ * params (kinds, projectId, since, q). The URL stays the live source of
+ * truth; saved views are just bookmarks that survive devices.
+ */
+export const timelineSavedView = pgTable(
+  'timeline_saved_view',
+  {
+    id: uuid('id')
+      .primaryKey()
+      .default(sql`gen_random_uuid()`),
+    workspaceId: uuid('workspace_id')
+      .notNull()
+      .references(() => workspace.id, { onDelete: 'cascade' }),
+    userId: uuid('user_id').notNull(),
+    name: text('name').notNull(),
+    params: text('params').notNull(), // URL query string, e.g. "kinds=a,b&since=7d"
+    createdAt: timestamp('created_at', { withTimezone: true })
+      .notNull()
+      .default(sql`now()`),
+  },
+  (t) => [index('timeline_saved_view_ws_user_idx').on(t.workspaceId, t.userId)],
 );
