@@ -1054,7 +1054,20 @@ function AssistantSkin({
     "What's next on my plate?": 'whats_next',
     'What does this error mean?': 'explain_error',
     'Suggest a fix': 'explain_error',
+    // Smart-chip labels (smartChips.ts) — every generated chip MUST map
+    // to its skill here, otherwise it falls through to generic chat and
+    // the model TALKS about doing the thing instead of doing it (the
+    // "Analyze my screen does nothing" bug).
+    'Analyze my screen': 'analyze_screen',
+    'Summarize this page': 'analyze_screen',
+    'Improve this paragraph': 'analyze_screen',
+    'Draft a reply': 'analyze_screen',
+    'Morning brief': 'morning_brief',
+    'Wrap up my day': 'eod_wrap',
+    'Suggest a break point': 'whats_next',
   };
+  /** Prefix matches for dynamic chip text (project names vary). */
+  const SKILL_CHIP_PREFIXES: Array<[RegExp, SkillId]> = [[/^Where was I on /i, 'catch_up']];
   const quickReply = auth
     ? (text: string) => {
         setAmbient(null);
@@ -1094,6 +1107,11 @@ function AssistantSkin({
         if (skill) {
           // Fast lane: ack + streamed answer, no triage round-trip.
           fireSkill(skill);
+          return;
+        }
+        const prefix = SKILL_CHIP_PREFIXES.find(([re]) => re.test(text));
+        if (prefix) {
+          fireSkill(prefix[1]);
           return;
         }
         setChatBubble(null);
