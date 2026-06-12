@@ -15,7 +15,7 @@
  * dedicated reason. That keeps cost predictable (one tick per workspace
  * per day at most) and the LLM logic centralized.
  */
-import { and, desc, eq, gte, lt, sql } from 'drizzle-orm';
+import { and, desc, eq, gte, sql } from 'drizzle-orm';
 import { getDb } from '@metu/db';
 import { capture, timelineEvent } from '@metu/db/schema';
 import { inngest } from '../client';
@@ -70,7 +70,9 @@ export const conductorIdleNudgeCron = inngest.createFunction(
         .from(capture)
         .where(gte(capture.capturedAt, recentlyActiveCutoff))
         .groupBy(capture.workspaceId)
-        .having(lt(sql<Date>`max(${capture.capturedAt})`, idleCutoff));
+        // ISO string, not Date: drizzle 0.45 mis-serializes Date params
+        // when compared against a raw-sql aggregate (Round 6 bug class).
+        .having(sql`max(${capture.capturedAt}) < ${idleCutoff.toISOString()}`);
 
       return rows.map((r) => ({
         workspaceId: r.workspaceId,

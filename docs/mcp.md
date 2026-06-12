@@ -37,7 +37,8 @@ Required scopes per capability:
 
 ## Capabilities
 
-- **Tools** — the whole Conductor registry (currently ~40 tools).
+- **Tools** — the whole Conductor registry (80+ tools across tasks, projects,
+  GitHub, Linear, Slack, Notion, Google Calendar, devices, editor).
   Side-effecting calls return `awaiting_approval` + an audit URL when the
   workspace ACL says `ask`.
 - **Resources** (read-only, attachable context):

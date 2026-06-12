@@ -15,6 +15,20 @@ for (const candidate of ['../../.env.local', '../../.env']) {
 // because every file is re-transpiled on change. Restrict it to production builds.
 const isProd = process.env.NODE_ENV === 'production';
 
+// Resolve the monorepo root robustly: walk up from cwd until we find
+// pnpm-workspace.yaml. Neither __dirname (wrong in the compiled config)
+// nor a fixed `cwd + ../..` (wrong on config re-evaluation) is reliable.
+function findRepoRoot(): string {
+  let dir = process.cwd();
+  for (let i = 0; i < 6; i++) {
+    if (existsSync(resolve(dir, 'pnpm-workspace.yaml'))) return dir;
+    const parent = resolve(dir, '..');
+    if (parent === dir) break;
+    dir = parent;
+  }
+  return resolve(process.cwd(), '../..');
+}
+
 const nextConfig: NextConfig = {
   reactStrictMode: true,
   reactCompiler: isProd,
@@ -22,9 +36,7 @@ const nextConfig: NextConfig = {
   // Pin the monorepo root explicitly — inference warns and has produced
   // Turbopack panics when multiple lockfiles are visible on the machine.
   turbopack: {
-    // `next dev` runs with cwd = apps/web; __dirname is unreliable for the
-    // compiled config (resolved to src/app in next 16.2.9).
-    root: resolve(process.cwd(), '../..'),
+    root: findRepoRoot(),
   },
   experimental: {
     turbopackFileSystemCacheForDev: true,

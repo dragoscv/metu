@@ -211,7 +211,26 @@ Rules:
     // pulse/actions shape so the tick doesn't fail and waste a cycle.
     experimental_repairText: async ({ text }) => {
       try {
-        const parsed = JSON.parse(text) as Record<string, unknown>;
+        // 1. Strip markdown code fences + any prose before/after the JSON
+        //    body — small/local models love to wrap JSON in ```json blocks
+        //    or add a leading sentence.
+        let candidate = text.trim();
+        const fenced = candidate.match(/```(?:json)?\s*([\s\S]*?)```/);
+        if (fenced?.[1]) candidate = fenced[1].trim();
+        if (!candidate.startsWith('{')) {
+          const start = candidate.indexOf('{');
+          const end = candidate.lastIndexOf('}');
+          if (start !== -1 && end > start) candidate = candidate.slice(start, end + 1);
+        }
+        const parsed = JSON.parse(candidate) as Record<string, unknown>;
+        // 2. Already canonical (possibly after fence-stripping)? Return it.
+        if (parsed && typeof parsed === 'object' && 'pulse' in parsed) {
+          return JSON.stringify({
+            pulse: String(parsed.pulse).slice(0, 500),
+            actions: Array.isArray(parsed.actions) ? parsed.actions : [],
+            notes: typeof parsed.notes === 'string' ? parsed.notes : undefined,
+          });
+        }
         if (parsed && typeof parsed === 'object' && !('pulse' in parsed)) {
           const briefing =
             (parsed.briefing as string | undefined) ??
