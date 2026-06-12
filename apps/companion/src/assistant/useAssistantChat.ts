@@ -244,6 +244,30 @@ export function useAssistantChat(auth: AuthState, personaSlug: string) {
     setStatus('idle');
   }, []);
 
+  /**
+   * Thread an out-of-band assistant message into the conversation —
+   * Conductor follow-ups after an escalation ("3 done, 1 awaiting your
+   * approval"). Closes the agentic loop: the thread that promised "I'll
+   * follow up here" actually does. Also flips the last escalated
+   * message's status so the UI stops implying it's still pending.
+   */
+  const appendAssistant = useCallback((text: string) => {
+    if (!text.trim()) return;
+    setMessages((prev) => {
+      // Mark the most recent escalated turn as resolved.
+      const next = [...prev];
+      for (let i = next.length - 1; i >= 0; i--) {
+        const m = next[i]!;
+        if (m.role === 'assistant' && m.escalated) {
+          next[i] = { ...m, escalated: false };
+          break;
+        }
+      }
+      return [...next, { id: uid(), role: 'assistant' as const, content: text.trim() }];
+    });
+    setStatus('idle');
+  }, []);
+
   const lastAssistant = [...messages].reverse().find((m) => m.role === 'assistant');
 
   const state: AssistantChatState = {
@@ -253,5 +277,5 @@ export function useAssistantChat(auth: AuthState, personaSlug: string) {
     lastChips,
   };
 
-  return { ...state, send, stop, clear };
+  return { ...state, send, stop, clear, appendAssistant };
 }

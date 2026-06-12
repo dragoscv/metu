@@ -635,13 +635,29 @@ function AssistantSkin({
       void listen<{ title?: string; body?: string }>('metu://assistant-notify', (event) => {
         const { title, body } = event.payload ?? {};
         const text = [title, body].filter(Boolean).join(' — ');
-        if (text) setAmbient({ text });
+        if (!text) return;
+        // Escalation follow-throughs THREAD into the conversation — the
+        // chat promised "handed to your Conductor, will follow up here",
+        // so the follow-up must land in the same thread, not just float
+        // by as an ambient bubble.
+        const isFollowUp = /escalation|followed through|conductor/i.test(title ?? '');
+        if (isFollowUp && chat.messages.length > 0) {
+          chat.appendAssistant(body ?? text);
+          if (!chatOpen) {
+            setChatBubble(body ?? text);
+            bubbleReadRef.current = false;
+          }
+          playGesture('nod');
+          return;
+        }
+        setAmbient({ text });
       }).then((fn) => {
         unlisten = fn;
       });
     }
     return () => unlisten?.();
-  }, []);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [chatOpen, chat.messages.length]);
 
   const handleAudio = useCallback(
     (el: HTMLAudioElement | null) => {
