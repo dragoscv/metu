@@ -1152,6 +1152,7 @@ function AssistantSkin({
       data-speaking={speaking}
       data-hovering={hovering}
       data-mode={mode}
+      data-bubble={!!bubbleText}
     >
       {/* Watching state surfaces in the right-click menu (Pause/Resume
           watching) — the always-on corner orb was visual noise the user

@@ -488,6 +488,7 @@ export function poseMetu(
   let headRoll = 0;
   torso.rotation.y = 0; // reset gaze-follow twist from previous frames
   torso.rotation.z = 0; // reset dance sway from previous frames
+  hips.position.x = 0; // reset idle weight-sway (set only in idle below)
 
   switch (motion) {
     case 'teleporting': {
@@ -598,15 +599,23 @@ export function poseMetu(
     case 'idle':
     default: {
       const breathe = Math.sin(t * 1.6) * 0.5 + 0.5;
+      // Layered idle (v4.5): breath + slow weight sway + subtle arm drift
+      // — three incommensurate frequencies so the pattern never visibly
+      // repeats. Reads as "alive" even between idle-variety gestures.
+      const sway = Math.sin(t * 0.55);
+      const drift = Math.sin(t * 0.83 + 1.7);
       hipsY = 0.46 + breathe * 0.008;
+      hips.position.x = sway * 0.012; // weight shifts foot-to-foot
+      torso.rotation.z = sway * 0.03;
+      headRoll = sway * 0.025;
       legL.rotation.x = 0;
       legR.rotation.x = 0;
       shinL.rotation.x = 0.04;
       shinR.rotation.x = 0.04;
-      armL.rotation.x = 0.06 + breathe * 0.04;
-      armR.rotation.x = 0.06 + breathe * 0.04;
-      armL.rotation.z = 0.1;
-      armR.rotation.z = -0.1;
+      armL.rotation.x = 0.06 + breathe * 0.04 + drift * 0.02;
+      armR.rotation.x = 0.06 + breathe * 0.04 - drift * 0.02;
+      armL.rotation.z = 0.1 + sway * 0.02;
+      armR.rotation.z = -0.1 + sway * 0.02;
       forearmL.rotation.x = -0.15;
       forearmR.rotation.x = -0.15;
 

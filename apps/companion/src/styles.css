@@ -458,6 +458,24 @@ html:has(.overlay-stage), body:has(.overlay-stage) { background: transparent; }
   transform: scale(1) translateY(0);
   opacity: 1;
 }
+/* Compact-when-ambient (Jarvis v4.5): in NORMAL docked/idle the unit also
+   tucks down (less screen presence), just milder than retreat. Hover or
+   any conversation state restores full size. transform-origin bottom
+   keeps the feet planted on the taskbar while scaling. */
+.assistant-stage .assistant-body { transform-origin: 50% 100%; }
+.assistant-stage[data-mode='docked']:not([data-speaking='true']) .assistant-body,
+.assistant-stage[data-mode='idle']:not([data-speaking='true']) .assistant-body {
+  transform: scale(0.78);
+  opacity: 0.92;
+}
+.assistant-stage[data-mode='docked'][data-hovering='true'] .assistant-body,
+.assistant-stage[data-mode='idle'][data-hovering='true'] .assistant-body,
+.assistant-stage[data-mode='docked'] .assistant-body:hover,
+.assistant-stage[data-mode='idle'] .assistant-body:hover,
+.assistant-stage[data-bubble='true'] .assistant-body {
+  transform: scale(1);
+  opacity: 1;
+}
 .assistant-stage .assistant-body {
   transition: transform 280ms cubic-bezier(0.22, 1, 0.36, 1), opacity 280ms ease;
 }

@@ -143,9 +143,9 @@ export function MetuStage({
       }
     };
     window.addEventListener('metu:assistant-gesture', onGesture);
-    // Idle variety: every 25–60s of uninterrupted idle, play a subtle
-    // life-sign (stretch, look-around, or — rarely — the antenna-spin
-    // party trick with a mischievous face). Main stage only.
+    // Idle variety (v4.5 — "more alive"): every 9–22s of uninterrupted
+    // idle, play a life-sign from a WIDE weighted pool — gestures, dance
+    // bursts, emotions, antenna tricks. Main stage only.
     let antennaSpin = 0; // seconds remaining of the spin trick
     let idleVarietyTimer: ReturnType<typeof setTimeout> | null = null;
     const scheduleIdleVariety = () => {
@@ -154,17 +154,30 @@ export function MetuStage({
           const loco = (driveRef.current.locomotion ?? 'idle') as MetuMotion;
           if (anchor && loco === 'idle' && driveRef.current.state === 'idle' && !gesture) {
             const r = Math.random();
-            if (r < 0.15) {
+            const play = (kind: MetuGesture, dur: number, emo?: MetuEmotion) => {
+              gesture = { kind, start: clock.getElapsedTime(), dur };
+              if (emo) setEmotion(emo, dur * 1000);
+            };
+            if (r < 0.08) {
               antennaSpin = 1.8;
               setEmotion('mischievous', 2200);
-            } else {
-              const pick: MetuGesture = r < 0.55 ? 'stretch' : 'look-around';
-              gesture = { kind: pick, start: clock.getElapsedTime(), dur: 2.6 };
-            }
+            } else if (r < 0.22) play('stretch', 2.6);
+            else if (r < 0.38) play('look-around', 2.6, 'curious');
+            else if (r < 0.5)
+              play('dance', 1.6, 'happy'); // tiny 2-step groove
+            else if (r < 0.6)
+              play('nod', 1.2); // small self-affirming nod
+            else if (r < 0.7)
+              play('typing', 2.0, 'focused'); // air-typing daydream
+            else if (r < 0.8)
+              play('wave', 1.4, 'happy'); // waves at the user
+            else if (r < 0.9)
+              play('shrug', 1.4); // contemplative shrug
+            else setEmotion(Math.random() < 0.5 ? 'curious' : 'happy', 2600); // face-only beat
           }
           scheduleIdleVariety();
         },
-        25_000 + Math.random() * 35_000,
+        9_000 + Math.random() * 13_000,
       );
     };
     if (anchor) scheduleIdleVariety();
