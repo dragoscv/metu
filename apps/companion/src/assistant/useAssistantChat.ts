@@ -290,6 +290,43 @@ export function useAssistantChat(auth: AuthState, personaSlug: string) {
     setStatus('idle');
   }, []);
 
+  /**
+   * Run a LOCAL skill turn inside the thread (Jarvis v4.3): shows the
+   * user's message + a pending assistant message immediately, streams
+   * updates into it, and settles with chips. This is how skills
+   * (analyze_screen, catch_up…) appear in the PANEL with live progress
+   * instead of streaming into the invisible bubble while the panel is
+   * open — the "nothing is happening" gap.
+   */
+  const startLocalTurn = useCallback(
+    (userText: string, ack: string) => {
+      const userMsg: ChatMessage = { id: uid(), role: 'user', content: userText };
+      const assistantId = uid();
+      setMessages((prev) => [
+        ...prev,
+        userMsg,
+        { id: assistantId, role: 'assistant', content: ack, pending: true },
+      ]);
+      setStatus('thinking');
+      return {
+        update: (full: string) => {
+          setStatus('streaming');
+          patch(assistantId, (m) => ({ ...m, content: full }));
+        },
+        finish: (text: string, chips: string[]) => {
+          setLastChips(chips);
+          patch(assistantId, (m) => ({ ...m, content: text, pending: false }));
+          setStatus('idle');
+        },
+        fail: (message: string) => {
+          patch(assistantId, (m) => ({ ...m, pending: false, error: message, content: '' }));
+          setStatus('error');
+        },
+      };
+    },
+    [patch],
+  );
+
   const lastAssistant = [...messages].reverse().find((m) => m.role === 'assistant');
 
   const state: AssistantChatState = {
@@ -299,5 +336,5 @@ export function useAssistantChat(auth: AuthState, personaSlug: string) {
     lastChips,
   };
 
-  return { ...state, send, stop, clear, appendAssistant };
+  return { ...state, send, stop, clear, appendAssistant, startLocalTurn };
 }

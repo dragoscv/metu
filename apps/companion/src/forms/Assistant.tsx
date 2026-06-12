@@ -824,16 +824,23 @@ function AssistantSkin({
     [auth, personaSlug],
   );
   const fireSkill = useCallback(
-    (skill: SkillId) => {
+    (skill: SkillId, chipLabel?: string) => {
       if (!auth) return;
       skillAbortRef.current?.abort();
       const ctrl = new AbortController();
       skillAbortRef.current = ctrl;
       setSkillBusy(true);
-      // Instant ack — the bubble appears before any network round-trip.
-      setUnreadReply(null);
-      setDynamicChips([]);
-      setChatBubble(SKILL_ACKS[skill]);
+      // Panel open → the skill runs IN-THREAD with live pending state
+      // (the "nothing is happening" gap: skills used to stream into the
+      // hidden bubble while the panel covered it). Panel closed → bubble.
+      const inThread = chatOpen
+        ? chat.startLocalTurn(chipLabel ?? SKILL_ACKS[skill], SKILL_ACKS[skill])
+        : null;
+      if (!inThread) {
+        setUnreadReply(null);
+        setDynamicChips([]);
+        setChatBubble(SKILL_ACKS[skill]);
+      }
       runSkill(
         auth,
         skill,
@@ -841,15 +848,20 @@ function AssistantSkin({
         (full) => {
           if (ctrl.signal.aborted) return;
           // Hide the (possibly partial) CHIPS trailer while streaming.
-          setChatBubble(splitChips(full).text);
+          const clean = splitChips(full).text;
+          if (inThread) inThread.update(clean);
+          else setChatBubble(clean);
         },
         ctrl.signal,
       )
         .then((full) => {
           if (ctrl.signal.aborted) return;
           const { text, chips } = splitChips(full);
-          setChatBubble(text);
-          setDynamicChips(chips);
+          if (inThread) inThread.finish(text, chips);
+          else {
+            setChatBubble(text);
+            setDynamicChips(chips);
+          }
           // EOD wrap doubles as continuity memory: tomorrow-me (and the
           // morning brief) recalls exactly where today ended.
           if (skill === 'eod_wrap' && text) {
@@ -870,7 +882,9 @@ function AssistantSkin({
         })
         .catch((err: unknown) => {
           if (ctrl.signal.aborted) return;
-          setChatBubble(err instanceof Error ? err.message : 'Something went wrong.');
+          const msg = err instanceof Error ? err.message : 'Something went wrong.';
+          if (inThread) inThread.fail(msg);
+          else setChatBubble(msg);
         })
         .finally(() => {
           if (skillAbortRef.current === ctrl) {
@@ -879,7 +893,8 @@ function AssistantSkin({
           }
         });
     },
-    [auth, personaSlug],
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [auth, personaSlug, chatOpen, chat.startLocalTurn],
   );
 
   /**
@@ -1158,6 +1173,15 @@ function AssistantSkin({
               // Gesture commands ("salute", "dance"…) → instant, local.
               if (tryGestureCommand(t)) {
                 setChatOpen(false);
+                return;
+              }
+              // Skill phrases typed/tapped IN the panel run as in-thread
+              // skills with live progress ("Analyze my screen" used to
+              // fall through to chat and the model only TALKED about it).
+              const skillHit =
+                SKILL_CHIPS[t.trim()] ?? SKILL_CHIP_PREFIXES.find(([re]) => re.test(t.trim()))?.[1];
+              if (skillHit) {
+                fireSkill(skillHit, t.trim());
                 return;
               }
               // "run <cmd…>" in chat → local terminal lane (closes the

@@ -103,6 +103,13 @@ const CONVERSATIONAL_RES: RegExp[] = [
   /^(?:how (?:would|should|could|do) (?:i|we|you))\b/i,
   /^(?:any )?(?:ideas?|suggestions?|advice|thoughts) (?:on|for|about)\b/i,
   /^help me (?:think|figure|decide|choose|pick|understand)\b/i,
+  // Romanian (the user's other assistant language) — same intents.
+  /^(?:a[șs] )?(?:vreau|a[șs] vrea|doresc) s[ăa] (?:construiesc|fac|creez|încep|incep|înv[ăa][țt]|invat|explorez|în[țt]eleg|inteleg)\b/i,
+  /^(?:hai )?s[ăa] (?:facem (?:un )?brainstorm|ne gândim|ne gandim|discut[ăa]m despre)\b/i,
+  /^(?:ce (?:p[ăa]rere ai|crezi|ai face|sugerezi|recomanzi))\b/i,
+  /^cum (?:ar trebui|a[șs] putea|s[ăa] fac|pot s[ăa])\b/i,
+  /^(?:ai )?(?:idei|sugestii|sfaturi) (?:despre|pentru|legate de)\b/i,
+  /^ajut[ăa]-?m[ăa] s[ăa] (?:m[ăa] gândesc|ma gandesc|aleg|decid|în[țt]eleg|inteleg)\b/i,
 ];
 
 function heuristic(input: CompanionTurnInput): TriageDecision | null {
