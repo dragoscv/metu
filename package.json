@@ -69,7 +69,13 @@
       "ws@>=8.0.0 <8.20.1": ">=8.20.1",
       "@opentelemetry/auto-instrumentations-node@<0.75.0": ">=0.75.0",
       "@opentelemetry/sdk-node@<0.217.0": ">=0.217.0",
-      "@opentelemetry/exporter-prometheus@<0.217.0": ">=0.217.0"
+      "@opentelemetry/exporter-prometheus@<0.217.0": ">=0.217.0",
+      "protobufjs@>=7.0.0 <7.5.8": ">=7.5.8",
+      "hono@<4.12.18": ">=4.12.18",
+      "esbuild@<0.25.0": ">=0.25.0"
     }
+  },
+  "pnpm-audit-notes": {
+    "@ai-sdk/provider-utils": "GHSA uncontrolled resource consumption — no patched release yet (advisory says <0.0.0). Low severity, dev-adjacent. Re-check after next ai-sdk release."
   }
 }

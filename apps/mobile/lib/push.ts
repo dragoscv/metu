@@ -57,7 +57,7 @@ async function loadNotifications(): Promise<NotificationsModule | null> {
   try {
     // Lazy-imported optional peer dep. The cast keeps this file typechecking
     // even when `expo-notifications` has not yet been installed.
-    const mod = (await import('expo-notifications')) as NotificationsModule;
+    const mod = (await import('expo-notifications')) as unknown as NotificationsModule;
     return mod;
   } catch (err) {
     if (!warnedMissing) {
