@@ -35,6 +35,61 @@ export const conductorPlanSchema = z.object({
 
 export type ConductorPlan = z.infer<typeof conductorPlanSchema>;
 
+/**
+ * Best-effort repair of malformed planner output. Handles:
+ *  1. ```json fences / leading-trailing prose around the JSON body.
+ *  2. The canonical {pulse, actions, notes} shape (re-canonicalized).
+ *  3. A sibling "briefing/summary/state (+suggestedActions/questions)"
+ *     shape some models emit — coerced into pulse/actions/notes.
+ * Returns the repaired JSON string, or null when unrepairable (lets the
+ * SDK surface the original parse error).
+ */
+export function repairPlanText(text: string): string | null {
+  try {
+    let candidate = text.trim();
+    const fenced = candidate.match(/```(?:json)?\s*([\s\S]*?)```/);
+    if (fenced?.[1]) candidate = fenced[1].trim();
+    if (!candidate.startsWith('{')) {
+      const start = candidate.indexOf('{');
+      const end = candidate.lastIndexOf('}');
+      if (start !== -1 && end > start) candidate = candidate.slice(start, end + 1);
+    }
+    const parsed = JSON.parse(candidate) as Record<string, unknown>;
+    if (!parsed || typeof parsed !== 'object') return null;
+    if ('pulse' in parsed) {
+      return JSON.stringify({
+        pulse: String(parsed.pulse).slice(0, 500),
+        actions: Array.isArray(parsed.actions) ? parsed.actions : [],
+        notes: typeof parsed.notes === 'string' ? parsed.notes : undefined,
+      });
+    }
+    const briefing =
+      (parsed.briefing as string | undefined) ??
+      (parsed.summary as string | undefined) ??
+      (parsed.state as string | undefined);
+    if (briefing) {
+      const followups = [
+        Array.isArray(parsed.suggestedActions) && parsed.suggestedActions.length
+          ? `suggested: ${(parsed.suggestedActions as unknown[]).join(' | ')}`
+          : null,
+        Array.isArray(parsed.questions) && parsed.questions.length
+          ? `questions: ${(parsed.questions as unknown[]).join(' | ')}`
+          : null,
+      ]
+        .filter(Boolean)
+        .join('\n');
+      return JSON.stringify({
+        pulse: String(briefing).slice(0, 500),
+        actions: Array.isArray(parsed.actions) ? parsed.actions : [],
+        notes: (parsed.notes as string | undefined) ?? (followups || undefined),
+      });
+    }
+    return null;
+  } catch {
+    return null;
+  }
+}
+
 export interface PlanInput {
   workspaceId: string;
   reason?: string;
@@ -206,60 +261,10 @@ Rules:
     schemaDescription:
       'Structured plan produced by the Conductor on each tick. Pulse + ordered action list + notes.',
     prompt: userPrompt,
-    // The model occasionally returns a "briefing/suggestedActions/questions"
-    // shape (a sibling planner schema). Coerce it back to the canonical
-    // pulse/actions shape so the tick doesn't fail and waste a cycle.
-    experimental_repairText: async ({ text }) => {
-      try {
-        // 1. Strip markdown code fences + any prose before/after the JSON
-        //    body — small/local models love to wrap JSON in ```json blocks
-        //    or add a leading sentence.
-        let candidate = text.trim();
-        const fenced = candidate.match(/```(?:json)?\s*([\s\S]*?)```/);
-        if (fenced?.[1]) candidate = fenced[1].trim();
-        if (!candidate.startsWith('{')) {
-          const start = candidate.indexOf('{');
-          const end = candidate.lastIndexOf('}');
-          if (start !== -1 && end > start) candidate = candidate.slice(start, end + 1);
-        }
-        const parsed = JSON.parse(candidate) as Record<string, unknown>;
-        // 2. Already canonical (possibly after fence-stripping)? Return it.
-        if (parsed && typeof parsed === 'object' && 'pulse' in parsed) {
-          return JSON.stringify({
-            pulse: String(parsed.pulse).slice(0, 500),
-            actions: Array.isArray(parsed.actions) ? parsed.actions : [],
-            notes: typeof parsed.notes === 'string' ? parsed.notes : undefined,
-          });
-        }
-        if (parsed && typeof parsed === 'object' && !('pulse' in parsed)) {
-          const briefing =
-            (parsed.briefing as string | undefined) ??
-            (parsed.summary as string | undefined) ??
-            (parsed.state as string | undefined);
-          if (briefing) {
-            const followups = [
-              Array.isArray(parsed.suggestedActions) && parsed.suggestedActions.length
-                ? `suggested: ${(parsed.suggestedActions as unknown[]).join(' | ')}`
-                : null,
-              Array.isArray(parsed.questions) && parsed.questions.length
-                ? `questions: ${(parsed.questions as unknown[]).join(' | ')}`
-                : null,
-            ]
-              .filter(Boolean)
-              .join('\n');
-            const repaired = {
-              pulse: String(briefing).slice(0, 500),
-              actions: Array.isArray(parsed.actions) ? parsed.actions : [],
-              notes: (parsed.notes as string | undefined) ?? (followups || undefined),
-            };
-            return JSON.stringify(repaired);
-          }
-        }
-      } catch {
-        // fall through — let the SDK throw the original error.
-      }
-      return null;
-    },
+    // The model occasionally wraps JSON in fences/prose or returns a sibling
+    // "briefing" schema. repairPlanText (exported, unit-tested) coerces both
+    // back to the canonical pulse/actions shape so the tick doesn't fail.
+    experimental_repairText: async ({ text }) => repairPlanText(text),
   });
 
   return {

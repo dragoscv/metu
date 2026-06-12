@@ -7,6 +7,69 @@
 
 ## Unreleased (post `eed030a`)
 
+### Hardening marathon (Rounds 1–10) — 2026-06-12
+
+> Ten sequential audit + fix rounds in one session. Every round verified
+> `pnpm typecheck` (16/16), `pnpm test` (9 packages), and from Round 6 the
+> Playwright smoke pack (6/6). All commits pushed to `main`.
+
+#### Security & dependencies
+
+- Dependency audit reduced **87 → 1** advisory (the remaining low has no
+  published patch). Catalog bumps: next 16.2.9, drizzle-orm 0.45.2 (high
+  SQLi advisory), vitest 3.2.x (critical), hono, ws, next-auth beta.30,
+  turbo 2.9.14 + `pnpm.overrides` for ~17 vulnerable transitives.
+- Client hardening: browser-ext message-payload whitelisting, companion
+  `move_window` clamped to the virtual desktop, GCS signed-URL TTL cap,
+  non-root + HEALTHCHECK Dockerfiles, localhost-only docker-compose ports,
+  logger now scrubs Upstash/Stripe token shapes, turbo env allowlist
+  completed (~22 missing vars).
+
+#### Reliability
+
+- Hub DLQ replay cron (5-min, backoff) + `cron-failure-alert` (terminal
+  Inngest failures → Sentry log + throttled owner notification).
+- drizzle 0.45 param-serialization bug class eradicated: `ANY(${arr})` →
+  `inArray()` (15 sites), raw-sql `Date` interpolations → `gte/lt` or ISO
+  strings (6 sites, two found live by the smoke pack).
+- Conductor planner JSON-repair hardened (`repairPlanText`, unit-tested):
+  fences/prose stripping + sibling-schema coercion.
+- 30s `AbortSignal.timeout` on all embedding calls; consolidation
+  idempotency guard; silent catch blocks now log with context.
+
+#### Performance
+
+- Cache Components enabled (`cacheComponents: true`): 116 segment configs
+  removed, docs/download pages on `'use cache'`, root layout made
+  prerenderable (locale resolved client-side), required Suspense
+  boundaries added. recharts lazy-loaded; bulk goal ops batched.
+- 6 composite DB indexes matching the hottest query shapes
+  (`0032_perf_indexes.sql`).
+- Recall ranking: two-stage HNSW retrieve → composite re-rank
+  (similarity × 30-day recency decay × type boost; consolidation ×1.5).
+
+#### Features
+
+- MCP server: resources (`metu://projects`, `metu://timeline/today`,
+  `metu://briefing`) + RFC 9728/8414 OAuth discovery (clients can PKCE
+  against the built-in provider instead of manual token minting).
+- Workspace takeout **import** (insert-only, content-hash dedupe) on
+  Settings → Data, complementing the existing NDJSON export.
+- `@metu/sdk` + `@metu/protocol` publish-ready (v0.1.0, dist builds,
+  `release-sdk.yml` workflow — needs `NPM_TOKEN` secret).
+- Hub: optional Redis-backed cross-instance handshake budget (fail-open).
+- Dev/E2E auth route (`/api/dev/e2e-login`, hard-gated) + Playwright
+  smoke pack (`apps/web/e2e`, 6 flows).
+
+#### Testing & docs
+
+- +57 unit tests (hub limits/broadcast, quiet-hours, recall scoring,
+  planner repair) + 6 Playwright smoke tests.
+- New docs: `docs/mcp.md`, `docs/research-2026-06.md`; `development.md`
+  refreshed (Node 22 pin, E2E setup); `.env.example` gap-filled.
+- a11y: sidebar `<nav>` landmark, skip-to-content link, command-palette
+  dialog semantics.
+
 ### Marathon batch pass (Batches 7–21) — May 2026
 
 > Fifteen sequential vertical-slice batches shipped behind the same north
