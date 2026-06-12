@@ -31,6 +31,7 @@ vi.mock('@metu/ai', () => ({
 }));
 
 vi.mock('ai', () => ({
+  stepCountIs: vi.fn(() => () => false),
   generateText: vi.fn(async (args: { system?: string; tools?: Record<string, unknown> }) => {
     captured.callCount++;
     captured.systemPrompt = args.system;

@@ -88,6 +88,23 @@ const LOCAL_HINT_KEYWORDS = [
   'are you',
 ];
 
+/**
+ * Conversational/ideation openers — the user wants to TALK (brainstorm,
+ * explore, get an opinion), not to fire an action. These previously
+ * escalated ("I want to build…" → Conductor) which produced a useless
+ * "Working on it now." with no substantive reply ever arriving. A
+ * brainstorm belongs on the streaming local lane where the model can
+ * actually converse.
+ */
+const CONVERSATIONAL_RES: RegExp[] = [
+  /^i (?:want|would like|'?d like) to (?:build|make|create|start|learn|try|explore|understand)\b/i,
+  /^(?:let'?s )?(?:brainstorm|ideate|think (?:about|through))\b/i,
+  /^what (?:do you think|would you|are your thoughts|should i)\b/i,
+  /^(?:how (?:would|should|could|do) (?:i|we|you))\b/i,
+  /^(?:any )?(?:ideas?|suggestions?|advice|thoughts) (?:on|for|about)\b/i,
+  /^help me (?:think|figure|decide|choose|pick|understand)\b/i,
+];
+
 function heuristic(input: CompanionTurnInput): TriageDecision | null {
   const text = input.utterance.trim();
   if (text.length === 0) {
@@ -95,6 +112,13 @@ function heuristic(input: CompanionTurnInput): TriageDecision | null {
   }
   if (text.length > 600) {
     return { lane: 'escalate', reason: 'long utterance (>600 chars)', source: 'heuristic' };
+  }
+  // Ideation/brainstorm beats the keyword scan: "I want to CREATE an app"
+  // contains 'create' but is a conversation, not a mutation order.
+  for (const re of CONVERSATIONAL_RES) {
+    if (re.test(text)) {
+      return { lane: 'local', reason: 'conversational/ideation opener', source: 'heuristic' };
+    }
   }
   const lower = ` ${text.toLowerCase()} `;
   for (const kw of HEURISTIC_ESCALATE_KEYWORDS) {

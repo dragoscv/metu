@@ -12,7 +12,7 @@
  * handled at the SDK route layer; keeping this synchronous makes it
  * trivially testable.
  */
-import { generateText, streamText, type ModelMessage } from 'ai';
+import { generateText, streamText, stepCountIs, type ModelMessage } from 'ai';
 import { getModel } from '@metu/ai';
 import { TOOLS, type ToolName } from '../agent/tools';
 import { buildAiTools } from '../agent/ai-tools';
@@ -70,7 +70,9 @@ function buildSystemPrompt(input: CompanionTurnInput): string {
 
 You are running on the FAST LANE of the Companion-Agent. Your job is to:
   - acknowledge and respond in a single short turn (≤ 3 sentences when spoken)
+  - EXCEPTION — brainstorming/ideation ("I want to build…", "how should I…"): engage substantively — give a concrete take, 2-3 sharp options with trade-offs, and ONE next step; up to ~8 sentences
   - call read-only tools when the user is asking what is on screen, what they were working on, or what's in memory
+  - after calling tools you MUST answer using their results — never end the turn on a bare tool call
   - NEVER promise to take an action that lives beyond this turn — defer that to your "long memory" and tell the user it'll happen in a moment
 
 If the user asks for anything that requires creating, sending, scheduling,
@@ -133,7 +135,11 @@ export async function respondLocal(input: CompanionTurnInput): Promise<RespondLo
     system,
     messages,
     tools,
-    maxOutputTokens: 400,
+    maxOutputTokens: 700,
+    // CRITICAL: AI SDK v5 defaults to ONE step — the model calls a tool
+    // and generation ENDS with empty text (the user sees tool badges and
+    // silence). Allow tool → result → answer loops up to 4 steps.
+    stopWhen: stepCountIs(4),
     onStepFinish: (step) => {
       for (const c of step.toolCalls ?? []) {
         if (c.toolName) toolCallNames.push(c.toolName);
@@ -177,7 +183,11 @@ export async function* streamLocal(input: CompanionTurnInput): AsyncGenerator<Lo
     system,
     messages,
     tools,
-    maxOutputTokens: 400,
+    maxOutputTokens: 700,
+    // Same multi-step fix as respondLocal: without stopWhen the stream
+    // ends right after the first tool call — "list_projects, list_tasks"
+    // badges and then SILENCE was exactly this.
+    stopWhen: stepCountIs(4),
     onStepFinish: (step) => {
       for (const c of step.toolCalls ?? []) {
         if (c.toolName) toolCallNames.push(c.toolName);
@@ -208,7 +218,7 @@ export async function* streamLocal(input: CompanionTurnInput): AsyncGenerator<Lo
         model: modelInfo.model as Parameters<typeof generateText>[0]['model'],
         system,
         messages,
-        maxOutputTokens: 400,
+        maxOutputTokens: 700,
       });
       text = retry.text.trim();
       if (text) yield { type: 'delta', text };

@@ -61,12 +61,31 @@ function classify(app: string, title: string): AppClass {
   return 'mixed';
 }
 
+/** App names that must never be mistaken for a project. */
+const APP_NAME_NOISE =
+  /^(visual studio(?: code)?(?:\s*-?\s*insiders)?|vs ?code|code|chrome|google chrome|microsoft edge|edge|firefox|brave|notepad(?:\+\+)?|explorer|slack|discord|teams|telegram|outlook|spotify|terminal|powershell|cmd|wsl)$/i;
+
 function guessProject(title: string): string | null {
   // VS Code style: "<file> - <folder> - Visual Studio Code"
   const parts = title.split(/\s[-—]\s/);
-  if (parts.length >= 3) return parts[parts.length - 2]?.trim().slice(0, 60) ?? null;
-  const m = PROJECT_HINTS.exec(title);
-  return m?.[1]?.trim() ?? null;
+  const candidate =
+    parts.length >= 3
+      ? (parts[parts.length - 2]?.trim().slice(0, 60) ?? null)
+      : (PROJECT_HINTS.exec(title)?.[1]?.trim() ?? null);
+  // Reject app names ("Where was I on Visual Studio Code?" chip bug) —
+  // a 2-part title like "metu - Visual Studio Code" has the APP last and
+  // nothing project-like; titles can also end up with the app in the
+  // middle segment on some windows.
+  if (!candidate || APP_NAME_NOISE.test(candidate)) {
+    // Salvage: for 2-part titles take the FIRST part when the last is an
+    // app name ("metu - Visual Studio Code" → "metu").
+    if (parts.length === 2 && APP_NAME_NOISE.test(parts[1]?.trim() ?? '')) {
+      const first = parts[0]?.trim().slice(0, 60);
+      return first && !APP_NAME_NOISE.test(first) ? first : null;
+    }
+    return null;
+  }
+  return candidate;
 }
 
 // ── Live model ─────────────────────────────────────────────────────────────
