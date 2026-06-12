@@ -13,6 +13,7 @@ import { ensureFreshAuth, type AuthState } from '../state/auth';
 import { isTauri } from '../state/runtime';
 import { getActivityState } from './activityModel';
 import { loadAssistantLanguage } from '../state/language';
+import { consumePreparedContext } from './autonomy';
 
 export type SkillId =
   | 'catch_up'
@@ -133,10 +134,15 @@ async function gatherContext(skill: SkillId): Promise<string> {
       a11yOutline(),
       invoke<string>('sense_recent_text', { minutes: 5, maxChars: 6_000 }).catch(() => ''),
     ]);
+    // Auto-research (Jarvis v6): if the autonomy engine pre-fetched
+    // memory matches for the error on screen, ride them along — the
+    // answer lands instantly WITH workspace history.
+    const prepared = skill === 'explain_error' ? consumePreparedContext('') : null;
     return [
       head,
       outline ? `UI structure of the focused window (role/name/value):\n${outline}` : '',
       recent ? `Screen text (most recent first):\n${recent}` : '',
+      prepared ?? '',
     ]
       .filter(Boolean)
       .join('\n\n');

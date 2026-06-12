@@ -56,6 +56,7 @@ import { assistantLines } from '../assistant/assistantMessages';
 import { fromPath } from '../assistant/attachments';
 import { executeOpen, parseOpenIntent, readClipboard } from '../assistant/desktopActions';
 import { getMood, moodGreetingSuffix, recordMoodEvent } from '../assistant/mood';
+import { startAutonomy } from '../assistant/autonomy';
 import { getSmartChips } from '../assistant/smartChips';
 import { showHighlight } from '../assistant/overlay-bridge';
 import { onProposal } from '../assistant/assistantActions';
@@ -613,6 +614,24 @@ function AssistantSkin({
     });
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [auth, audioEl, personaSlug]);
+
+  // Jarvis v6 — autonomy engine: background noticing (inbox drafts),
+  // pre-research, agent-finished / repeated-search / end-of-session
+  // action cards. Cards = narrative line + concrete action chips that
+  // route through the existing quickReply lanes (both styles the user
+  // asked for). Learning loop counts them like any other suggestion.
+  useEffect(() => {
+    if (!auth) return;
+    return startAutonomy({
+      auth,
+      onCard: (card) => {
+        lastSuggestionCatRef.current = suggestionCategory(card.id);
+        setAmbient({ text: card.text, quickReplies: card.actions });
+        playGesture('nod', 1200);
+      },
+    });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [auth]);
 
   // ── Jarvis v3 — anticipation engine + daily rhythm ───────────────────────
   // Every ~12min of ACTIVE use (not idle, not deep focus, mode≠silent) run
