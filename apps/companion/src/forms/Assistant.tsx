@@ -30,12 +30,7 @@ import { playWakeBlip } from '../state/wakeBlip';
 import { AvatarHost } from '../avatar/AvatarHost';
 import type { AvatarState } from '../avatar/types';
 import { useAssistantBrain, type PointRequest } from '../assistant/useAssistantBrain';
-import {
-  getActivityState,
-  onActivityChange,
-  startActivityModel,
-  startDistiller,
-} from '../assistant/activityModel';
+import { getActivityState, startActivityModel, startDistiller } from '../assistant/activityModel';
 import {
   executeActPlan,
   generateImage,
@@ -256,9 +251,9 @@ function AssistantSkin({
    *  the next quick-reply credits this category (learning loop). */
   const lastSuggestionCatRef = useRef<SuggestionCategory | null>(null);
   // Sense engine watching state (false = user-paused or privacy gate).
-  const [watching, setWatching] = useState(true);
+  // `watching` state lives in the activity model; the menu only needs the
+  // user-paused flag since the corner watchdot was removed.
   const [userPausedWatch, setUserPausedWatch] = useState(false);
-  useEffect(() => onActivityChange((s) => setWatching(s.watching)), []);
   // Restore persisted privacy choices (blocklist + paused) on mount.
   useEffect(() => {
     void applySenseSettings().then(({ paused }) => setUserPausedWatch(paused));
@@ -1146,18 +1141,9 @@ function AssistantSkin({
       data-hovering={hovering}
       data-mode={mode}
     >
-      {/* Watching indicator — green eye while ambient sensing is active,
-            gray when paused (user or privacy gate). Always visible so the
-            user can ALWAYS tell whether the screen is being observed. */}
-      <div
-        className={`assistant-watchdot ${watching && !userPausedWatch ? 'assistant-watchdot--on' : ''}`}
-        title={
-          watching && !userPausedWatch
-            ? 'Watching your screen (right-click to stop)'
-            : 'Not watching (paused or sensitive context)'
-        }
-        aria-hidden
-      />
+      {/* Watching state surfaces in the right-click menu (Pause/Resume
+          watching) — the always-on corner orb was visual noise the user
+          asked to remove. */}
       {chatOpen && auth ? (
         <div
           className="assistant-panel"

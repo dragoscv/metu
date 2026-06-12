@@ -463,20 +463,6 @@ html:has(.overlay-stage), body:has(.overlay-stage) { background: transparent; }
 }
 
 /* ── Context menu ────────────────────────────────────────────────── */
-.assistant-watchdot {
-  position: absolute;
-  right: 14px; bottom: 14px;
-  width: 8px; height: 8px;
-  border-radius: 50%;
-  background: #6b7280;
-  pointer-events: none;
-  z-index: 10;
-  transition: background 240ms ease, box-shadow 240ms ease;
-}
-.assistant-watchdot--on {
-  background: #2dd4bf;
-  box-shadow: 0 0 8px rgba(45, 212, 191, 0.8);
-}
 .assistant-menu {
   pointer-events: auto;
   position: fixed;

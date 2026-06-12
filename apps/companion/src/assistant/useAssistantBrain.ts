@@ -37,6 +37,7 @@ import { getCurrentWindow, PhysicalPosition } from '@tauri-apps/api/window';
 import { isTauri } from '../state/runtime';
 import {
   clampToMonitors,
+  getCursor,
   getForeground,
   getMonitors,
   type ForegroundWindow,
@@ -195,6 +196,33 @@ export function useAssistantBrain(opts: Options): AssistantBrainState {
     // A missed pointerleave can't strand the window: the native watcher
     // also tracks the real cursor against the real window rect, so leaving
     // the window always re-enables click-through within ~50ms.
+  }, []);
+
+  // Stuck-hover failsafe: pointerleave often NEVER fires on this window
+  // (click-through flips swallow it), so `hovering` could stay true and
+  // the retreat-mode avatar stayed enlarged forever. Verify against the
+  // REAL cursor: if it's outside the window rect, drop the hover state.
+  useEffect(() => {
+    if (!isTauri()) return;
+    const t = setInterval(() => {
+      if (!domHoverRef.current) return;
+      void Promise.all([getCursor(), getCurrentWindow().outerPosition()])
+        .then(([cur, pos]) => {
+          if (!cur) return;
+          const scale = window.devicePixelRatio || 1;
+          const w = window.innerWidth * scale;
+          const h = window.innerHeight * scale;
+          const inside =
+            cur.x >= pos.x && cur.x <= pos.x + w && cur.y >= pos.y && cur.y <= pos.y + h;
+          if (!inside) {
+            domHoverRef.current = false;
+            setHovering(false);
+            reportInteractiveLock(lockedRef.current);
+          }
+        })
+        .catch(() => {});
+    }, 700);
+    return () => clearInterval(t);
   }, []);
 
   // Allow external (hub) point requests via a window event.
