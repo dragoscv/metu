@@ -837,32 +837,28 @@ function AssistantSkin({
         : (ambient?.quickReplies ?? smartChips);
 
   const dismissBubble = () => {
-    if (bubbleIsChat) {
-      // Manual ✕ on a bubble the user has ALREADY restored once counts as
-      // read — don't re-park it (the badge would never go away). Fresh
-      // bubbles park as 'dismissed' (cheap undo).
-      if (chatBubble && !bubbleReadRef.current) {
-        setUnreadReply({ text: chatBubble, how: 'dismissed' });
-      }
-      setChatBubble(null);
-    } else {
-      setAmbient(null);
+    // ✕ means "go away" — clear BOTH layers. The bubble text is a layered
+    // fallback (voice ?? chat ?? working ?? ambient); clearing only the
+    // top layer revealed a stale lower one → the "double dismiss with
+    // different content" bug. Proactive content is already recorded in
+    // the thread (recordProactive), so nothing is lost.
+    if (bubbleIsChat && chatBubble && !bubbleReadRef.current) {
+      // Manual ✕ on an unread reply still parks it (cheap undo).
+      setUnreadReply({ text: chatBubble, how: 'dismissed' });
     }
+    setChatBubble(null);
+    setAmbient(null);
   };
 
   /** TTL expiry of a chat reply — parked as hover-restorable unread. */
   const expireBubble = () => {
-    if (bubbleIsChat) {
-      // Once restored (= read), expiry is silent: re-parking made the
-      // unread badge immortal — read the message, bubble re-expires,
-      // badge returns. Read means read.
-      if (chatBubble && !bubbleReadRef.current) {
-        setUnreadReply({ text: chatBubble, how: 'expired' });
-      }
-      setChatBubble(null);
-    } else {
-      setAmbient(null);
+    // Expiry clears both layers too — a TTL'd bubble must not reveal an
+    // even older layer beneath it.
+    if (bubbleIsChat && chatBubble && !bubbleReadRef.current) {
+      setUnreadReply({ text: chatBubble, how: 'expired' });
     }
+    setChatBubble(null);
+    setAmbient(null);
   };
 
   const restoreUnread = () => {
