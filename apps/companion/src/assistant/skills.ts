@@ -38,11 +38,13 @@ export const SKILL_ACKS: Record<SkillId, string> = {
  * quick replies). Returns clean text + parsed chips (possibly empty).
  */
 export function splitChips(full: string): { text: string; chips: string[] } {
-  const m = /\nCHIPS:\s*(\[[\s\S]*?\])\s*$/.exec(full);
+  // Models decorate the trailer ("**CHIPS:**", "CHIPS -", leading spaces…)
+  // — match liberally: last line containing CHIPS followed by a JSON array.
+  const m = /\n[*_\s>#-]*CHIPS:?[*_\s]*?(\[[\s\S]*?\])[*_\s]*$/i.exec(full);
   if (!m) {
     // Mid-stream: a partially-arrived trailer ("\nCHIPS: [\"Fi…") must not
     // flash raw JSON in the bubble — hide the incomplete line.
-    const partial = /\nCHIPS:[\s\S]*$/.exec(full);
+    const partial = /\n[*_\s>#-]*CHIPS:?[\s\S]*$/i.exec(full);
     if (partial) return { text: full.slice(0, partial.index).trim(), chips: [] };
     return { text: full.trim(), chips: [] };
   }

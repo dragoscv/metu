@@ -301,9 +301,33 @@ html:has(.assistant-stage), body:has(.assistant-stage) { background: transparent
 }
 /* Bubble content GROWS with the reply (Jarvis v4) — the window has
    ~420px of headroom above the avatar. Scroll only as a last resort. */
-.bubble__text { display: block; word-break: break-word; max-height: 400px; overflow-y: auto; overscroll-behavior: contain; }
-.bubble__text::-webkit-scrollbar { width: 5px; }
-.bubble__text::-webkit-scrollbar-thumb { background: rgba(255, 255, 255, 0.14); border-radius: 5px; }
+.bubble__text {
+  display: block; word-break: break-word;
+  max-height: 400px; overflow-y: auto;
+  overscroll-behavior: contain;
+  padding-right: 8px;        /* breathing room so text never touches the bar */
+  scrollbar-gutter: stable;
+}
+/* Beautiful scrollbar: slim accent-gradient pill, brightens on hover,
+   track fades in only while scrolling is possible. */
+.bubble__text::-webkit-scrollbar { width: 8px; }
+.bubble__text::-webkit-scrollbar-track {
+  background: rgba(255, 255, 255, 0.04);
+  border-radius: 8px;
+  margin: 4px 0;
+}
+.bubble__text::-webkit-scrollbar-thumb {
+  background: linear-gradient(180deg, rgba(124, 140, 255, 0.55), rgba(140, 110, 245, 0.55));
+  border-radius: 8px;
+  border: 2px solid rgba(14, 16, 26, 0.9); /* inset pill look */
+  min-height: 28px;
+}
+.bubble__text::-webkit-scrollbar-thumb:hover {
+  background: linear-gradient(180deg, rgba(124, 140, 255, 0.9), rgba(140, 110, 245, 0.9));
+}
+/* Soft fade at the bottom edge hints "there is more below". */
+.bubble__text { -webkit-mask-image: linear-gradient(to bottom, black calc(100% - 14px), rgba(0,0,0,0.25)); mask-image: linear-gradient(to bottom, black calc(100% - 14px), rgba(0,0,0,0.25)); }
+.bubble__text--fits { -webkit-mask-image: none; mask-image: none; }
 .bubble__dots { display: inline-flex; gap: 3px; margin-left: 6px; vertical-align: middle; }
 .bubble__dots i {
   width: 4px; height: 4px; border-radius: 50%;

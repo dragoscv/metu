@@ -50,8 +50,22 @@ export function SpeechBubble({
   const [replying, setReplying] = useState(false);
   const [hovered, setHovered] = useState(false);
   const inputRef = useRef<HTMLInputElement | null>(null);
+  const textRef = useRef<HTMLSpanElement | null>(null);
+  /** True when content fits without scrolling — disables the bottom fade. */
+  const [fits, setFits] = useState(true);
   const onExpireRef = useRef(onExpire ?? onDismiss);
   onExpireRef.current = onExpire ?? onDismiss;
+
+  // Re-measure on text change + container resize (images/blocks loading).
+  useEffect(() => {
+    const el = textRef.current;
+    if (!el) return;
+    const measure = () => setFits(el.scrollHeight <= el.clientHeight + 2);
+    measure();
+    const ro = new ResizeObserver(measure);
+    ro.observe(el);
+    return () => ro.disconnect();
+  }, [text]);
 
   useEffect(() => {
     // Interactive bubbles stay until the user responds; ambient auto-dismiss.
@@ -89,7 +103,7 @@ export function SpeechBubble({
       >
         ✕
       </button>
-      <span className="bubble__text">
+      <span ref={textRef} className={`bubble__text ${fits ? 'bubble__text--fits' : ''}`}>
         <RichMessage text={text} apiBase={apiBase} />
         {pending && (
           <span className="bubble__dots" aria-label="thinking">
