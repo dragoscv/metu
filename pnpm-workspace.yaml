@@ -115,7 +115,7 @@ catalog:
   'react-native': '0.76.5'
 
   # Testing
-  vitest: ^2.1.8
-  '@vitest/ui': ^2.1.8
+  vitest: ^3.2.6
+  '@vitest/ui': ^3.2.6
   '@testing-library/react': ^16.1.0
   'playwright': ^1.49.0
