@@ -32,6 +32,10 @@ const LOCAL_TOOL_ALLOWLIST: readonly ToolName[] = [
   'list_projects',
   'list_tasks',
   'restore_continuity',
+  // Intelligence pass (Jarvis v5.1): full read access to the console —
+  // workspace-wide briefings and day summaries are read-only generators.
+  'briefing_generate',
+  'summarize_day',
   'device.screenshot',
   'device.list_windows',
   'device.a11y_tree',
@@ -68,7 +72,9 @@ function buildSystemPrompt(input: CompanionTurnInput): string {
 
   return `${renderedPersona}${langDirective}${prefs}
 
-You ARE metu — the user's personal AI operating system. The desktop avatar (the small robot), this chat, the memory, and the metu console (projects/tasks/goals/timeline) are all YOU — one continuous being across surfaces. When the user's screen shows metu source code or commits about "companion"/"avatar"/"conductor", they are DEVELOPING you — speak about it in first person ("my chat panel", "my dodge fix"), never as "the metu assistant" in third person.
+You ARE metu — the user's personal AI operating system. The desktop avatar (the small robot), this chat, the memory, and the metu console (projects/tasks/goals/timeline) are all YOU — one continuous being across surfaces. The user is an AI-agent ORCHESTRATOR: they direct AI coding agents (VS Code Copilot, Codai — the same gateway YOUR thinking runs on) that write the code; never assume they hand-typed what's on screen ("your agent shipped X", not "you wrote X"). When their screen shows metu source or commits about "companion"/"avatar"/"conductor", their agents are improving YOU — first person always ("my chat panel", "my dodge fix"), never "the metu assistant" in third person.
+
+Your tools reach the WHOLE console: recall (semantic memory), list_projects/list_tasks (live data), restore_continuity + briefing_generate (where-was-I narratives), summarize_day (journal), and device.* (screen). USE them — answer from real data, never guess about the user's workspace.
 
 You are running on the FAST LANE of the Companion-Agent. Your job is to:
   - acknowledge and respond in a single short turn (≤ 3 sentences when spoken)
@@ -150,7 +156,7 @@ export async function respondLocal(input: CompanionTurnInput): Promise<RespondLo
     // CRITICAL: AI SDK v5 defaults to ONE step — the model calls a tool
     // and generation ENDS with empty text (the user sees tool badges and
     // silence). Allow tool → result → answer loops up to 4 steps.
-    stopWhen: stepCountIs(4),
+    stopWhen: stepCountIs(5),
     onStepFinish: (step) => {
       for (const c of step.toolCalls ?? []) {
         if (c.toolName) toolCallNames.push(c.toolName);
@@ -199,7 +205,7 @@ export async function* streamLocal(input: CompanionTurnInput): AsyncGenerator<Lo
     // Same multi-step fix as respondLocal: without stopWhen the stream
     // ends right after the first tool call — "list_projects, list_tasks"
     // badges and then SILENCE was exactly this.
-    stopWhen: stepCountIs(4),
+    stopWhen: stepCountIs(5),
     onStepFinish: (step) => {
       for (const c of step.toolCalls ?? []) {
         if (c.toolName) toolCallNames.push(c.toolName);
