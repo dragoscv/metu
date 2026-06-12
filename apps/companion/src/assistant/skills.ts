@@ -25,7 +25,7 @@ export type SkillId =
   | 'morning_brief'
   | 'eod_wrap';
 
-export const SKILL_ACKS: Record<SkillId, string> = {
+const SKILL_ACKS_EN: Record<SkillId, string> = {
   catch_up: 'Looking back at what you were doing…',
   analyze_screen: 'Reading your screen…',
   explain_error: 'Looking at that error…',
@@ -35,6 +35,23 @@ export const SKILL_ACKS: Record<SkillId, string> = {
   morning_brief: 'Putting your morning brief together…',
   eod_wrap: 'Wrapping up your day…',
 };
+const SKILL_ACKS_RO: Record<SkillId, string> = {
+  catch_up: 'Mă uit la ce făceai…',
+  analyze_screen: 'Îți citesc ecranul…',
+  explain_error: 'Mă uit la eroarea aia…',
+  whats_next: 'Verific unde ai rămas…',
+  anticipate: '…',
+  deliberate: '…',
+  morning_brief: 'Îți pregătesc brieful de dimineață…',
+  eod_wrap: 'Îți închei ziua…',
+};
+/** Acks follow the assistant language (Proxy keeps call sites unchanged). */
+export const SKILL_ACKS: Record<SkillId, string> = new Proxy(SKILL_ACKS_EN, {
+  get(target, prop: string) {
+    const src = loadAssistantLanguage() === 'ro' ? SKILL_ACKS_RO : target;
+    return src[prop as SkillId] ?? target[prop as SkillId];
+  },
+});
 
 /**
  * Strip the `CHIPS: [...]` trailer the server appends (Jarvis v3 dynamic

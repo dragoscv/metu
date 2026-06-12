@@ -58,7 +58,7 @@ import { executeOpen, parseOpenIntent, readClipboard } from '../assistant/deskto
 import { getMood, moodGreetingSuffix, recordMoodEvent } from '../assistant/mood';
 import { applyAppearance, onAppearanceChange } from '../state/appearance';
 import { startAutonomy } from '../assistant/autonomy';
-import { getSmartChips } from '../assistant/smartChips';
+import { canonicalChip, getSmartChips } from '../assistant/smartChips';
 import { showHighlight } from '../assistant/overlay-bridge';
 import { onProposal } from '../assistant/assistantActions';
 import { useAssistantChat } from '../assistant/useAssistantChat';
@@ -1284,7 +1284,10 @@ function AssistantSkin({
   /** Prefix matches for dynamic chip text (project names vary). */
   const SKILL_CHIP_PREFIXES: Array<[RegExp, SkillId]> = [[/^Where was I on /i, 'catch_up']];
   const quickReply = auth
-    ? (text: string) => {
+    ? (rawText: string) => {
+        // Localized chips (RO labels) reverse-map to canonical EN keys so
+        // the SKILL_CHIPS routing below works in any assistant language.
+        const text = canonicalChip(rawText);
         setAmbient(null);
         // Learning loop: tapping a quick reply = engagement with the last
         // proactive suggestion's category.
@@ -1413,8 +1416,9 @@ function AssistantSkin({
               // Skill phrases typed/tapped IN the panel run as in-thread
               // skills with live progress ("Analyze my screen" used to
               // fall through to chat and the model only TALKED about it).
+              const tCanon = canonicalChip(t.trim());
               const skillHit =
-                SKILL_CHIPS[t.trim()] ?? SKILL_CHIP_PREFIXES.find(([re]) => re.test(t.trim()))?.[1];
+                SKILL_CHIPS[tCanon] ?? SKILL_CHIP_PREFIXES.find(([re]) => re.test(tCanon))?.[1];
               if (skillHit) {
                 fireSkill(skillHit, t.trim());
                 return;

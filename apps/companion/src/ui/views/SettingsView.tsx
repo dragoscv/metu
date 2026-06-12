@@ -10,7 +10,7 @@ import { ViewHeader } from '../ViewHeader';
 import { loadAppearance, saveAppearance } from '../../state/appearance';
 import { usePinToTop } from '../../state/usePinToTop';
 import { useObserverMuted } from '../../state/useObserverMuted';
-import { useT } from '../../state/locale';
+import { loadUiLocale, saveUiLocale, useT, type UiLocale } from '../../state/locale';
 
 export function SettingsView({
   auth,
@@ -23,6 +23,7 @@ export function SettingsView({
 }) {
   const t = useT();
   const [appearance, setAppearance] = useState(() => loadAppearance());
+  const [uiLocale, setUiLocale] = useState<UiLocale>(() => loadUiLocale());
   const [serverVersion, setServerVersion] = useState<string | null>(null);
   const { pinned, toggle: togglePin } = usePinToTop();
   const { muted: observerMuted, toggle: toggleObserver } = useObserverMuted();
@@ -57,6 +58,24 @@ export function SettingsView({
 
       <div className="glass-card settings-block">
         <p className="settings-block__label">{t('settings.window')}</p>
+        <p className="settings-block__label" style={{ marginTop: 2 }}>
+          {t('assistant.uiLanguage')}
+        </p>
+        <div className="settings-actions">
+          {(['en', 'ro'] as UiLocale[]).map((l) => (
+            <button
+              key={l}
+              type="button"
+              className={`chip ${uiLocale === l ? 'chip--on' : ''}`}
+              onClick={() => {
+                setUiLocale(l);
+                saveUiLocale(l);
+              }}
+            >
+              {l === 'en' ? 'English' : 'Română'}
+            </button>
+          ))}
+        </div>
         <div className="settings-actions">
           <button className="chip" onClick={onShowOnboarding}>
             {t('settings.onboarding')}

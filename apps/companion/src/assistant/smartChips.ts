@@ -14,6 +14,44 @@
  * hour so the same session doesn't flicker but days vary.
  */
 import { getActivityState } from './activityModel';
+import { loadAssistantLanguage } from '../state/language';
+
+/**
+ * Chip i18n (Jarvis v9.1): display labels follow the ASSISTANT language,
+ * but routing stays canonical-English — `canonicalChip()` reverse-maps a
+ * tapped RO label back to the EN key the SKILL_CHIPS router expects.
+ */
+const CHIP_RO: Record<string, string> = {
+  'Morning brief': 'Brief de dimineață',
+  'Wrap up my day': 'Încheie-mi ziua',
+  'Analyze my screen': 'Analizează-mi ecranul',
+  'What does this error mean?': 'Ce înseamnă eroarea asta?',
+  'Summarize this page': 'Rezumă pagina asta',
+  'Improve this paragraph': 'Îmbunătățește paragraful',
+  'Draft a reply': 'Schițează un răspuns',
+  'Catch me up': 'Pune-mă la curent',
+  "What's next on my plate?": 'Ce urmează pentru mine?',
+  'Suggest a break point': 'Sugerează o pauză',
+};
+const CHIP_RO_REVERSE = new Map(Object.entries(CHIP_RO).map(([en, ro]) => [ro, en]));
+
+/** Display-localize a canonical chip (prefix chips keep their dynamic tail). */
+export function localizeChip(text: string): string {
+  if (loadAssistantLanguage() !== 'ro') return text;
+  if (CHIP_RO[text]) return CHIP_RO[text];
+  const wasI = /^Where was I on (.+)\?$/.exec(text);
+  if (wasI) return `Unde rămăsesem la ${wasI[1]}?`;
+  return text;
+}
+
+/** Reverse-map a (possibly localized) tapped label to its canonical key. */
+export function canonicalChip(text: string): string {
+  const direct = CHIP_RO_REVERSE.get(text);
+  if (direct) return direct;
+  const wasI = /^Unde rămăsesem la (.+)\?$/.exec(text);
+  if (wasI) return `Where was I on ${wasI[1]}?`;
+  return text;
+}
 
 interface Candidate {
   text: string;
@@ -94,5 +132,5 @@ export function getSmartChips(): string[] {
     const c = candidates.splice(idx, 1)[0]!;
     if (!picked.includes(c.text)) picked.push(c.text);
   }
-  return picked;
+  return picked.map(localizeChip);
 }

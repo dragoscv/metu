@@ -14,6 +14,7 @@ import { isTauri } from '../state/runtime';
 import type { ChatMessage, ChatStatus } from './useAssistantChat';
 import { RichMessage } from './RichMessage';
 import { addAttachments, fromFile, type ChatAttachment } from './attachments';
+import { loadAssistantLanguage } from '../state/language';
 
 /** Clipboard write that works in both Tauri (plugin) and browser dev. */
 async function copyText(text: string): Promise<void> {
@@ -419,7 +420,15 @@ export function ChatPanel({
           className="chat__input"
           rows={1}
           value={draft}
-          placeholder={busy ? 'Working…' : 'Message your assistant…'}
+          placeholder={
+            busy
+              ? loadAssistantLanguage() === 'ro'
+                ? 'Lucrez…'
+                : 'Working…'
+              : loadAssistantLanguage() === 'ro'
+                ? 'Scrie-i asistentului tău…'
+                : 'Message your assistant…'
+          }
           onChange={(e) => setDraft(e.target.value)}
           onContextMenu={(e) => openMenu(e, null, true)}
           onKeyDown={(e) => {

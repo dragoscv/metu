@@ -58,7 +58,7 @@ const DICT = {
     'home.refresh': 'Refresh',
     // assistant page
     'assistant.show': 'Show desktop assistant',
-    'assistant.language': 'Conversation language',
+    'assistant.language': 'Assistant language',
     'assistant.uiLanguage': 'Interface language',
     'assistant.personality': 'Personality',
     'assistant.proactivity': 'Proactivity',
@@ -108,7 +108,7 @@ const DICT = {
     'home.energy': 'Energie',
     'home.refresh': 'Reîmprospătează',
     'assistant.show': 'Arată asistentul pe desktop',
-    'assistant.language': 'Limba conversației',
+    'assistant.language': 'Limba asistentului',
     'assistant.uiLanguage': 'Limba interfeței',
     'assistant.personality': 'Personalitate',
     'assistant.proactivity': 'Proactivitate',

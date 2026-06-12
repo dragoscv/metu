@@ -15,7 +15,7 @@ import {
   LANGUAGE_LABELS,
   type AssistantLanguage,
 } from '../../state/language';
-import { loadUiLocale, saveUiLocale, useT, type UiLocale } from '../../state/locale';
+import { useT } from '../../state/locale';
 import {
   loadProactivity,
   saveProactivity,
@@ -32,17 +32,12 @@ import { loadAppearance, saveAppearance } from '../../state/appearance';
 export function AssistantView({ auth }: { auth: AuthState | null }) {
   const t = useT();
   const [lang, setLang] = useState<AssistantLanguage>(() => loadAssistantLanguage());
-  const [uiLocale, setUiLocale] = useState<UiLocale>(() => loadUiLocale());
   const [proactivity, setProactivity] = useState<ProactivityMode>(() => loadProactivity());
   const [appearance, setAppearance] = useState(() => loadAppearance());
 
   const pickLang = (l: AssistantLanguage) => {
     setLang(l);
     saveAssistantLanguage(l);
-  };
-  const pickUi = (l: UiLocale) => {
-    setUiLocale(l);
-    saveUiLocale(l);
   };
   const pickProactivity = (m: ProactivityMode) => {
     setProactivity(m);
@@ -69,21 +64,6 @@ export function AssistantView({ auth }: { auth: AuthState | null }) {
               onClick={() => pickLang(l)}
             >
               {LANGUAGE_LABELS[l]}
-            </button>
-          ))}
-        </div>
-        <p className="settings-block__label" style={{ marginTop: 10 }}>
-          {t('assistant.uiLanguage')}
-        </p>
-        <div className="settings-actions">
-          {(['en', 'ro'] as UiLocale[]).map((l) => (
-            <button
-              key={l}
-              type="button"
-              className={`chip ${uiLocale === l ? 'chip--on' : ''}`}
-              onClick={() => pickUi(l)}
-            >
-              {l === 'en' ? 'English' : 'Română'}
             </button>
           ))}
         </div>

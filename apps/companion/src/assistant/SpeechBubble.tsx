@@ -7,6 +7,7 @@
  */
 import { useEffect, useRef, useState } from 'react';
 import { RichMessage } from './RichMessage';
+import { loadAssistantLanguage } from '../state/language';
 
 export interface BubbleAction {
   label: string;
@@ -145,7 +146,7 @@ export function SpeechBubble({
             </button>
           ))}
           <button type="button" className="bubble__chip" onClick={() => setReplying(true)}>
-            ↩ Reply
+            ↩ {loadAssistantLanguage() === 'ro' ? 'Răspunde' : 'Reply'}
           </button>
           {onOpenChat && (
             <button type="button" className="bubble__chip" onClick={onOpenChat}>
@@ -161,7 +162,7 @@ export function SpeechBubble({
             ref={inputRef}
             className="bubble__input"
             value={draft}
-            placeholder="Type a reply…"
+            placeholder={loadAssistantLanguage() === 'ro' ? 'Scrie un răspuns…' : 'Type a reply…'}
             onChange={(e) => setDraft(e.target.value)}
             onKeyDown={(e) => {
               if (e.key === 'Enter') submit();
