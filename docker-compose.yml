@@ -12,8 +12,12 @@
 # Tear down:   pnpm dev:infra:down
 # Wipe:        pnpm dev:infra:reset
 #
-# All services are reachable from the host on the ports below; the web app
+# All services bind to 127.0.0.1 ONLY (not exposed on the LAN); the web app
 # reads them via .env.local (run `pnpm bootstrap:env` to generate).
+#
+# ⚠ DEV CREDENTIALS: every password/key in this file (postgres `metu`,
+# minio root creds, etc.) is intentionally weak and for LOCAL DEV ONLY.
+# Never reuse these values in any deployed environment.
 # =============================================================================
 
 name: metu
@@ -28,7 +32,7 @@ services:
       POSTGRES_PASSWORD: metu
       POSTGRES_DB: metu
     ports:
-      - '24800:5432'
+      - '127.0.0.1:24800:5432'
     volumes:
       - postgres-data:/var/lib/postgresql/data
       - ./infra/docker/postgres-init.sql:/docker-entrypoint-initdb.d/01-init.sql:ro
@@ -44,7 +48,7 @@ services:
     restart: unless-stopped
     command: ['redis-server', '--appendonly', 'yes']
     ports:
-      - '24896:6379'
+      - '127.0.0.1:24896:6379'
     volumes:
       - redis-data:/data
     healthcheck:
@@ -64,7 +68,7 @@ services:
       SRH_TOKEN: metu-local-token
       SRH_CONNECTION_STRING: redis://redis:6379
     ports:
-      - '24899:80'
+      - '127.0.0.1:24899:80'
     depends_on:
       redis:
         condition: service_healthy
@@ -78,8 +82,8 @@ services:
       MINIO_ROOT_USER: metu
       MINIO_ROOT_PASSWORD: metu-local-password
     ports:
-      - '24897:9000' # S3 API (host: 24897, container: 9000)
-      - '24895:9001' # Web console (host: 24895, container: 9001)
+      - '127.0.0.1:24897:9000' # S3 API (host: 24897, container: 9000)
+      - '127.0.0.1:24895:9001' # Web console (host: 24895, container: 9001)
     volumes:
       - minio-data:/data
     healthcheck:
@@ -131,7 +135,7 @@ services:
         '30',
       ]
     ports:
-      - '24893:8288' # Dev UI + event API (host: 24893, container: 8288)
+      - '127.0.0.1:24893:8288' # Dev UI + event API (host: 24893, container: 8288)
     extra_hosts:
       - 'host.docker.internal:host-gateway'
 
@@ -140,8 +144,8 @@ services:
     container_name: metu-mailpit
     restart: unless-stopped
     ports:
-      - '24898:1025' # SMTP (host: 24898, container: 1025)
-      - '24894:8025' # Web UI (host: 24894, container: 8025)
+      - '127.0.0.1:24898:1025' # SMTP (host: 24898, container: 1025)
+      - '127.0.0.1:24894:8025' # Web UI (host: 24894, container: 8025)
 
 volumes:
   postgres-data:

@@ -30,6 +30,9 @@ export function newStorageKey(prefix: string, ext: string) {
   return `${prefix}/${date}/${id}.${ext.replace(/^\./, '')}`;
 }
 
+/** Hard ceiling on signed-URL lifetime — callers can't mint week-long links. */
+const MAX_SIGNED_URL_SECONDS = 24 * 60 * 60; // 24h
+
 /** Generates a V4 signed PUT URL for direct browser/mobile uploads. */
 export async function getSignedUploadUrl(input: {
   storageKey: string;
@@ -37,21 +40,23 @@ export async function getSignedUploadUrl(input: {
   expiresInSeconds?: number;
 }) {
   const file = bucket().file(input.storageKey);
+  const ttl = Math.min(input.expiresInSeconds ?? 60 * 5, MAX_SIGNED_URL_SECONDS);
   const [url] = await file.getSignedUrl({
     version: 'v4',
     action: 'write',
     contentType: input.contentType,
-    expires: Date.now() + (input.expiresInSeconds ?? 60 * 5) * 1000,
+    expires: Date.now() + ttl * 1000,
   });
   return url;
 }
 
 export async function getSignedReadUrl(storageKey: string, expiresInSeconds = 60 * 60) {
   const file = bucket().file(storageKey);
+  const ttl = Math.min(expiresInSeconds, MAX_SIGNED_URL_SECONDS);
   const [url] = await file.getSignedUrl({
     version: 'v4',
     action: 'read',
-    expires: Date.now() + expiresInSeconds * 1000,
+    expires: Date.now() + ttl * 1000,
   });
   return url;
 }

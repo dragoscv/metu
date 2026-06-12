@@ -322,20 +322,80 @@ if (chrome.tabGroups?.onUpdated) {
 
 // ─── Message bridge from popup + content script ───────────────────────────
 
+// Payload guards — content scripts run in untrusted page contexts; a
+// compromised page that finds a bug in the content script must not be
+// able to relay arbitrary shapes into the SDK. Each handler whitelists
+// the fields it forwards instead of passing msg.payload through.
+function str(v, max) {
+  return typeof v === 'string' && v.length > 0 && v.length <= max ? v : null;
+}
+
+function sanitizeCapture(p) {
+  if (!p || typeof p !== 'object') return null;
+  const content = str(p.content, 100_000);
+  if (!content) return null;
+  const out = { kind: 'text', content };
+  const source = str(p.source, 200);
+  const url = str(p.url, 2_048);
+  const title = str(p.title, 500);
+  if (source) out.source = source;
+  if (url) out.url = url;
+  if (title) out.title = title;
+  return out;
+}
+
+function sanitizeRecall(p) {
+  if (!p || typeof p !== 'object') return null;
+  const query = str(p.query, 2_000);
+  if (!query) return null;
+  const out = { query };
+  if (Number.isInteger(p.limit) && p.limit > 0 && p.limit <= 50) out.limit = p.limit;
+  return out;
+}
+
+function sanitizeNotify(p) {
+  if (!p || typeof p !== 'object') return null;
+  const title = str(p.title, 300);
+  if (!title) return null;
+  const out = { title };
+  const body = str(p.body, 2_000);
+  if (body) out.body = body;
+  if (['low', 'normal', 'high', 'critical'].includes(p.urgency)) out.urgency = p.urgency;
+  return out;
+}
+
+function sanitizeCompanionTurn(p) {
+  if (!p || typeof p !== 'object') return null;
+  const text = str(p.text, 8_000);
+  if (!text) return null;
+  const out = { text };
+  const persona = str(p.persona, 100);
+  if (persona) out.persona = persona;
+  return out;
+}
+
 chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
   (async () => {
     try {
       if (msg?.type === 'metu.capture') {
-        return sendResponse({ ok: true, result: await sdk.capture(msg.payload) });
+        const payload = sanitizeCapture(msg.payload);
+        if (!payload) return sendResponse({ ok: false, error: 'invalid_payload' });
+        return sendResponse({ ok: true, result: await sdk.capture(payload) });
       }
       if (msg?.type === 'metu.recall') {
-        return sendResponse({ ok: true, result: await sdk.recall(msg.payload) });
+        const payload = sanitizeRecall(msg.payload);
+        if (!payload) return sendResponse({ ok: false, error: 'invalid_payload' });
+        return sendResponse({ ok: true, result: await sdk.recall(payload) });
       }
       if (msg?.type === 'metu.notify') {
-        return sendResponse({ ok: true, result: await sdk.notify(msg.payload) });
+        const payload = sanitizeNotify(msg.payload);
+        if (!payload) return sendResponse({ ok: false, error: 'invalid_payload' });
+        return sendResponse({ ok: true, result: await sdk.notify(payload) });
       }
       if (msg?.type === 'metu.companionTurn') {
-        const result = await sdk.companionTurn(msg.payload);
+        const payload = sanitizeCompanionTurn(msg.payload);
+        if (!payload) return sendResponse({ ok: false, error: 'invalid_payload' });
+        const result = await sdk.companionTurn(payload);
         return sendResponse({ ok: true, ...result });
       }
       if (msg?.type === 'metu.resume') {

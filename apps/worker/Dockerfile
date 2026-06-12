@@ -23,5 +23,7 @@ COPY --from=deps  /app/node_modules ./node_modules
 COPY --from=deps  /app/packages ./packages
 COPY --from=build /app/apps/worker/dist ./apps/worker/dist
 COPY apps/worker/package.json ./apps/worker/package.json
+# Drop root — the node:alpine image ships a non-root `node` user.
+USER node
 EXPOSE 8080
 CMD ["node", "apps/worker/dist/index.js"]

@@ -126,6 +126,9 @@ const SCRUB_RULES: Array<{ re: RegExp; replace: string }> = [
   // First-party token shape — must run before the generic bearer/key rule so
   // a `bearer metu_at_…` payload keeps the `metu_at_[redacted]` marker.
   { re: /\bmetu_(at|rt)_[A-Za-z0-9_-]+/g, replace: 'metu_$1_[redacted]' },
+  // Upstash REST tokens (A…= base64-ish, long) and Stripe key shapes.
+  { re: /\b(A[A-Za-z0-9]{30,}=)\b/g, replace: '[redacted-upstash]' },
+  { re: /\b(sk|rk|pk)_(live|test)_[A-Za-z0-9]{16,}\b/g, replace: '$1_$2_[redacted]' },
   {
     re: /\b(authorization|bearer)\s*[:=]?\s*(?!metu_(?:at|rt)_)[A-Za-z0-9._\-+/=]{8,}/gi,
     replace: '$1 [redacted]',

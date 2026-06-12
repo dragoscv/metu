@@ -125,6 +125,10 @@ pub fn focus_window(id: &str) -> Result<(), String> {
 pub fn move_window(id: &str, x: i32, y: i32, w: u32, h: u32) -> Result<(), String> {
     use windows::Win32::Foundation::HWND;
     use windows::Win32::UI::WindowsAndMessaging::{
+        GetSystemMetrics, SM_CXVIRTUALSCREEN, SM_CYVIRTUALSCREEN, SM_XVIRTUALSCREEN,
+        SM_YVIRTUALSCREEN,
+    };
+    use windows::Win32::UI::WindowsAndMessaging::{
         IsWindow, SetWindowPos, SWP_NOACTIVATE, SWP_NOZORDER,
     };
     if w == 0 || h == 0 {
@@ -133,6 +137,22 @@ pub fn move_window(id: &str, x: i32, y: i32, w: u32, h: u32) -> Result<(), Strin
     if w > 16_384 || h > 16_384 {
         return Err("invalid_bounds: w/h exceed 16384".into());
     }
+    // Clamp the target position to the virtual desktop so a buggy or
+    // malicious remote tool call can't park a window off-screen where the
+    // user can never reach it again. We keep at least a 64px strip of the
+    // window inside the virtual screen.
+    let (x, y) = unsafe {
+        let vx = GetSystemMetrics(SM_XVIRTUALSCREEN);
+        let vy = GetSystemMetrics(SM_YVIRTUALSCREEN);
+        let vw = GetSystemMetrics(SM_CXVIRTUALSCREEN).max(1);
+        let vh = GetSystemMetrics(SM_CYVIRTUALSCREEN).max(1);
+        const MARGIN: i32 = 64;
+        let min_x = vx - (w as i32) + MARGIN;
+        let max_x = vx + vw - MARGIN;
+        let min_y = vy; // never above the top edge (title bar must stay grabbable)
+        let max_y = vy + vh - MARGIN;
+        (x.clamp(min_x, max_x), y.clamp(min_y, max_y))
+    };
     let raw = parse_id(id)?;
     let hwnd = HWND(raw as isize);
     unsafe {
