@@ -400,10 +400,24 @@ export function useAssistantBrain(opts: Options): AssistantBrainState {
 
     timer = setTimeout(decide, 2_000);
     // Dodge (Jarvis v4.5): when a real window is dragged/resized INTO the
-    // avatar's body space, step aside instead of being buried. Checked on
-    // every world refresh (1Hz) — cheap rect overlap on existing data.
+    // avatar's body space, step aside instead of being buried.
+    // CRITICAL constraints (v4.5.1 — the "pushes off the right edge" bug):
+    //   1. Only NEW walls trigger — a static window edge that has always
+    //      been near the dock corner must not re-trigger every refresh.
+    //   2. Step direction flips toward screen CENTER when the dodge would
+    //      leave the work area (docked at the right edge, intruder from
+    //      the left → stepping right = walking off screen forever).
+    //   3. 12s cooldown — one polite step, not a chase.
+    let lastWallKeys = new Set<string>();
+    let dodgeCooldownUntil = 0;
     const offWorld = screenWorld.onChange(() => {
+      const wallKeys = new Set(
+        screenWorld.walls.map((wl) => `${wl.windowId}:${wl.side}:${Math.round(wl.x / 24)}`),
+      );
+      const prevKeys = lastWallKeys;
+      lastWallKeys = wallKeys;
       if (pausedRef.current || lockedRef.current || pointReqRef.current) return;
+      if (Date.now() < dodgeCooldownUntil) return;
       const body = bodyRef.current;
       if (body.state !== 'idle' && body.state !== 'sitting') return;
       // Approximate the character's hitbox: ~120px wide, 220px tall above feet.
@@ -412,14 +426,35 @@ export function useAssistantBrain(opts: Options): AssistantBrainState {
       const by1 = body.y - 220;
       const by2 = body.y - 4;
       const intruder = screenWorld.walls.find(
-        (wl) => wl.x >= bx1 - 40 && wl.x <= bx2 + 40 && wl.y1 < by2 && wl.y2 > by1,
+        (wl) =>
+          wl.x >= bx1 - 40 &&
+          wl.x <= bx2 + 40 &&
+          wl.y1 < by2 &&
+          wl.y2 > by1 &&
+          // NEW this refresh — i.e. the window MOVED into us just now.
+          !prevKeys.has(`${wl.windowId}:${wl.side}:${Math.round(wl.x / 24)}`),
       );
       if (!intruder) return;
-      // Step aside: walk 180px away from the intruding edge (clamped later
-      // by physics/monitors). A startled hop sells the reaction.
-      const dir: 1 | -1 = intruder.side === 'left' ? -1 : 1;
-      hop(body, physicsRef.current);
-      navigateTo(body, body.x + dir * 180, body.y);
+      dodgeCooldownUntil = Date.now() + 12_000;
+      // Step aside, but stay INSIDE the work area: prefer away from the
+      // intruding edge; flip toward the monitor center when that would
+      // exit the screen.
+      let dir: 1 | -1 = intruder.side === 'left' ? -1 : 1;
+      const mon =
+        monitorsRef.current.find((m) => body.x >= m.x && body.x < m.x + m.w) ??
+        monitorsRef.current[0];
+      if (mon) {
+        const workX1 = (mon.workX ?? mon.x) + width / 2;
+        const workX2 = (mon.workX ?? mon.x) + (mon.workW ?? mon.w) - width / 2;
+        const targetX = body.x + dir * 180;
+        if (targetX > workX2 || targetX < workX1) dir = -dir as 1 | -1;
+        const clamped = Math.max(workX1, Math.min(workX2, body.x + dir * 180));
+        hop(body, physicsRef.current);
+        navigateTo(body, clamped, body.y);
+      } else {
+        hop(body, physicsRef.current);
+        navigateTo(body, body.x + dir * 180, body.y);
+      }
       window.dispatchEvent(
         new CustomEvent('metu:assistant-emotion', {
           detail: { emotion: 'surprised', durationMs: 1500 },
