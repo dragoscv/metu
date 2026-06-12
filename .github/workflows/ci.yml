@@ -58,3 +58,29 @@ jobs:
           ENCRYPTION_KEY: AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=
           NEXT_TELEMETRY_DISABLED: '1'
       - run: pnpm turbo run test --concurrency=2
+
+  audit:
+    # Non-blocking dependency advisory report. Surfaces new CVEs in the
+    # job summary without failing the pipeline (overrides in package.json
+    # handle the actionable ones; see pnpm-audit-notes there).
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    continue-on-error: true
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+        with: { version: 9.15.0 }
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: 'pnpm'
+      - run: pnpm install --frozen-lockfile --ignore-scripts
+      - name: Audit report
+        shell: bash
+        run: |
+          {
+            echo '## pnpm audit'
+            echo '```'
+            pnpm audit || true
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"

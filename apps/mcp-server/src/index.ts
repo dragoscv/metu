@@ -40,7 +40,7 @@ import { runTool, TOOLS, type ToolName } from '@metu/core/agent';
 import { runCompanionTurn } from '@metu/core/companion-agent';
 import { hashToken, parseScopes } from '@metu/auth/oauth';
 import { getDb } from '@metu/db';
-import { listProjects, listTimelineFiltered } from '@metu/db/queries';
+import { listProjects, listRecentBriefings, listTimelineFiltered } from '@metu/db/queries';
 import { oauthToken } from '@metu/db/schema';
 
 await initNodeSentry({ service: 'mcp-server' });
@@ -514,6 +514,13 @@ const MCP_RESOURCES = [
     description: 'Timeline events from the last 24 hours (most recent first, max 50).',
     mimeType: 'application/json',
   },
+  {
+    uri: 'metu://briefing',
+    name: 'Continuity briefing',
+    description:
+      'Latest "where was I?" briefing per active project — the fastest way to restore context after time away.',
+    mimeType: 'application/json',
+  },
 ] as const;
 
 async function readResource(auth: ResolvedAuth, uri: string): Promise<string> {
@@ -540,6 +547,17 @@ async function readResource(auth: ResolvedAuth, uri: string): Promise<string> {
           body: e.body,
           occurredAt: e.occurredAt,
           projectId: e.projectId,
+        })),
+      );
+    }
+    case 'metu://briefing': {
+      const briefings = await listRecentBriefings(auth.workspaceId, 5);
+      return stringify(
+        briefings.map((b) => ({
+          project: b.projectName,
+          briefing: b.briefing,
+          momentumScore: b.momentumScore,
+          generatedAt: b.generatedAt,
         })),
       );
     }

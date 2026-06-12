@@ -188,6 +188,8 @@ export const toolCall = pgTable(
     index('tool_call_conversation_idx').on(t.conversationId),
     index('tool_call_status_idx').on(t.status),
     index('tool_call_tool_idx').on(t.tool),
+    // Hot path: audit list/export filters workspace+status, sorts requested_at.
+    index('tool_call_workspace_status_requested_idx').on(t.workspaceId, t.status, t.requestedAt),
   ],
 );
 
@@ -417,6 +419,8 @@ export const deviceEvent = pgTable(
     index('device_event_workspace_occurred_idx').on(t.workspaceId, t.occurredAt),
     index('device_event_device_occurred_idx').on(t.deviceId, t.occurredAt),
     index('device_event_kind_idx').on(t.kind),
+    // Hot path: presence/digest scans filter workspace+kind, sort occurred_at.
+    index('device_event_workspace_kind_occurred_idx').on(t.workspaceId, t.kind, t.occurredAt),
   ],
 );
 
@@ -580,6 +584,8 @@ export const notification = pgTable(
     index('notification_user_created_idx').on(t.userId, t.createdAt),
     index('notification_workspace_idx').on(t.workspaceId),
     index('notification_urgency_idx').on(t.urgency),
+    // Hot path: unread badge counts filter user+acknowledged_at IS NULL.
+    index('notification_user_ack_created_idx').on(t.userId, t.acknowledgedAt, t.createdAt),
   ],
 );
 

@@ -130,6 +130,8 @@ export const memoryChunk = pgTable(
     index('memory_chunk_workspace_idx').on(t.workspaceId),
     index('memory_chunk_project_idx').on(t.projectId),
     index('memory_chunk_source_idx').on(t.sourceKind, t.sourceId),
+    // Hot path: listMemoryChunks filters workspace+source_kind, sorts created_at.
+    index('memory_chunk_workspace_kind_created_idx').on(t.workspaceId, t.sourceKind, t.createdAt),
     // HNSW vector index for fast cosine similarity. Created in migration SQL too.
     index('memory_chunk_embedding_idx')
       .using('hnsw', t.embedding.op('vector_cosine_ops'))
@@ -169,5 +171,7 @@ export const timelineEvent = pgTable(
     index('timeline_workspace_occurred_idx').on(t.workspaceId, t.occurredAt),
     index('timeline_project_occurred_idx').on(t.projectId, t.occurredAt),
     index('timeline_kind_idx').on(t.kind),
+    // Hot path: listTimelineFiltered filters workspace+kind, sorts occurred_at.
+    index('timeline_workspace_kind_occurred_idx').on(t.workspaceId, t.kind, t.occurredAt),
   ],
 );

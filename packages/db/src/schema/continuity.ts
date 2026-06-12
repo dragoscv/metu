@@ -26,5 +26,7 @@ export const continuityBriefing = pgTable(
   (t) => [
     index('continuity_briefing_workspace_project_idx').on(t.workspaceId, t.projectId),
     index('continuity_briefing_generated_idx').on(t.generatedAt),
+    // Hot path: latest-briefing lookup filters workspace, sorts generated_at.
+    index('continuity_briefing_workspace_generated_idx').on(t.workspaceId, t.generatedAt),
   ],
 );
