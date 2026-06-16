@@ -16,7 +16,7 @@
     "test": "turbo run test",
     "clean": "turbo run clean && rimraf node_modules .turbo",
     "format": "prettier --write \"**/*.{ts,tsx,md,json,yml}\"",
-    "prepare": "husky",
+    "prepare": "husky || true",
     "db:generate": "pnpm --filter @metu/db generate",
     "db:push": "pnpm --filter @metu/db push",
     "db:studio": "pnpm --filter @metu/db studio",
