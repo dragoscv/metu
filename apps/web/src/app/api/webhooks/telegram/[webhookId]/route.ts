@@ -13,9 +13,6 @@ import { safeEqual } from '@/lib/safe-equal';
 import { getBotByWebhookId } from '@/lib/telegram-bot';
 import { processTelegramUpdate, type TgUpdate } from '@/lib/telegram-commands';
 
-export const runtime = 'nodejs';
-export const dynamic = 'force-dynamic';
-
 export async function POST(
   req: Request,
   { params }: { params: Promise<{ webhookId: string }> },
