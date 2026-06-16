@@ -8,7 +8,7 @@ import { useState, useTransition } from 'react';
 import { Button } from '@metu/ui';
 import { issueTelegramLinkCodeAction } from '@/app/actions/telegram';
 
-export function TelegramLinkPanel() {
+export function TelegramLinkPanel({ botUsername }: { botUsername?: string | null }) {
   const [code, setCode] = useState<string | null>(null);
   const [expiresAt, setExpiresAt] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -37,7 +37,7 @@ export function TelegramLinkPanel() {
           <div className="text-2xl tracking-[0.4em]">{code}</div>
           <div className="mt-1 text-xs text-[var(--color-fg-subtle)]">
             Expires {expiresAt ? new Date(expiresAt).toLocaleTimeString() : 'shortly'}. Send{' '}
-            <code>/start {code}</code> to <strong>@metu_bot</strong>.
+            <code>/start {code}</code> to <strong>@{botUsername ?? 'your_bot'}</strong>.
           </div>
         </div>
       )}

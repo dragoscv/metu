@@ -55,6 +55,10 @@ const ALLOWED_TABLES = new Set([
   // / one-time link code; workspace is resolved AFTER the lookup.
   'telegramLinkCode',
   'telegramChatLink',
+  // telegramBot: a per-workspace singleton. Inbound webhooks resolve it by
+  // the opaque `webhookId`; mutations target it by `id` after a workspace-
+  // scoped fetch. Read paths take workspaceId as an argument.
+  'telegramBot',
   // Devices: hub-side queries scope by fingerprint+kind; workspaceId is
   // derived from the matched device row, not asserted in the WHERE.
   'device',

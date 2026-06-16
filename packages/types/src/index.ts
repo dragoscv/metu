@@ -158,6 +158,7 @@ export const aiIntentSchema = z.enum([
   'reasoning',
   'agentic',
   'fast',
+  'chat',
   'embed',
   'transcribe',
   'vision',

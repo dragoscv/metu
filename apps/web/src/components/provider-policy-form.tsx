@@ -18,6 +18,11 @@ const INTENTS: { id: AiIntent; label: string; description: string }[] = [
     description: 'Tool-using chat / agent loops',
   },
   { id: 'fast', label: 'Fast', description: 'Quick classifications, rewrites' },
+  {
+    id: 'chat',
+    label: 'Chat',
+    description: 'Conversational replies — Telegram, proactive messages',
+  },
   { id: 'vision', label: 'Vision', description: 'Image / screenshot analysis' },
   { id: 'embed', label: 'Embedding', description: 'Memory chunk vectors' },
   { id: 'transcribe', label: 'Transcribe', description: 'Voice notes → text' },
@@ -39,6 +44,7 @@ function copilotModelsForIntent(models: CopilotModelOption[], intent: AiIntent):
       case 'reasoning':
       case 'agentic':
       case 'fast':
+      case 'chat':
         return !m.supportsEmbeddings;
       case 'vision':
         return m.supportsVision;

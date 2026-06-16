@@ -89,6 +89,7 @@ const DEFAULTS: Record<AiProvider, Partial<Record<AiIntent, string>>> = {
     reasoning: 'claude-sonnet-4',
     agentic: 'claude-sonnet-4',
     fast: 'gpt-4o-mini',
+    chat: 'claude-sonnet-4',
     vision: 'gpt-4o',
     embed: 'text-embedding-3-small',
   },
@@ -105,6 +106,7 @@ const DEFAULTS: Record<AiProvider, Partial<Record<AiIntent, string>>> = {
     reasoning: 'codai',
     agentic: 'codai',
     fast: 'codai-fast',
+    chat: 'codai',
     vision: 'codai-vision',
     embed: 'text-embedding-3-small',
     // Whisper-compatible STT served by the gateway at /v1/audio/transcriptions.
@@ -124,6 +126,9 @@ const FALLBACK_CHAIN: Record<AiIntent, AiProvider[]> = {
   reasoning: ['codai', 'custom', 'copilot', 'anthropic', 'openai', 'google', 'azure_openai'],
   agentic: ['codai', 'custom', 'copilot', 'anthropic', 'openai', 'google', 'azure_openai'],
   fast: ['codai', 'custom', 'copilot', 'google', 'openai', 'anthropic', 'azure_openai'],
+  // `chat` = conversational replies (Telegram /ask, companion chit-chat).
+  // Prefer codai, then the same general-purpose chain as reasoning.
+  chat: ['codai', 'custom', 'copilot', 'anthropic', 'openai', 'google', 'azure_openai'],
   embed: ['codai', 'custom', 'openai', 'azure_openai', 'google', 'ollama'],
   // codai now serves /v1/audio/transcriptions (Whisper-compatible, Azure-
   // backed) — prefer it like the other intents, with direct providers after.

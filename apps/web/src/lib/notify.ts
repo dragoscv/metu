@@ -21,6 +21,7 @@ import { Expo } from 'expo-server-sdk';
 import { hubBroadcast } from './hub';
 import { isQuietHoursActive } from './quiet-hours';
 import { log } from './logger';
+import { deliverTelegram } from './telegram-bot';
 
 export interface NotifyAction {
   id: string;
@@ -56,7 +57,7 @@ const expo = new Expo({
   accessToken: process.env.EXPO_ACCESS_TOKEN,
 });
 
-type Channel = 'ws' | 'web_push' | 'expo';
+type Channel = 'ws' | 'web_push' | 'expo' | 'telegram';
 
 interface ResolvedPrefs {
   mutedChannels: Channel[];
@@ -284,6 +285,28 @@ export async function notify(input: NotifyInput): Promise<{ id: string; delivere
         cursor += chunk.length;
       }
       if (okCount > 0) delivered.push(`expo:${okCount}`);
+    }
+  }
+
+  // 3) Telegram (BYO per-workspace bot). Respects per-channel mute, quiet
+  //    hours, the bot's own outbound switch, mutedUntil, daily cap, and min
+  //    gap. The inbox row above is still the source of truth regardless.
+  const tgMuted = prefs.mutedChannels.includes('telegram') || quietBlocksPush || sourceBlocked;
+  if (!tgMuted) {
+    try {
+      const sent = await deliverTelegram({
+        workspaceId: input.workspaceId,
+        title: input.title,
+        body: input.body,
+        actionUrl: input.actionUrl,
+        actions: input.actions,
+        urgency,
+        toolCallId:
+          typeof input.metadata?.toolCallId === 'string' ? input.metadata.toolCallId : undefined,
+      });
+      if (sent) delivered.push('telegram:1');
+    } catch (err) {
+      log.error('notify.telegram.failed', { workspaceId: input.workspaceId }, err);
     }
   }
 

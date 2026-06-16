@@ -60,6 +60,7 @@ import { integrationStaleDetector } from '@/inngest/functions/integration-stale-
 import { hubDlqReplay } from '@/inngest/functions/hub-dlq-replay';
 import { onCronFailed } from '@/inngest/functions/cron-failure-alert';
 import { reviewNarrativePrewarm } from '@/inngest/functions/review-narrative-prewarm';
+import { proactiveSweepCron, onProactiveSweep } from '@/inngest/functions/proactive-sweep';
 
 export const maxDuration = 300;
 
@@ -92,6 +93,8 @@ export const { GET, POST, PUT } = serve({
     continuityMorningDelivery,
     conductorProactiveCron,
     conductorIdleNudgeCron,
+    proactiveSweepCron,
+    onProactiveSweep,
     companionAgentAnticipatory,
     recentDigestRefresh,
     memoryConsolidation,

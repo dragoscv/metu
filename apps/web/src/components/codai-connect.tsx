@@ -68,7 +68,20 @@ export function CodaiConnect({ connected }: Props) {
         headers: { 'content-type': 'application/json' },
         body: JSON.stringify({ provider: 'codai' }),
       });
-      const j = (await res.json()) as { ok?: boolean; latencyMs?: number; message?: string };
+      // Defensive parse: the route always returns JSON, but a crashed/edge
+      // response can be empty or HTML. Never let res.json() throw an opaque
+      // "Unexpected end of JSON input" — read text first, then parse.
+      const raw = await res.text();
+      let j: { ok?: boolean; latencyMs?: number; message?: string } = {};
+      if (raw) {
+        try {
+          j = JSON.parse(raw) as typeof j;
+        } catch {
+          j = { ok: false, message: `Bad response (HTTP ${res.status})` };
+        }
+      } else {
+        j = { ok: false, message: `Empty response (HTTP ${res.status})` };
+      }
       setTestResult({ ok: !!j.ok, latencyMs: j.latencyMs, message: j.message });
       if (j.ok) {
         toast.success(`Codai reachable${j.latencyMs ? ` · ${j.latencyMs} ms` : ''}`);

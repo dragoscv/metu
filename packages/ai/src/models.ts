@@ -16,8 +16,8 @@ export interface ModelEntry {
   intents: AiIntent[];
 }
 
-const reasoning: AiIntent[] = ['reasoning', 'agentic'];
-const all: AiIntent[] = ['reasoning', 'agentic', 'fast', 'vision'];
+const reasoning: AiIntent[] = ['reasoning', 'agentic', 'chat'];
+const all: AiIntent[] = ['reasoning', 'agentic', 'fast', 'chat', 'vision'];
 
 export const MODEL_CATALOG: Record<AiProvider, ModelEntry[]> = {
   anthropic: [

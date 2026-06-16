@@ -54,6 +54,10 @@ export const eventSchemas = {
     eventKind: z.string(),
     payload: z.unknown(),
   }),
+  'conductor/proactive-sweep': z.object({
+    workspaceId: wsId.optional(),
+    hint: z.string().optional(),
+  }),
   'conductor/approved': z.object({
     workspaceId: wsId,
     toolCallId: z.string().uuid(),

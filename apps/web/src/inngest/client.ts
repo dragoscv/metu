@@ -30,6 +30,9 @@ export type Events = {
   'conductor/observe': {
     data: { workspaceId: string; eventKind: string; payload: unknown };
   };
+  'conductor/proactive-sweep': {
+    data: { workspaceId?: string; hint?: string };
+  };
   'conductor/approved': {
     data: { workspaceId: string; toolCallId: string; userId: string };
   };
