@@ -18,6 +18,13 @@ import { transcribeFromUrl } from './handlers/transcribe';
 
 await initNodeSentry({ service: 'worker' });
 
+// Initialize the DB before serving when the Cloud SQL Connector is configured
+// (Cloud Run prod) so DB-touching jobs don't fail reaching a public IP.
+if (process.env.INSTANCE_CONNECTION_NAME) {
+  const { initDb } = await import('@metu/db');
+  await initDb();
+}
+
 const PORT = Number(process.env.PORT ?? 24892);
 const TOKEN = process.env.WORKER_AUTH_TOKEN ?? '';
 /** Cap incoming bodies at 1 MB — transcribe payloads are tiny (URL + lang). */

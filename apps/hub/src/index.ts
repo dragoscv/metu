@@ -32,6 +32,14 @@ import {
 
 await initNodeSentry({ service: 'hub' });
 
+// Initialize the DB before serving. With INSTANCE_CONNECTION_NAME set (Cloud
+// Run prod) this awaits the Cloud SQL Connector (ADC auth) so per-request
+// getDb() returns the cached client instead of failing to reach a public IP.
+if (process.env.INSTANCE_CONNECTION_NAME) {
+  const { initDb } = await import('@metu/db');
+  await initDb();
+}
+
 const port = Number(process.env.HUB_PORT ?? 24891);
 
 const app = new Hono();
