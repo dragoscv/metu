@@ -87,7 +87,7 @@ export function TelegramBotPanel({ initial }: { initial: TelegramBotStatus }) {
         <div className="flex gap-2">
           <Input
             type="password"
-            placeholder="123456789:ABCdef\u2026"
+            placeholder="123456789:ABCdef…"
             value={token}
             onChange={(e) => setToken(e.target.value)}
             className="font-mono"
@@ -107,10 +107,10 @@ export function TelegramBotPanel({ initial }: { initial: TelegramBotStatus }) {
           <div className="font-medium">
             @{status.botUsername ?? 'bot'}{' '}
             {status.locked ? (
-              <span className="text-xs text-[var(--color-success)]">\u25cf locked to you</span>
+              <span className="text-xs text-[var(--color-success)]">● locked to you</span>
             ) : (
               <span className="text-xs text-[var(--color-warning)]">
-                \u25cb send the link code in Telegram to bind your account
+                ○ send the link code in Telegram to bind your account
               </span>
             )}
           </div>
