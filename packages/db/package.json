@@ -18,14 +18,18 @@
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
+    "@google-cloud/cloud-sql-connector": "^1.11.1",
     "@neondatabase/serverless": "catalog:",
     "drizzle-orm": "catalog:",
+    "google-auth-library": "^10.7.0",
+    "pg": "^8.21.0",
     "postgres": "catalog:",
     "zod": "catalog:"
   },
   "devDependencies": {
     "@metu/config": "workspace:*",
     "@types/node": "catalog:",
+    "@types/pg": "^8.20.0",
     "dotenv": "^17.4.2",
     "drizzle-kit": "catalog:",
     "tsx": "catalog:",

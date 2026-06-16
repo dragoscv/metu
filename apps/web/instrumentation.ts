@@ -19,6 +19,14 @@ export async function register(): Promise<void> {
   const { installConsoleRedactor } = await import('@metu/logger');
   installConsoleRedactor();
 
+  // Initialize the DB client. When INSTANCE_CONNECTION_NAME is set (Vercel /
+  // Cloud Run prod) this awaits the Cloud SQL Connector so the cached client
+  // is ready for all subsequent sync getDb() calls. No-op fast path in dev.
+  if (process.env.INSTANCE_CONNECTION_NAME) {
+    const { initDb } = await import('@metu/db');
+    await initDb();
+  }
+
   // Crypto first — device-bridge doesn't need it but other modules might,
   // and an unreachable Secret Manager should fail the boot fast.
   const ref = process.env.ENCRYPTION_KEY ?? '';
