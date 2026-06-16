@@ -151,4 +151,34 @@ export type Events = {
 export const inngest = new Inngest({
   id: 'metu',
   schemas: new EventSchemas().fromRecord<Events>(),
+  // In prod, INNGEST_EVENT_KEY + (optional) INNGEST_BASE_URL point at our
+  // self-hosted Inngest on Cloud Run. When unset, the SDK would try Inngest
+  // Cloud and hang — the timeout wrapper below guarantees we never block a
+  // Server Action regardless.
+  ...(process.env.INNGEST_BASE_URL ? { baseUrl: process.env.INNGEST_BASE_URL } : {}),
 });
+
+// ── Fail-fast send ─────────────────────────────────────────────────────────
+// inngest.send() performs a network round-trip. If the Inngest endpoint is
+// unreachable/misconfigured it can block until the serverless function times
+// out (15s) — which surfaces to the user as "An unexpected response was
+// received from the server" on every Server Action that emits an event.
+// Wrap send() so it always resolves quickly and never throws into callers.
+const SEND_TIMEOUT_MS = 3000;
+const rawSend = inngest.send.bind(inngest);
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+inngest.send = (async (...args: Parameters<typeof rawSend>): Promise<any> => {
+  try {
+    return await Promise.race([
+      rawSend(...args),
+      new Promise((_resolve, reject) =>
+        setTimeout(() => reject(new Error('inngest.send timeout')), SEND_TIMEOUT_MS),
+      ),
+    ]);
+  } catch (err) {
+    // Best-effort telemetry; never propagate to the caller.
+    console.error('[inngest] send failed (non-fatal):', err instanceof Error ? err.message : err);
+    return { ids: [] };
+  }
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+}) as any;
