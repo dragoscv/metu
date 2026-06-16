@@ -1,0 +1,5 @@
+# Heavier checks before code leaves the machine. Catches what CI would catch,
+# so a red CI run (and wasted Actions minutes) is rare. Uses turbo cache so
+# unchanged packages are skipped.
+pnpm turbo run lint typecheck --concurrency=4
+pnpm turbo run test --concurrency=4

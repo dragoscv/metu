@@ -1,3 +1,5 @@
+# Fast, changed-files-only checks. lint-staged runs eslint --fix + prettier on
+# staged files; actionlint validates any changed workflow YAML. The heavier
+# full typecheck + tests run on pre-push so commits stay snappy.
 pnpm exec lint-staged
 node scripts/check-actionlint.mjs
-pnpm turbo run lint typecheck --concurrency=4

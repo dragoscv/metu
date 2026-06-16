@@ -1,0 +1,12 @@
+# Keep CLI archive uploads lean; Vercel installs deps + builds remotely.
+node_modules
+**/node_modules
+.next
+**/.next
+.turbo
+**/.turbo
+dist
+**/dist
+apps/companion/src-tauri/target
+*.log
+.git

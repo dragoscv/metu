@@ -12,6 +12,11 @@ on:
 permissions:
   contents: read
 
+# Never run two migrations at once; do NOT cancel an in-progress migration.
+concurrency:
+  group: db-migrate-${{ inputs.environment }}
+  cancel-in-progress: false
+
 jobs:
   migrate:
     runs-on: ubuntu-latest
