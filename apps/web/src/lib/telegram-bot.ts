@@ -159,6 +159,26 @@ export async function disconnectTelegramBot(workspaceId: string): Promise<void> 
   await getDb().delete(telegramBot).where(eq(telegramBot.id, row.id));
 }
 
+/**
+ * Re-publish the command menu (and re-register the webhook) for an existing
+ * bot — e.g. after we add new commands. No reconnect / token re-entry needed.
+ */
+export async function republishTelegramCommands(
+  workspaceId: string,
+): Promise<{ ok: boolean; error?: string }> {
+  const row = await getBotForWorkspace(workspaceId);
+  if (!row) return { ok: false, error: 'No bot connected' };
+  try {
+    const token = botToken(row);
+    await setMyCommands(token, BOT_COMMANDS);
+    // Re-assert the webhook in case it drifted.
+    await setWebhook(token, webhookUrlFor(row.webhookId), row.secretToken);
+    return { ok: true };
+  } catch (err) {
+    return { ok: false, error: err instanceof Error ? err.message : 'Failed' };
+  }
+}
+
 /** Send a message using a workspace's BYO bot. Returns false if no bot/error. */
 export async function sendViaWorkspaceBot(
   workspaceId: string,

@@ -16,6 +16,7 @@ import {
   disconnectTelegramBotAction,
   getTelegramBotStatusAction,
   updateTelegramBotPrefsAction,
+  republishTelegramCommandsAction,
   type TelegramBotStatus,
 } from '@/app/actions/telegram-bot';
 
@@ -70,6 +71,13 @@ export function TelegramBotPanel({ initial }: { initial: TelegramBotStatus }) {
       setStatus((s) => ({ ...s, ...patch }));
     });
 
+  const refreshCommands = () =>
+    start(async () => {
+      const r = await republishTelegramCommandsAction();
+      if (r.ok) toast.success('Command menu updated in Telegram');
+      else toast.error(r.error ?? 'Failed to update commands');
+    });
+
   if (!status.connected) {
     return (
       <div className="mt-3 space-y-3">
@@ -119,9 +127,14 @@ export function TelegramBotPanel({ initial }: { initial: TelegramBotStatus }) {
             {status.lastError ? ` \u00b7 last error: ${status.lastError}` : ''}
           </div>
         </div>
-        <Button variant="ghost" onClick={disconnect} disabled={pending}>
-          Disconnect
-        </Button>
+        <div className="flex gap-2">
+          <Button variant="ghost" onClick={refreshCommands} disabled={pending}>
+            Refresh commands
+          </Button>
+          <Button variant="ghost" onClick={disconnect} disabled={pending}>
+            Disconnect
+          </Button>
+        </div>
       </div>
 
       <div className="space-y-3 text-sm">

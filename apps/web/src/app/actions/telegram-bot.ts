@@ -12,7 +12,12 @@ import { eq } from 'drizzle-orm';
 import { z } from 'zod';
 import { getDb } from '@metu/db';
 import { telegramBot } from '@metu/db/schema';
-import { connectTelegramBot, disconnectTelegramBot, getBotForWorkspace } from '@/lib/telegram-bot';
+import {
+  connectTelegramBot,
+  disconnectTelegramBot,
+  getBotForWorkspace,
+  republishTelegramCommands,
+} from '@/lib/telegram-bot';
 
 const TokenSchema = z
   .string()
@@ -93,6 +98,15 @@ export async function disconnectTelegramBotAction(): Promise<{ ok: true }> {
   await disconnectTelegramBot(session.user.workspaceId);
   revalidatePath('/settings/integrations/telegram');
   return { ok: true };
+}
+
+export async function republishTelegramCommandsAction(): Promise<{
+  ok: boolean;
+  error?: string;
+}> {
+  const session = await auth();
+  if (!session) throw new Error('unauthorized');
+  return republishTelegramCommands(session.user.workspaceId);
 }
 
 export async function updateTelegramBotPrefsAction(
