@@ -13,6 +13,10 @@ permissions:
   contents: read
   id-token: write
 
+concurrency:
+  group: deploy-mcp-server-${{ github.ref }}
+  cancel-in-progress: true
+
 env:
   PROJECT_ID: metu-prod-495423
   REGION: europe-west1
