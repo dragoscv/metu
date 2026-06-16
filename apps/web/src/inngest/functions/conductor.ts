@@ -258,7 +258,28 @@ export const onConductorTick = inngest.createFunction(
                 metadata: { toolCallId: result.toolCallId, tool: action.tool },
               },
             });
-          } else if (result.status === 'failed') {
+          }
+          // When the Conductor autonomously creates a task, let the user know
+          // (in-app + Telegram/Discord + push) with a deep link to it.
+          if (result.status === 'success' && action.tool === 'create_task') {
+            await inngest.send({
+              name: 'conductor/notify',
+              data: {
+                workspaceId,
+                userId: ownerUserId,
+                title: 'New task created',
+                body:
+                  typeof action.args?.title === 'string'
+                    ? String(action.args.title).slice(0, 200)
+                    : 'The Conductor added a task.',
+                urgency: 'low',
+                source: 'conductor',
+                actionUrl: '/tasks',
+                metadata: { tool: action.tool },
+              },
+            });
+          }
+          if (result.status === 'failed') {
             // Don't swallow tool failures — the user should hear about them so
             // they can fix integrations / args / etc.
             await inngest.send({

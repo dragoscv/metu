@@ -229,6 +229,81 @@ export async function listBlockedTasks(workspaceId: string) {
     .orderBy(desc(task.updatedAt));
 }
 
+export interface ListAllTasksParams {
+  workspaceId: string;
+  status?: string | null;
+  kind?: string | null;
+  projectId?: string | null;
+  /** today | overdue | week | none */
+  due?: 'today' | 'overdue' | 'week' | 'none' | null;
+  search?: string | null;
+  includeDone?: boolean;
+}
+
+/**
+ * Workspace-wide task list with the parent project's name joined, plus
+ * optional filters. Used by the dedicated /tasks page. Ordered by a status
+ * rank (doing → next → inbox → blocked → done → dropped), then leverage.
+ */
+export async function listAllTasks(params: ListAllTasksParams) {
+  const db = getDb();
+  const filters: SQL[] = [eq(task.workspaceId, params.workspaceId), isNull(task.deletedAt)];
+
+  if (params.status) filters.push(sql`${task.status}::text = ${params.status}`);
+  else if (!params.includeDone) filters.push(sql`${task.status} not in ('done','dropped')`);
+
+  if (params.kind) filters.push(sql`${task.kind}::text = ${params.kind}`);
+  if (params.projectId) filters.push(eq(task.projectId, params.projectId));
+
+  if (params.search && params.search.trim()) {
+    const q = `%${params.search.trim()}%`;
+    filters.push(sql`(${task.title} ilike ${q} or coalesce(${task.body}, '') ilike ${q})`);
+  }
+
+  if (params.due === 'overdue') {
+    filters.push(sql`${task.dueAt} is not null and ${task.dueAt} < now()`);
+  } else if (params.due === 'today') {
+    filters.push(sql`${task.dueAt} is not null and ${task.dueAt}::date = now()::date`);
+  } else if (params.due === 'week') {
+    filters.push(sql`${task.dueAt} is not null and ${task.dueAt} < now() + interval '7 days'`);
+  } else if (params.due === 'none') {
+    filters.push(sql`${task.dueAt} is null`);
+  }
+
+  return db
+    .select({
+      id: task.id,
+      title: task.title,
+      body: task.body,
+      status: task.status,
+      kind: task.kind,
+      leverageScore: task.leverageScore,
+      blockedReason: task.blockedReason,
+      dueAt: task.dueAt,
+      projectId: task.projectId,
+      projectName: project.name,
+      goalId: task.goalId,
+      aiSuggested: task.aiSuggested,
+      sourceApp: task.sourceApp,
+      sourceUrl: task.sourceUrl,
+      createdAt: task.createdAt,
+      updatedAt: task.updatedAt,
+    })
+    .from(task)
+    .leftJoin(project, eq(project.id, task.projectId))
+    .where(and(...filters))
+    .orderBy(
+      sql`case when ${task.status} = 'doing' then 0
+              when ${task.status} = 'next' then 1
+              when ${task.status} = 'inbox' then 2
+              when ${task.status} = 'blocked' then 3
+              when ${task.status} = 'done' then 4
+              else 5 end`,
+      desc(task.leverageScore),
+      desc(task.updatedAt),
+    );
+}
+
 export async function recentDecisions(workspaceId: string, limit = 10) {
   const db = getDb();
   return db

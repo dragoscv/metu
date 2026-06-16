@@ -15,6 +15,8 @@ import {
   discordBot,
   telegramLinkCode,
 } from '@metu/db/schema';
+import { task as taskTable } from '@metu/db/schema';
+import { listOpenTasks } from '@metu/db/queries';
 import { indexMemory } from '@metu/core/memory';
 import { log } from '@metu/logger';
 import { runConductorTurn } from '@/lib/conductor-turn';
@@ -121,6 +123,33 @@ async function handleLink(bot: DiscordBotRow, discordUserId: string, code: strin
   return '✅ Linked! You can now use the METU Conductor here. Try `/now`.';
 }
 
+/** Render the top open tasks as a numbered list for /tasks. */
+async function renderTaskList(workspaceId: string): Promise<string> {
+  const rows = await listOpenTasks(workspaceId);
+  if (rows.length === 0) return '✅ No open tasks. Inbox zero!';
+  const top = rows.slice(0, 15);
+  const lines = top.map((t, i) => {
+    const due = t.dueAt ? ` · due ${new Date(t.dueAt).toLocaleDateString()}` : '';
+    const flag = t.status === 'blocked' ? ' 🚧' : t.status === 'doing' ? ' ▶️' : '';
+    return `${i + 1}. ${t.title}${flag}${due}`;
+  });
+  return [`**Open tasks (${rows.length})**`, ...lines, '', 'Complete with `/done <number>`.'].join(
+    '\n',
+  );
+}
+
+/** Complete the Nth task from the same order /tasks shows. */
+async function completeTaskByIndex(workspaceId: string, n: number): Promise<string> {
+  const rows = await listOpenTasks(workspaceId);
+  const target = rows.slice(0, 15)[n - 1];
+  if (!target) return `No task #${n}. Run /tasks to see the list.`;
+  await getDb()
+    .update(taskTable)
+    .set({ status: 'done' })
+    .where(and(eq(taskTable.id, target.id), eq(taskTable.workspaceId, workspaceId)));
+  return `✅ Done: ${target.title}`;
+}
+
 /**
  * Handle a slash command or component. For slow content commands the caller
  * has already returned a DEFER (type 5); we edit the original message here.
@@ -166,6 +195,35 @@ export async function processDiscordCommand(
     }
     await indexMemory({ workspaceId: bot.workspaceId, sourceKind: 'capture', content: textVal, metadata: { channel: 'discord' } });
     await editOriginal(bot.applicationId, i.token, '📥 Captured.');
+    return;
+  }
+  if (name === 'tasks') {
+    await editOriginal(bot.applicationId, i.token, await renderTaskList(bot.workspaceId));
+    return;
+  }
+  if (name === 'task') {
+    const textVal = optvalue(i, 'text');
+    if (!textVal) {
+      await editOriginal(bot.applicationId, i.token, 'Usage: /task <title>');
+      return;
+    }
+    await getDb().insert(taskTable).values({
+      workspaceId: bot.workspaceId,
+      title: textVal.slice(0, 200),
+      status: 'inbox',
+      kind: 'shallow',
+      sourceApp: 'discord',
+    });
+    await editOriginal(bot.applicationId, i.token, `📝 Added to inbox: ${textVal.slice(0, 200)}`);
+    return;
+  }
+  if (name === 'done') {
+    const n = Number(optvalue(i, 'number').trim());
+    if (!Number.isInteger(n) || n < 1) {
+      await editOriginal(bot.applicationId, i.token, 'Usage: /done <number> (see /tasks)');
+      return;
+    }
+    await editOriginal(bot.applicationId, i.token, await completeTaskByIndex(bot.workspaceId, n));
     return;
   }
 

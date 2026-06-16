@@ -35,6 +35,8 @@ function looksLikeAction(text: string): boolean {
 
 import { getDb } from '@metu/db';
 import { agentPolicy, autonomyGrant, telegramBot, telegramChatLink, telegramLinkCode } from '@metu/db/schema';
+import { task as taskTable } from '@metu/db/schema';
+import { listOpenTasks } from '@metu/db/queries';
 import { indexMemory } from '@metu/core/memory';
 import { log } from '@metu/logger';
 import { runConductorTurn } from '@/lib/conductor-turn';
@@ -71,6 +73,9 @@ const HELP = [
   '/now — what to focus on now',
   '/today — today’s plan',
   '/capture <text> — save a note',
+  '/tasks — list open tasks',
+  '/task <text> — add a task to inbox',
+  '/done <n> — complete task #n',
   '/goals — goal status',
   '/blocked — what’s blocked',
   '/resume — where you left off',
@@ -173,6 +178,34 @@ async function setMute(bot: TelegramBotRow, arg: string): Promise<string> {
   const until = new Date(Date.now() + ms);
   await getDb().update(telegramBot).set({ mutedUntil: until }).where(eq(telegramBot.id, bot.id));
   return `🔕 Muted proactive messages until ${until.toLocaleString()}.`;
+}
+
+/** Render the top open tasks as a numbered list for /tasks. */
+async function renderTaskList(workspaceId: string): Promise<string> {
+  const rows = await listOpenTasks(workspaceId);
+  if (rows.length === 0) return '✅ No open tasks. Inbox zero!';
+  const top = rows.slice(0, 15);
+  const lines = top.map((t, i) => {
+    const due = t.dueAt ? ` · due ${new Date(t.dueAt).toLocaleDateString()}` : '';
+    const flag = t.status === 'blocked' ? ' 🚧' : t.status === 'doing' ? ' ▶️' : '';
+    return `${i + 1}. ${t.title}${flag}${due}`;
+  });
+  return [`📋 Open tasks (${rows.length}):`, ...lines, '', 'Complete with /done <number>.'].join(
+    '\n',
+  );
+}
+
+/** Complete the Nth task from the same order /tasks shows. */
+async function completeTaskByIndex(workspaceId: string, n: number): Promise<string> {
+  const rows = await listOpenTasks(workspaceId);
+  const top = rows.slice(0, 15);
+  const target = top[n - 1];
+  if (!target) return `No task #${n}. Run /tasks to see the list.`;
+  await getDb()
+    .update(taskTable)
+    .set({ status: 'done' })
+    .where(and(eq(taskTable.id, target.id), eq(taskTable.workspaceId, workspaceId)));
+  return `✅ Done: ${target.title}`;
 }
 
 /**
@@ -366,6 +399,36 @@ export async function processTelegramUpdate(bot: TelegramBotRow, update: TgUpdat
         await setAutopilot(bot, bot.connectedByUserId, arg),
       );
       return;
+    case 'tasks': {
+      await sendMessage(token, chatId, await renderTaskList(bot.workspaceId));
+      return;
+    }
+    case 'task': {
+      if (!arg) {
+        await sendMessage(token, chatId, 'Usage: /task <title>');
+        return;
+      }
+      await getDb()
+        .insert(taskTable)
+        .values({
+          workspaceId: bot.workspaceId,
+          title: arg.slice(0, 200),
+          status: 'inbox',
+          kind: 'shallow',
+          sourceApp: 'telegram',
+        });
+      await sendMessage(token, chatId, `📝 Added to inbox: ${arg.slice(0, 200)}`);
+      return;
+    }
+    case 'done': {
+      const n = Number(arg.trim());
+      if (!Number.isInteger(n) || n < 1) {
+        await sendMessage(token, chatId, 'Usage: /done <number> (see /tasks)');
+        return;
+      }
+      await sendMessage(token, chatId, await completeTaskByIndex(bot.workspaceId, n));
+      return;
+    }
     case 'approve': {
       const pending = await resolvePendingApproval(bot.workspaceId);
       if (!pending) {

@@ -21,6 +21,7 @@ import {
   Laptop,
   Layers,
   Library,
+  ListChecks,
   MessageSquare,
   Plug,
   Rocket,
@@ -98,6 +99,7 @@ export const NAV: NavNode[] = [
     icon: Layers,
     children: [
       { kind: 'leaf', href: '/projects', label: 'Projects', icon: FolderKanban },
+      { kind: 'leaf', href: '/tasks', label: 'Tasks', icon: ListChecks },
       { kind: 'leaf', href: '/inbox', label: 'Brain dump', icon: Inbox },
       { kind: 'leaf', href: '/goals', label: 'Goals', icon: Target },
     ],
