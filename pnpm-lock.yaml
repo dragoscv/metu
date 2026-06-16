@@ -36,9 +36,6 @@ catalogs:
     '@modelcontextprotocol/sdk':
       specifier: ^1.0.4
       version: 1.29.0
-    '@neondatabase/serverless':
-      specifier: ^0.10.0
-      version: 0.10.4
     '@pixiv/three-vrm':
       specifier: ^3.4.2
       version: 3.5.3
@@ -859,9 +856,6 @@ importers:
 
   packages/db:
     dependencies:
-      '@neondatabase/serverless':
-        specifier: 'catalog:'
-        version: 0.10.4
       drizzle-orm:
         specifier: 'catalog:'
         version: 0.45.2(@neondatabase/serverless@0.10.4)(@opentelemetry/api@1.9.1)(@types/pg@8.15.6)(@upstash/redis@1.38.0)(postgres@3.4.9)
@@ -3030,7 +3024,7 @@ packages:
       {
         integrity: sha512-+Lla7nYSiHZirgK+U/uYzsLv/X+HaJienbD5AKX1UQZHYfWaP+9uuQluRB4GrEVWF0GZ7vEVp/jzaOT9k/SQlg==,
       }
-    engines: { node: '>=0.10.0' }
+    engines: { '0': node >=0.10.0 }
 
   '@expo/cli@0.22.28':
     resolution:
@@ -18222,6 +18216,7 @@ snapshots:
   '@neondatabase/serverless@0.10.4':
     dependencies:
       '@types/pg': 8.11.6
+    optional: true
 
   '@next/env@16.2.9': {}
 
@@ -20411,6 +20406,7 @@ snapshots:
       '@types/node': 25.9.3
       pg-protocol: 1.13.0
       pg-types: 4.1.0
+    optional: true
 
   '@types/pg@8.15.6':
     dependencies:
@@ -24711,7 +24707,8 @@ snapshots:
       define-properties: 1.2.1
       es-object-atoms: 1.1.1
 
-  obuf@1.1.2: {}
+  obuf@1.1.2:
+    optional: true
 
   octokit@4.1.4:
     dependencies:
@@ -24902,7 +24899,8 @@ snapshots:
 
   pg-int8@1.0.1: {}
 
-  pg-numeric@1.0.2: {}
+  pg-numeric@1.0.2:
+    optional: true
 
   pg-protocol@1.13.0: {}
 
@@ -24923,6 +24921,7 @@ snapshots:
       postgres-date: 2.1.0
       postgres-interval: 3.0.0
       postgres-range: 1.1.4
+    optional: true
 
   picocolors@1.1.1: {}
 
@@ -24970,25 +24969,30 @@ snapshots:
 
   postgres-array@2.0.0: {}
 
-  postgres-array@3.0.4: {}
+  postgres-array@3.0.4:
+    optional: true
 
   postgres-bytea@1.0.1: {}
 
   postgres-bytea@3.0.0:
     dependencies:
       obuf: 1.1.2
+    optional: true
 
   postgres-date@1.0.7: {}
 
-  postgres-date@2.1.0: {}
+  postgres-date@2.1.0:
+    optional: true
 
   postgres-interval@1.2.0:
     dependencies:
       xtend: 4.0.2
 
-  postgres-interval@3.0.0: {}
+  postgres-interval@3.0.0:
+    optional: true
 
-  postgres-range@1.1.4: {}
+  postgres-range@1.1.4:
+    optional: true
 
   postgres@3.4.9: {}
 

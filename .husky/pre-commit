@@ -1,3 +1,4 @@
+# Fast, changed-files-only checks. The heavier full typecheck + tests run on
+# pre-push so commits stay snappy and CI rarely fails on lint/types.
 pnpm exec lint-staged
 node scripts/check-actionlint.mjs
-pnpm turbo run lint typecheck --concurrency=4
