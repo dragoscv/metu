@@ -640,7 +640,16 @@ const HTTP_PORT_RAW = process.env.PORT ?? process.env.METU_MCP_HTTP_PORT;
 const HTTP_PORT = HTTP_PORT_RAW ? Number.parseInt(HTTP_PORT_RAW, 10) : null;
 
 if (HTTP_PORT !== null && Number.isFinite(HTTP_PORT)) {
-  startHttpTransport(HTTP_PORT);
+  // Initialize the DB (Cloud SQL Connector when INSTANCE_CONNECTION_NAME is
+  // set) before accepting requests, so per-request getDb() returns the
+  // cached client. On GCP/Cloud Run the connector uses ADC (no key needed).
+  void (async () => {
+    if (process.env.INSTANCE_CONNECTION_NAME) {
+      const { initDb } = await import('@metu/db');
+      await initDb();
+    }
+    startHttpTransport(HTTP_PORT);
+  })();
 }
 
 if (!stdioToken && (HTTP_PORT === null || !Number.isFinite(HTTP_PORT))) {
