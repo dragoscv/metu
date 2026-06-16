@@ -15,7 +15,7 @@ export function RecomputeFocusButton() {
       onClick={() =>
         start(async () => {
           const res = await recomputeFocusAction();
-          if (res.ok) toast.success('Focus recomputed.');
+          if (res.ok) toast.success('Recomputing focus — this updates in a moment.');
           else toast.error(res.error ?? 'Failed');
         })
       }

@@ -1,8 +1,7 @@
 'use server';
-import { revalidatePath } from 'next/cache';
 import { auth } from '@metu/auth';
-import { focus } from '@metu/core';
 import { log } from '@/lib/logger';
+import { inngest } from '@/inngest/client';
 
 export async function recomputeFocusAction() {
   const session = await auth();
@@ -13,18 +12,20 @@ export async function recomputeFocusAction() {
     userId: session.user.id,
   });
   try {
-    const result = await focus.computeFocus({
-      workspaceId: session.user.workspaceId,
-      userId: session.user.id,
+    // computeFocus is an LLM call that can exceed Vercel's 15s Server Action
+    // budget (→ 504 "unexpected response"). Offload to Inngest so it runs in
+    // the background; the dashboard/focus views reflect the new row on next
+    // load (and via the hub focus broadcast). The send() is fail-fast wrapped.
+    await inngest.send({
+      name: 'focus/recompute',
+      data: {
+        workspaceId: session.user.workspaceId,
+        userId: session.user.id,
+        reason: 'manual',
+      },
     });
-    log.info('focus.recompute.ok', {
-      ms: Date.now() - t0,
-      provider: result.provider,
-      modelId: result.modelId,
-      rowId: result.rowId,
-    });
-    revalidatePath('/dashboard');
-    return { ok: true as const, provider: result.provider, modelId: result.modelId };
+    log.info('focus.recompute.queued', { ms: Date.now() - t0 });
+    return { ok: true as const, queued: true as const };
   } catch (err) {
     const e = err as Error & {
       cause?: unknown;
