@@ -1,5 +1,5 @@
 'use client';
-import { useState, useTransition } from 'react';
+import { useEffect, useState, useTransition } from 'react';
 import { motion } from 'framer-motion';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
@@ -32,6 +32,7 @@ import {
 import {
   kickConductorAction,
   reindexGithubRepoAction,
+  reindexAllGithubReposAction,
   type AgentActivityRow,
   type MetuOverview,
 } from '@/app/actions/metu';
@@ -88,6 +89,22 @@ export function MetuDashboard({
 
   const successRate =
     stats.toolCalls > 0 ? Math.round((stats.succeeded / stats.toolCalls) * 100) : null;
+
+  // Any repo currently queued/running (server status OR optimistic local).
+  const anyIndexing = repos.some((r) => {
+    const local = reindexing[r.projectId + ':' + r.repoFullName];
+    if (local === 'queued') return true;
+    if (local === 'done' || local === 'failed') return false;
+    return r.indexStatus === 'queued' || r.indexStatus === 'running';
+  });
+
+  // Poll for updated indexing status while anything is in flight so the
+  // button state + counts converge without a manual refresh.
+  useEffect(() => {
+    if (!anyIndexing) return;
+    const t = setInterval(() => router.refresh(), 5000);
+    return () => clearInterval(t);
+  }, [anyIndexing, router]);
 
   function handleKick() {
     startTransition(async () => {
@@ -177,6 +194,28 @@ export function MetuDashboard({
       setReindexing((s) => ({ ...s, [key]: r ? 'done' : 'failed' }));
       // Inngest runs async — give it a moment, then refresh to pick up new chunks.
       if (r) setTimeout(() => router.refresh(), 4000);
+    });
+  }
+
+  function handleReindexAll() {
+    startTransition(async () => {
+      const r = await runAction({
+        title: 'Re-indexing all repos',
+        description: 'METU is reading every linked repo into memory.',
+        successTitle: 'Re-index queued',
+        successDescription: 'Counts update as each repo finishes.',
+        scope: 'reindexAllGithubReposAction',
+        fn: () => reindexAllGithubReposAction(),
+      });
+      if (r) {
+        // Optimistically mark every repo queued; server status drives the rest.
+        setReindexing((s) => {
+          const next = { ...s };
+          for (const repo of repos) next[repo.projectId + ':' + repo.repoFullName] = 'queued';
+          return next;
+        });
+        setTimeout(() => router.refresh(), 4000);
+      }
     });
   }
 
@@ -473,12 +512,35 @@ export function MetuDashboard({
             <div className="mb-3 flex items-center gap-2">
               <Github className="h-4 w-4 text-[var(--color-fg-muted)]" />
               <CardTitle>Project intelligence</CardTitle>
-              <CardDescription className="ml-auto">Repos METU has read for memory</CardDescription>
+              <CardDescription className="ml-auto mr-3">
+                Repos METU has read for memory
+              </CardDescription>
+              <Button
+                size="sm"
+                variant="outline"
+                onClick={handleReindexAll}
+                disabled={pendingTransition || anyIndexing}
+              >
+                {anyIndexing ? (
+                  <>
+                    <Loader2 className="h-3.5 w-3.5 animate-spin" /> Indexing…
+                  </>
+                ) : (
+                  'Re-index all'
+                )}
+              </Button>
             </div>
             <ol className="flex flex-col gap-2">
               {repos.map((r) => {
                 const key = r.projectId + ':' + r.repoFullName;
-                const state = reindexing[key];
+                // Local optimistic state wins while a click is in-flight;
+                // otherwise fall back to the server-persisted indexStatus so
+                // the button stays correct across refreshes.
+                const serverState = r.indexStatus ?? 'idle';
+                const local = reindexing[key];
+                const state =
+                  local && local !== 'done' && local !== 'failed' ? local : serverState;
+                const busy = state === 'queued' || state === 'running';
                 return (
                   <li
                     key={key}
@@ -489,37 +551,34 @@ export function MetuDashboard({
                       {r.projectName}
                     </Link>
                     <span className="text-xs text-[var(--color-fg-subtle)]">{r.repoFullName}</span>
-                    {state === 'queued' && (
-                      <Badge size="xs" variant="info" className="ml-auto">
-                        <Loader2 className="mr-1 h-3 w-3 animate-spin" /> indexing
-                      </Badge>
-                    )}
-                    {state === 'done' && (
-                      <Badge size="xs" variant="success" className="ml-auto">
-                        queued
-                      </Badge>
-                    )}
-                    {state === 'failed' && (
-                      <Badge size="xs" variant="danger" className="ml-auto">
-                        failed
-                      </Badge>
-                    )}
-                    {!state && (
-                      <Badge
-                        size="xs"
-                        variant={r.chunkCount > 0 ? 'success' : 'neutral'}
-                        className="ml-auto"
-                      >
-                        {r.chunkCount} memories
-                      </Badge>
-                    )}
+                    <div className="ml-auto flex items-center gap-2">
+                      {r.indexedAt && !busy && (
+                        <span className="text-[10px] text-[var(--color-fg-subtle)]">
+                          indexed {relativeTime(r.indexedAt)}
+                        </span>
+                      )}
+                      {busy ? (
+                        <Badge size="xs" variant="info">
+                          <Loader2 className="mr-1 h-3 w-3 animate-spin" />
+                          {state === 'running' ? 'indexing' : 'queued'}
+                        </Badge>
+                      ) : state === 'failed' ? (
+                        <Badge size="xs" variant="danger" title={r.indexError ?? undefined}>
+                          failed
+                        </Badge>
+                      ) : (
+                        <Badge size="xs" variant={r.chunkCount > 0 ? 'success' : 'neutral'}>
+                          {r.chunkCount} memories
+                        </Badge>
+                      )}
+                    </div>
                     <Button
                       size="sm"
                       variant="outline"
                       onClick={() => handleReindex(r)}
-                      disabled={pendingTransition || state === 'queued'}
+                      disabled={pendingTransition || busy}
                     >
-                      {state === 'queued' ? (
+                      {busy ? (
                         <>
                           <Loader2 className="h-3.5 w-3.5 animate-spin" /> Working
                         </>

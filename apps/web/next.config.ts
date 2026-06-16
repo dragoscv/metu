@@ -1,4 +1,5 @@
 import type { NextConfig } from 'next';
+import type * as SentryNextjs from '@sentry/nextjs';
 import { config as loadEnv } from 'dotenv';
 import { existsSync } from 'node:fs';
 import { resolve } from 'node:path';
@@ -121,7 +122,7 @@ let exported: NextConfig = nextConfig;
 if (process.env.SENTRY_AUTH_TOKEN && process.env.SENTRY_ORG && process.env.SENTRY_PROJECT) {
   try {
     // eslint-disable-next-line @typescript-eslint/no-require-imports
-    const { withSentryConfig } = require('@sentry/nextjs') as typeof import('@sentry/nextjs');
+    const { withSentryConfig } = require('@sentry/nextjs') as typeof SentryNextjs;
     exported = withSentryConfig(nextConfig, {
       org: process.env.SENTRY_ORG,
       project: process.env.SENTRY_PROJECT,

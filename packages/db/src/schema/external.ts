@@ -96,6 +96,16 @@ export const projectLink = pgTable(
     addedAt: timestamp('added_at', { withTimezone: true })
       .notNull()
       .default(sql`now()`),
+    /**
+     * Indexing lifecycle for repo links: 'idle' | 'queued' | 'running' |
+     * 'done' | 'failed'. Persisted so the UI can show a correct button state
+     * across refreshes. NULL/'idle' = never indexed or reset.
+     */
+    indexStatus: text('index_status'),
+    indexQueuedAt: timestamp('index_queued_at', { withTimezone: true }),
+    indexStartedAt: timestamp('index_started_at', { withTimezone: true }),
+    indexedAt: timestamp('indexed_at', { withTimezone: true }),
+    indexError: text('index_error'),
   },
   (t) => [
     uniqueIndex('project_link_unique_idx').on(t.projectId, t.url),

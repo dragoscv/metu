@@ -8,7 +8,7 @@
  * - kickConductorAction: emits a manual `conductor/tick` for "wake up now".
  * - reindexGithubRepoAction: re-runs github seeding for an existing link.
  */
-import { and, desc, eq, gte, sql } from 'drizzle-orm';
+import { and, desc, eq, gte, inArray, sql } from 'drizzle-orm';
 import { z } from 'zod';
 import { auth } from '@metu/auth';
 import { getDb } from '@metu/db';
@@ -80,6 +80,10 @@ export interface MetuRepoIntel {
   integrationId: string;
   url: string;
   chunkCount: number;
+  /** 'idle' | 'queued' | 'running' | 'done' | 'failed' */
+  indexStatus: string;
+  indexedAt: string | null;
+  indexError: string | null;
 }
 
 export interface MetuOverview {
@@ -275,6 +279,9 @@ export async function getMetuOverviewAction(): Promise<
       title: projectLink.title,
       integrationId: integrationResource.integrationId,
       externalId: integrationResource.externalId,
+      indexStatus: projectLink.indexStatus,
+      indexedAt: projectLink.indexedAt,
+      indexError: projectLink.indexError,
       chunkCount: sql<number>`(
         select count(*)::int
         from memory_chunk mc
@@ -303,6 +310,9 @@ export async function getMetuOverviewAction(): Promise<
       integrationId: r.integrationId!,
       url: r.url,
       chunkCount: r.chunkCount ?? 0,
+      indexStatus: r.indexStatus ?? 'idle',
+      indexedAt: r.indexedAt ? r.indexedAt.toISOString() : null,
+      indexError: r.indexError ?? null,
     }));
 
   return {
@@ -405,6 +415,7 @@ export async function reindexGithubRepoAction(input: {
   input = parsed.data;
   const session = await auth();
   if (!session) return { ok: false as const, error: 'Unauthenticated' };
+  const db = getDb();
   await inngest
     .send({
       name: 'github/repo.linked',
@@ -419,8 +430,19 @@ export async function reindexGithubRepoAction(input: {
     })
     .catch(() => {});
 
+  // Persist a 'queued' state so the button stays in-progress across refreshes.
+  await db
+    .update(projectLink)
+    .set({ indexStatus: 'queued', indexQueuedAt: new Date(), indexError: null })
+    .where(
+      and(
+        eq(projectLink.workspaceId, session.user.workspaceId),
+        eq(projectLink.projectId, input.projectId),
+        eq(projectLink.url, input.repoUrl),
+      ),
+    );
+
   // Also refresh stats so the dashboard reflects new commits/PRs/issues.
-  const db = getDb();
   const [res] = await db
     .select({ id: integrationResource.id })
     .from(integrationResource)
@@ -448,6 +470,74 @@ export async function reindexGithubRepoAction(input: {
   }
 
   return { ok: true as const };
+}
+
+/**
+ * Re-index ALL GitHub repo links in the workspace in one click. Emits a
+ * `github/repo.linked` event per link and marks each 'queued'. Returns the
+ * number queued.
+ */
+export async function reindexAllGithubReposAction(): Promise<
+  { ok: true; queued: number } | { ok: false; error: string }
+> {
+  const session = await auth();
+  if (!session) return { ok: false as const, error: 'Unauthenticated' };
+  const db = getDb();
+  const wsId = session.user.workspaceId;
+
+  // All repo links that resolve to a GitHub integration resource.
+  const rows = await db
+    .select({
+      projectId: projectLink.projectId,
+      url: projectLink.url,
+      externalId: integrationResource.externalId,
+      integrationId: integrationResource.integrationId,
+    })
+    .from(projectLink)
+    .leftJoin(integrationResource, eq(integrationResource.id, projectLink.resourceId))
+    .where(
+      and(
+        eq(projectLink.workspaceId, wsId),
+        eq(integrationResource.provider, 'github'),
+      ),
+    );
+
+  let queued = 0;
+  for (const r of rows) {
+    if (!r.externalId || !r.integrationId) continue;
+    await inngest
+      .send({
+        name: 'github/repo.linked',
+        data: {
+          workspaceId: wsId,
+          userId: session.user.id,
+          projectId: r.projectId,
+          integrationId: r.integrationId,
+          repoFullName: r.externalId,
+          repoUrl: r.url,
+        },
+      })
+      .catch(() => {});
+    queued += 1;
+  }
+
+  if (queued > 0) {
+    await db
+      .update(projectLink)
+      .set({ indexStatus: 'queued', indexQueuedAt: new Date(), indexError: null })
+      .where(
+        and(
+          eq(projectLink.workspaceId, wsId),
+          inArray(
+            projectLink.url,
+            rows.map((r) => r.url),
+          ),
+        ),
+      );
+  }
+
+  revalidatePath('/metu');
+  return { ok: true as const, queued };
 }
 
 /**

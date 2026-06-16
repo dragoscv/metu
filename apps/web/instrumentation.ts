@@ -102,9 +102,7 @@ async function maybeInitSentry(): Promise<void> {
    * RSC, route handlers, and Server Actions and forwards it to Sentry. Guarded
    * so it's a no-op when Sentry isn't installed / DSN unset.
    */
-  export async function onRequestError(
-    ...args: Parameters<NonNullable<typeof import('@sentry/nextjs')['captureRequestError']>>
-  ): Promise<void> {
+  export async function onRequestError(...args: unknown[]): Promise<void> {
     if (!process.env.SENTRY_DSN) return;
     try {
       const Sentry = (await import(

@@ -76,11 +76,25 @@ export async function indexMemory(input: IndexInput) {
   // Guard against a slow/hung embedding provider starving the caller
   // (Inngest step or request handler). 30s is generous for any batch
   // we produce (chunks are capped well below provider batch limits).
-  const { embeddings } = await embedMany({
-    model: model as Parameters<typeof embedMany>[0]['model'],
-    values: chunks,
-    abortSignal: AbortSignal.timeout(EMBED_TIMEOUT_MS),
-  });
+  //
+  // Graceful degradation: if the embeddings provider fails (e.g. the gateway's
+  // upstream returns 401/429), we STILL persist the chunk text with a NULL
+  // embedding so the content is keyword-recallable and a later re-index can
+  // backfill vectors. We surface `embedded: false` so callers can report a
+  // partial success instead of marking the whole job failed.
+  let embeddings: (number[] | null)[];
+  let embedded = true;
+  try {
+    const res = await embedMany({
+      model: model as Parameters<typeof embedMany>[0]['model'],
+      values: chunks,
+      abortSignal: AbortSignal.timeout(EMBED_TIMEOUT_MS),
+    });
+    embeddings = res.embeddings;
+  } catch {
+    embedded = false;
+    embeddings = chunks.map(() => null);
+  }
 
   const db = getDb();
   await db.insert(memoryChunk).values(
@@ -91,11 +105,11 @@ export async function indexMemory(input: IndexInput) {
       sourceId: input.sourceId ?? null,
       content,
       embedding: embeddings[i],
-      metadata: { position: i, ...input.metadata },
+      metadata: { position: i, embedded, ...input.metadata },
     })),
   );
 
-  return { chunkCount: chunks.length };
+  return { chunkCount: chunks.length, embedded };
 }
 
 export async function recall(params: {

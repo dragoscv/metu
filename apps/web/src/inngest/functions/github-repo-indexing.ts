@@ -9,7 +9,7 @@
 import { and, eq } from 'drizzle-orm';
 import { open as openSealed } from '@metu/ai';
 import { getDb } from '@metu/db';
-import { integration, timelineEvent } from '@metu/db/schema';
+import { integration, projectLink, timelineEvent } from '@metu/db/schema';
 import { memory } from '@metu/core';
 import { inngest } from '../client';
 import { parseEvent } from '../schemas';
@@ -51,6 +51,31 @@ async function getGithubToken(workspaceId: string, integrationId: string) {
   }
 }
 
+/** Update the indexing lifecycle on the matching project_link row(s). */
+async function setIndexStatus(
+  workspaceId: string,
+  projectId: string,
+  repoUrl: string,
+  patch: {
+    indexStatus: string;
+    indexStartedAt?: Date | null;
+    indexedAt?: Date | null;
+    indexError?: string | null;
+  },
+): Promise<void> {
+  const db = getDb();
+  await db
+    .update(projectLink)
+    .set(patch)
+    .where(
+      and(
+        eq(projectLink.workspaceId, workspaceId),
+        eq(projectLink.projectId, projectId),
+        eq(projectLink.url, repoUrl),
+      ),
+    );
+}
+
 export const onGithubRepoLinked = inngest.createFunction(
   {
     id: 'github-repo-linked',
@@ -72,8 +97,22 @@ export const onGithubRepoLinked = inngest.createFunction(
       return { ok: false, reason: 'invalid_repo_name' };
     }
 
+    await step.run('mark-running', () =>
+      setIndexStatus(workspaceId, projectId, repoUrl, {
+        indexStatus: 'running',
+        indexStartedAt: new Date(),
+        indexError: null,
+      }),
+    );
+
     const token = await step.run('token', () => getGithubToken(workspaceId, integrationId));
     if (!token) {
+      await step.run('mark-failed-no-token', () =>
+        setIndexStatus(workspaceId, projectId, repoUrl, {
+          indexStatus: 'failed',
+          indexError: 'No GitHub token for this integration',
+        }),
+      );
       return { ok: false, reason: 'no-token' };
     }
 
@@ -253,6 +292,14 @@ export const onGithubRepoLinked = inngest.createFunction(
         payload: { projectId, repoFullName, chunks: chunkCount },
       },
     });
+
+    await step.run('mark-done', () =>
+      setIndexStatus(workspaceId, projectId, repoUrl, {
+        indexStatus: 'done',
+        indexedAt: new Date(),
+        indexError: null,
+      }),
+    );
 
     return { ok: true, chunks: chunkCount };
   },
