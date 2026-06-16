@@ -493,8 +493,14 @@ const notifyTool: ToolDefinition<typeof notifyArgs> = {
 // ─── log_observation ───────────────────────────────────────────────────────
 
 const logObservationArgs = z.object({
-  title: z.string().min(2).max(200),
+  // Title is what shows on the timeline. The model sometimes omits it and
+  // only supplies a `body`/`text`/`observation`, so accept those aliases and
+  // synthesize a title from the body when missing (see execute()).
+  title: z.string().min(2).max(200).optional(),
   body: z.string().max(2000).optional(),
+  // Common aliases the planner emits instead of `body`.
+  text: z.string().max(2000).optional(),
+  observation: z.string().max(2000).optional(),
   importance: z.number().min(0).max(1).default(0.4),
   projectId: z.string().uuid().optional(),
 });
@@ -506,14 +512,23 @@ const logObservationTool: ToolDefinition<typeof logObservationArgs> = {
   kind: 'low_risk',
   args: logObservationArgs,
   async execute(args, ctx) {
+    const body = args.body ?? args.text ?? args.observation ?? null;
+    // Derive a title from the body when the model omitted one.
+    let title = args.title?.trim();
+    if (!title) {
+      const source = body?.trim() ?? '';
+      if (!source) throw new Error('log_observation requires a title or body');
+      const firstLine = source.split('\n')[0]!.trim();
+      title = firstLine.length > 200 ? `${firstLine.slice(0, 197)}…` : firstLine;
+    }
     const db = getDb();
     await db.insert(timelineEvent).values({
       workspaceId: ctx.workspaceId,
       userId: ctx.userId,
       projectId: args.projectId ?? null,
       kind: 'conductor.observation',
-      title: args.title,
-      body: args.body ?? null,
+      title,
+      body,
       importance: args.importance,
     });
     return { result: { ok: true } };
