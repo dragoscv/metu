@@ -81,19 +81,23 @@ export async function initDb(): Promise<DbClient> {
 
 /**
  * Sync singleton. Works for postgres-js (local/scripts) and, once initDb()
- * has run, returns the cached Cloud SQL client. If the connector is required
- * but not yet initialized, throws — callers in serverless should prefer
- * awaiting initDb() at module load.
+ * has run, returns the cached Cloud SQL connector client. If the connector
+ * hasn't been initialized yet (e.g. build-time static page-data collection,
+ * or a code path that didn't await initDb()), fall back to a direct
+ * postgres-js connection over DATABASE_URL so callers never crash.
  */
 export function getDb(): DbClient {
   if (globalForDb.__metuDb) return globalForDb.__metuDb;
 
-  if (process.env.INSTANCE_CONNECTION_NAME) {
-    throw new Error('Cloud SQL connector requires initDb() to be awaited before getDb()');
-  }
-
   const url = process.env.DATABASE_URL;
-  if (!url) throw new Error('DATABASE_URL is not set');
+  if (!url) {
+    // No direct URL and connector not yet initialized. This only happens if
+    // INSTANCE_CONNECTION_NAME is set but initDb() wasn't awaited and no
+    // DATABASE_URL fallback exists.
+    throw new Error(
+      'Database not initialized: set DATABASE_URL or await initDb() (Cloud SQL connector)',
+    );
+  }
 
   // SSL for managed Postgres (Cloud SQL); local dev connects plaintext.
   const isLocal = /@(localhost|127\.0\.0\.1|\[::1\]|[\w-]+\.internal)/.test(url);
