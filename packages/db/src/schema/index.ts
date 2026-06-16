@@ -12,6 +12,7 @@ export * from './presence';
 export * from './continuity';
 export * from './billing';
 export * from './telegram';
+export * from './discord';
 export * from './digest';
 export * from './notai';
 export * from './streaks';

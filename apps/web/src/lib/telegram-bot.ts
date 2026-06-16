@@ -28,12 +28,14 @@ export type TelegramBotRow = typeof telegramBot.$inferSelect;
 /** The command menu published to Telegram (the "/" button). */
 export const BOT_COMMANDS: BotCommand[] = [
   { command: 'ask', description: 'Ask the METU Conductor anything' },
+  { command: 'do', description: 'Have METU take an action (agentic)' },
   { command: 'now', description: 'What should I focus on right now' },
   { command: 'today', description: "Today's plan & open tasks" },
   { command: 'capture', description: 'Capture a note or idea to METU' },
   { command: 'goals', description: 'Goal status & next steps' },
   { command: 'blocked', description: "What's blocked and why" },
   { command: 'resume', description: 'Where did I leave off' },
+  { command: 'autopilot', description: 'Let METU act autonomously (on/off/3h)' },
   { command: 'quiet', description: 'Set quiet hours (e.g. /quiet 22-8)' },
   { command: 'mute', description: 'Pause proactive messages (e.g. /mute 3h)' },
   { command: 'unmute', description: 'Resume proactive messages' },

@@ -59,6 +59,9 @@ const ALLOWED_TABLES = new Set([
   // the opaque `webhookId`; mutations target it by `id` after a workspace-
   // scoped fetch. Read paths take workspaceId as an argument.
   'telegramBot',
+  // discordBot: per-workspace singleton; resolved by applicationId on the
+  // interactions webhook, mutated by id after a scoped fetch.
+  'discordBot',
   // Devices: hub-side queries scope by fingerprint+kind; workspaceId is
   // derived from the matched device row, not asserted in the WHERE.
   'device',

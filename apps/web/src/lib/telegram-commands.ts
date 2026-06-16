@@ -10,9 +10,31 @@
  * successful `/start <code>`. Every later update must come from that user.
  */
 import 'server-only';
-import { and, eq, gt } from 'drizzle-orm';
+import { and, desc, eq, gt, isNull } from 'drizzle-orm';
+/** Heuristic: does plain text look like an action request? */
+function looksLikeAction(text: string): boolean {
+  const actionKeywords = [
+    'create',
+    'add',
+    'update',
+    'delete',
+    'send',
+    'schedule',
+    'book',
+    'set',
+    'change',
+    'move',
+    'mark',
+    'complete',
+    'finish',
+    'close',
+  ];
+  const lower = text.toLowerCase();
+  return actionKeywords.some((kw) => lower.includes(kw));
+}
+
 import { getDb } from '@metu/db';
-import { agentPolicy, telegramBot, telegramChatLink, telegramLinkCode } from '@metu/db/schema';
+import { agentPolicy, autonomyGrant, telegramBot, telegramChatLink, telegramLinkCode } from '@metu/db/schema';
 import { indexMemory } from '@metu/core/memory';
 import { log } from '@metu/logger';
 import { runConductorTurn } from '@/lib/conductor-turn';
@@ -45,12 +67,14 @@ export interface TgUpdate {
 const HELP = [
   'METU Conductor — commands:',
   '/ask <q> — ask me anything',
+  '/do <action> — have me take an action (agentic)',
   '/now — what to focus on now',
   '/today — today’s plan',
   '/capture <text> — save a note',
   '/goals — goal status',
   '/blocked — what’s blocked',
   '/resume — where you left off',
+  '/autopilot on|off|3h — let me act autonomously',
   '/quiet 22-8 — set quiet hours',
   '/mute 3h — pause proactive msgs',
   '/unmute — resume them',
@@ -149,6 +173,84 @@ async function setMute(bot: TelegramBotRow, arg: string): Promise<string> {
   const until = new Date(Date.now() + ms);
   await getDb().update(telegramBot).set({ mutedUntil: until }).where(eq(telegramBot.id, bot.id));
   return `🔕 Muted proactive messages until ${until.toLocaleString()}.`;
+}
+
+/**
+ * Toggle Conductor autopilot. Respects metu's autonomy model:
+ *   - "on"  → PERMANENT full autopilot: set agent_policy.defaultMode='autopilot'.
+ *   - "off" → revert defaultMode to 'ask' AND revoke any active grants.
+ *   - "<n>h"/"<n>m" → time-boxed autonomy grant (defaultMode untouched).
+ *   - ""    → report current state.
+ * FORCE_ASK tools still always ask, by design.
+ */
+async function setAutopilot(
+  bot: TelegramBotRow,
+  userId: string,
+  arg: string,
+): Promise<string> {
+  const db = getDb();
+  const a = arg.trim().toLowerCase();
+
+  if (!a) {
+    const [pol] = await db
+      .select({ mode: agentPolicy.defaultMode })
+      .from(agentPolicy)
+      .where(eq(agentPolicy.workspaceId, bot.workspaceId))
+      .limit(1);
+    const [grant] = await db
+      .select({ expiresAt: autonomyGrant.expiresAt })
+      .from(autonomyGrant)
+      .where(
+        and(
+          eq(autonomyGrant.workspaceId, bot.workspaceId),
+          isNull(autonomyGrant.tool),
+          isNull(autonomyGrant.revokedAt),
+          gt(autonomyGrant.expiresAt, new Date()),
+        ),
+      )
+      .orderBy(desc(autonomyGrant.expiresAt))
+      .limit(1);
+    const permanent = pol?.mode === 'autopilot';
+    if (permanent) return '🤖 Autopilot: ON (permanent). Use /autopilot off to stop.';
+    if (grant) return `🤖 Autopilot: temporary until ${grant.expiresAt.toLocaleString()}.`;
+    return `🤖 Autopilot: OFF (mode: ${pol?.mode ?? 'ask'}). Use /autopilot on for permanent, or /autopilot 3h for a window.`;
+  }
+
+  if (a === 'on') {
+    await db
+      .update(agentPolicy)
+      .set({ defaultMode: 'autopilot' })
+      .where(eq(agentPolicy.workspaceId, bot.workspaceId));
+    return '🤖 Autopilot ON (permanent). I will act without asking, except for actions that always require confirmation. Use /autopilot off to stop.';
+  }
+
+  if (a === 'off') {
+    await db
+      .update(agentPolicy)
+      .set({ defaultMode: 'ask' })
+      .where(eq(agentPolicy.workspaceId, bot.workspaceId));
+    await db
+      .update(autonomyGrant)
+      .set({ revokedAt: new Date() })
+      .where(
+        and(eq(autonomyGrant.workspaceId, bot.workspaceId), isNull(autonomyGrant.revokedAt)),
+      );
+    return '🛑 Autopilot OFF. I will ask before taking actions.';
+  }
+
+  const m = a.match(/^(\d+)\s*([hm])$/);
+  if (!m) return 'Use /autopilot on, /autopilot off, or /autopilot 3h.';
+  const n = Number(m[1]);
+  const ms = m[2] === 'h' ? n * 3600_000 : n * 60_000;
+  const expiresAt = new Date(Date.now() + ms);
+  await db.insert(autonomyGrant).values({
+    workspaceId: bot.workspaceId,
+    userId,
+    tool: null,
+    note: 'granted via Telegram',
+    expiresAt,
+  });
+  return `🤖 Autopilot ON until ${expiresAt.toLocaleString()}.`;
 }
 
 /**
@@ -257,6 +359,13 @@ export async function processTelegramUpdate(bot: TelegramBotRow, update: TgUpdat
     case 'unmute':
       await sendMessage(token, chatId, await setMute(bot, 'off'));
       return;
+    case 'autopilot':
+      await sendMessage(
+        token,
+        chatId,
+        await setAutopilot(bot, bot.connectedByUserId, arg),
+      );
+      return;
     case 'approve': {
       const pending = await resolvePendingApproval(bot.workspaceId);
       if (!pending) {
@@ -278,30 +387,57 @@ export async function processTelegramUpdate(bot: TelegramBotRow, update: TgUpdat
     resume: 'Where did I leave off? Summarize so I can resume quickly.',
   };
   let prompt: string;
+  // 'agentic' lane for do-things requests; 'chat' for plain Q&A.
+  let intent: 'chat' | 'agentic' = 'chat';
   if (cmd === 'ask') prompt = arg || 'Hello';
+  else if (cmd === 'do') {
+    if (!arg) {
+      await sendMessage(token, chatId, 'Usage: /do <what you want me to do>');
+      return;
+    }
+    prompt = arg;
+    intent = 'agentic';
+  }
   else if (cmd && prompts[cmd]) prompt = prompts[cmd];
-  else if (!cmd)
+  else if (!cmd) {
     prompt = text; // plain text = chat
+    if (looksLikeAction(text)) intent = 'agentic';
+  }
   else {
     await sendMessage(token, chatId, `Unknown command /${cmd}. Try /help.`);
     return;
   }
 
   await sendChatAction(token, chatId).catch(() => {});
-  let reply: string;
+  let result: Awaited<ReturnType<typeof runConductorTurn>>;
   try {
-    reply = await runConductorTurn({
+    result = await runConductorTurn({
       workspaceId: bot.workspaceId,
       userId: bot.connectedByUserId,
       text: prompt,
       channel: 'Telegram',
+      intent,
     });
   } catch (err) {
     log.error('telegram.conductor.failed', { workspaceId: bot.workspaceId }, err);
-    reply = 'Sorry — something went wrong. Try again.';
+    result = { text: 'Sorry — something went wrong. Try again.', pendingApprovals: [] };
   }
   // Telegram hard-caps messages at 4096 chars.
-  await sendMessage(token, chatId, reply.slice(0, 4000));
+  // Attach inline Approve/Reject buttons for the first pending approval.
+  const firstPending = result.pendingApprovals[0];
+  const inlineKeyboard: InlineKeyboardButton[][] | undefined = firstPending
+    ? [
+        [
+          { text: '✅ Approve', callback_data: `approve:${firstPending.toolCallId}` },
+          { text: '🚫 Reject', callback_data: `reject:${firstPending.toolCallId}` },
+        ],
+      ]
+    : undefined;
+  const suffix =
+    result.pendingApprovals.length > 1
+      ? `\n\n(${result.pendingApprovals.length} actions need approval — /approve to run the next)`
+      : '';
+  await sendMessage(token, chatId, result.text.slice(0, 3900) + suffix, { inlineKeyboard });
 }
 
 export type { InlineKeyboardButton };

@@ -15,7 +15,7 @@ import { and, eq } from 'drizzle-orm';
 import { inngest } from '../client';
 import { parseEvent } from '../schemas';
 import { getDb } from '@metu/db';
-import { telegramBot } from '@metu/db/schema';
+import { telegramBot, discordBot } from '@metu/db/schema';
 import { composeProactiveMessage } from '@/lib/proactive-compose';
 import { notify } from '@/lib/notify';
 import { log } from '@/lib/logger';
@@ -28,7 +28,7 @@ interface EligibleBot {
 
 async function eligibleBots(onlyWorkspaceId?: string): Promise<EligibleBot[]> {
   const db = getDb();
-  const rows = await db
+  const tgRows = await db
     .select({
       workspaceId: telegramBot.workspaceId,
       userId: telegramBot.connectedByUserId,
@@ -43,9 +43,30 @@ async function eligibleBots(onlyWorkspaceId?: string): Promise<EligibleBot[]> {
         ? eq(telegramBot.workspaceId, onlyWorkspaceId)
         : and(eq(telegramBot.outboundEnabled, true), eq(telegramBot.status, 'active')),
     );
-  return rows
-    .filter((r) => r.outboundEnabled && r.status === 'active' && !!r.allowed)
-    .map((r) => ({ workspaceId: r.workspaceId, userId: r.userId, tone: r.tone }));
+  const dcRows = await db
+    .select({
+      workspaceId: discordBot.workspaceId,
+      userId: discordBot.connectedByUserId,
+      tone: discordBot.tone,
+      outboundEnabled: discordBot.outboundEnabled,
+      allowed: discordBot.allowedDiscordUserId,
+      status: discordBot.status,
+    })
+    .from(discordBot)
+    .where(
+      onlyWorkspaceId
+        ? eq(discordBot.workspaceId, onlyWorkspaceId)
+        : and(eq(discordBot.outboundEnabled, true), eq(discordBot.status, 'active')),
+    );
+  // Union both channels; de-dup by workspace (notify() fans out to all bound
+  // channels anyway, so we only need one sweep per workspace).
+  const byWs = new Map<string, EligibleBot>();
+  for (const r of [...tgRows, ...dcRows]) {
+    if (r.outboundEnabled && r.status === 'active' && !!r.allowed && !byWs.has(r.workspaceId)) {
+      byWs.set(r.workspaceId, { workspaceId: r.workspaceId, userId: r.userId, tone: r.tone });
+    }
+  }
+  return [...byWs.values()];
 }
 
 async function sweepOne(bot: EligibleBot, hint?: string): Promise<boolean> {

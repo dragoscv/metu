@@ -15,13 +15,15 @@
  */
 import { and, eq } from 'drizzle-orm';
 import { getDb } from '@metu/db';
-import { agentPolicy, notification, notificationSubscription, pushReceipt } from '@metu/db/schema';
+import { agentPolicy, notification, notificationSubscription, pushReceipt, user } from '@metu/db/schema';
 import webpush from 'web-push';
 import { Expo } from 'expo-server-sdk';
 import { hubBroadcast } from './hub';
 import { isQuietHoursActive } from './quiet-hours';
 import { log } from './logger';
 import { deliverTelegram } from './telegram-bot';
+import { deliverDiscord } from './discord-bot';
+import { sendEmail, emailConfigured } from './email';
 
 export interface NotifyAction {
   id: string;
@@ -57,7 +59,7 @@ const expo = new Expo({
   accessToken: process.env.EXPO_ACCESS_TOKEN,
 });
 
-type Channel = 'ws' | 'web_push' | 'expo' | 'telegram';
+type Channel = 'ws' | 'web_push' | 'expo' | 'telegram' | 'discord' | 'email';
 
 interface ResolvedPrefs {
   mutedChannels: Channel[];
@@ -307,6 +309,53 @@ export async function notify(input: NotifyInput): Promise<{ id: string; delivere
       if (sent) delivered.push('telegram:1');
     } catch (err) {
       log.error('notify.telegram.failed', { workspaceId: input.workspaceId }, err);
+    }
+  }
+
+  // 4) Discord (BYO per-workspace bot DM). Same guardrails as Telegram.
+  const dcMuted = prefs.mutedChannels.includes('discord') || quietBlocksPush || sourceBlocked;
+  if (!dcMuted) {
+    try {
+      const sent = await deliverDiscord({
+        workspaceId: input.workspaceId,
+        title: input.title,
+        body: input.body,
+        urgency,
+        toolCallId:
+          typeof input.metadata?.toolCallId === 'string' ? input.metadata.toolCallId : undefined,
+      });
+      if (sent) delivered.push('discord:1');
+    } catch (err) {
+      log.error('notify.discord.failed', { workspaceId: input.workspaceId }, err);
+    }
+  }
+
+  // 5) Email — only for high/critical urgency (instant alerts). The daily
+  //    digest is a separate cron. Respects quiet hours for non-critical.
+  const emailMuted = prefs.mutedChannels.includes('email');
+  const wantEmail =
+    emailConfigured() &&
+    !emailMuted &&
+    (urgency === 'critical' || (urgency === 'high' && !prefs.quietActive));
+  if (wantEmail) {
+    try {
+      const [u] = await db
+        .select({ email: user.email })
+        .from(user)
+        .where(eq(user.id, input.userId))
+        .limit(1);
+      if (u?.email) {
+        const ok = await sendEmail({
+          to: u.email,
+          subject: `metu · ${input.title}`,
+          text: input.body
+            ? `${input.title}\n\n${input.body}${input.actionUrl ? `\n\n${input.actionUrl}` : ''}`
+            : input.title,
+        });
+        if (ok) delivered.push('email:1');
+      }
+    } catch (err) {
+      log.error('notify.email.failed', { workspaceId: input.workspaceId }, err);
     }
   }
 

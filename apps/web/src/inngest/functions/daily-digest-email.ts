@@ -14,6 +14,9 @@ import { and, desc, eq, gte, isNull, sql } from 'drizzle-orm';
 import { inngest } from '../client';
 import { getDb } from '@metu/db';
 import { log } from '@/lib/logger';
+import { sendEmail, emailConfigured } from '@/lib/email';
+import { getModel } from '@metu/ai';
+import { generateText } from 'ai';
 import {
   agentPolicy,
   notification,
@@ -24,32 +27,25 @@ import {
   workspaceMember,
 } from '@metu/db/schema';
 
-const RESEND_FROM = process.env.RESEND_FROM ?? 'metu <hello@metu.app>';
-
-async function sendEmail(input: { to: string; subject: string; text: string }): Promise<boolean> {
-  const key = process.env.RESEND_API_KEY;
-  if (!key) return false;
+/** AI-composed digest intro (CodAI). Falls back to '' on any error. */
+async function composeIntro(
+  workspaceId: string,
+  workspaceName: string,
+  facts: string,
+): Promise<string> {
   try {
-    const r = await fetch('https://api.resend.com/emails', {
-      method: 'POST',
-      headers: {
-        authorization: `Bearer ${key}`,
-        'content-type': 'application/json',
-      },
-      body: JSON.stringify({
-        from: RESEND_FROM,
-        to: [input.to],
-        subject: input.subject,
-        text: input.text,
-      }),
+    const { model } = await getModel({ workspaceId, intent: 'chat' });
+    const { text } = await generateText({
+      model: model as Parameters<typeof generateText>[0]['model'],
+      system:
+        'You are METU, a personal AI operating system. Write a 2-3 sentence, warm but concise morning briefing intro summarizing what matters and the single most important next step. No greeting fluff, no markdown.',
+      prompt: `Workspace "${workspaceName}" — yesterday's facts:\n${facts}`,
+      maxOutputTokens: 200,
     });
-    return r.ok;
+    return text.trim();
   } catch (err) {
-    log.warn('digest.email.send_failed', {
-      to: input.to,
-      error: err instanceof Error ? err.message : String(err),
-    });
-    return false;
+    log.warn('digest.intro.failed', { workspaceId }, err);
+    return '';
   }
 }
 
@@ -61,8 +57,8 @@ export const dailyDigestEmailCron = inngest.createFunction(
   },
   { cron: '0 7 * * *' },
   async ({ step, logger }) => {
-    if (!process.env.RESEND_API_KEY) {
-      logger.info('daily-digest-email-cron skipped: RESEND_API_KEY not set');
+    if (!emailConfigured()) {
+      logger.info('daily-digest-email-cron skipped: no email provider configured');
       return { skipped: true };
     }
     const db = getDb();
@@ -165,7 +161,11 @@ export const dailyDigestEmailCron = inngest.createFunction(
         );
       }
       sections.push('', `Open metu → ${baseUrl}/timeline`);
-      const text = sections.join('\n');
+      // AI-composed intro from the same facts (best-effort).
+      const intro = await step.run(`intro-${o.workspaceId}`, () =>
+        composeIntro(o.workspaceId, o.workspaceName, lines.join('\n')),
+      );
+      const text = (intro ? `${intro}\n\n` : '') + sections.join('\n');
 
       const subject =
         proposals.length > 0

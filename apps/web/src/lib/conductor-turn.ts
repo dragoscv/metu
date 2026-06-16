@@ -38,13 +38,26 @@ export interface ConductorTurnInput {
   text: string;
   /** Channel label for the system prompt (e.g. 'Telegram'). */
   channel?: string;
+  /**
+   * Which model lane to use. 'agentic' gives a stronger model + more tool
+   * steps for do-things requests; 'chat' is for plain Q&A. Defaults to 'chat'.
+   */
+  intent?: 'chat' | 'agentic';
+}
+
+export interface ConductorTurnResult {
+  text: string;
+  /** Tool calls that need user approval before they run (ACL = ask). */
+  pendingApprovals: { toolCallId: string; tool: string }[];
 }
 
 /**
  * Run one Conductor turn and return the reply text. Persists both the user
  * message and the assistant reply to the Conductor thread.
  */
-export async function runConductorTurn(input: ConductorTurnInput): Promise<string> {
+export async function runConductorTurn(
+  input: ConductorTurnInput,
+): Promise<ConductorTurnResult> {
   const db = getDb();
   const conversationId = await getOrCreateConductorConversation(input.workspaceId);
 
@@ -68,7 +81,7 @@ export async function runConductorTurn(input: ConductorTurnInput): Promise<strin
 
   const { model, provider, modelId } = await getModel({
     workspaceId: input.workspaceId,
-    intent: 'chat',
+    intent: input.intent ?? 'chat',
   });
 
   const tools = agent.buildAiTools({
@@ -83,18 +96,36 @@ export async function runConductorTurn(input: ConductorTurnInput): Promise<strin
     .map((m) => ({ role: m.role as 'user' | 'assistant', content: m.content }));
 
   let text = '';
+  const pendingApprovals: { toolCallId: string; tool: string }[] = [];
+  const agentic = input.intent === 'agentic';
   try {
     const result = await generateText({
       model: model as Parameters<typeof generateText>[0]['model'],
       system: buildConductorSystem(
-        `You are replying to the user over ${input.channel ?? 'Telegram'}. Keep replies concise and mobile-friendly (a few short paragraphs max, no markdown tables). Use tools to answer from real workspace data.`,
+        `You are replying to the user over ${input.channel ?? 'Telegram'}. Keep replies concise and mobile-friendly (a few short paragraphs max, no markdown tables). Use tools to answer from real workspace data AND to take actions the user asks for (create/update projects, tasks, goals, notes, etc.). If a tool needs approval it will say so — tell the user you've queued it for approval. Never claim you did something you didn't actually do via a tool.`,
       ),
       messages: modelMessages,
       tools,
-      stopWhen: stepCountIs(6),
-      maxOutputTokens: 700,
+      stopWhen: stepCountIs(agentic ? 12 : 6),
+      maxOutputTokens: agentic ? 1200 : 700,
     });
     text = result.text.trim();
+
+    // Surface any tool calls that returned __awaiting_approval so the channel
+    // can render inline Approve/Reject buttons.
+    for (const step of result.steps ?? []) {
+      for (const tr of step.toolResults ?? []) {
+        const output = (tr as { output?: unknown }).output as
+          | { __awaiting_approval?: boolean; toolCallId?: string }
+          | undefined;
+        if (output?.__awaiting_approval && output.toolCallId) {
+          pendingApprovals.push({
+            toolCallId: output.toolCallId,
+            tool: (tr as { toolName?: string }).toolName ?? 'action',
+          });
+        }
+      }
+    }
 
     await db.insert(message).values({
       workspaceId: input.workspaceId,
@@ -111,8 +142,11 @@ export async function runConductorTurn(input: ConductorTurnInput): Promise<strin
       .where(eq(conversation.id, conversationId));
   } catch (err) {
     log.error('conductor.turn.failed', { workspaceId: input.workspaceId }, err);
-    return 'Sorry — I hit an error reaching my reasoning engine. Try again in a moment.';
+    return {
+      text: 'Sorry — I hit an error reaching my reasoning engine. Try again in a moment.',
+      pendingApprovals: [],
+    };
   }
 
-  return text || 'Done.';
+  return { text: text || 'Done.', pendingApprovals };
 }

@@ -9,6 +9,7 @@
     "./google": "./src/google/index.ts",
     "./telegram": "./src/telegram/index.ts",
     "./telegram/api": "./src/telegram/api.ts",
+    "./discord/api": "./src/discord/api.ts",
     "./stripe": "./src/stripe/index.ts",
     "./vercel": "./src/vercel/index.ts",
     "./gcs": "./src/gcs/index.ts",
