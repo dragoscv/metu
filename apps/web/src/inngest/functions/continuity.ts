@@ -16,12 +16,11 @@ import {
   continuityBriefing,
   notification,
   project,
-  telegramChatLink,
   workspaceMember,
 } from '@metu/db/schema';
-import { sendTextMessage as sendTelegramText } from '@metu/integrations/telegram';
 import { hubBroadcast } from '../../lib/hub';
 import { sendPushOnly } from '../../lib/notify';
+import { deliverTelegram } from '../../lib/telegram-bot';
 import { inngest } from '../client';
 import { parseEvent } from '../schemas';
 
@@ -308,38 +307,25 @@ export const continuityMorningDelivery = inngest.createFunction(
     });
 
     // Best-effort Telegram push. Skips silently if the bot token is unset
-    // or the workspace has no linked chats; per-chat failures are logged
-    // but never fail the whole step.
+    // Best-effort Telegram push via each workspace's BYO bot. Skips silently
+    // if no bot/linked chat; per-workspace failures are logged but never fail
+    // the whole step. Guardrails (caps/quiet) are enforced in deliverTelegram.
     const telegramSent = await step.run('telegram-deliver', async () => {
-      if (!process.env.TELEGRAM_BOT_TOKEN) return 0;
-      const wsIds = Array.from(new Set(recipients.map((r) => r.workspaceId)));
-      if (wsIds.length === 0) return 0;
-      const db = getDb();
-      const links = await db
-        .select({
-          chatId: telegramChatLink.chatId,
-          workspaceId: telegramChatLink.workspaceId,
-        })
-        .from(telegramChatLink)
-        .where(inArray(telegramChatLink.workspaceId, wsIds));
-      if (links.length === 0) return 0;
-
-      // Best-effort de-dup: one chat = one message per workspace.
+      // One message per workspace (de-dup recipients by workspace).
       const byWs = new Map(recipients.map((r) => [r.workspaceId, r]));
       let sent = 0;
-      for (const link of links) {
-        const r = byWs.get(link.workspaceId);
-        if (!r) continue;
-        const text = `🌅 *${r.projectName}*\n\n${r.nextStep}\n\nOpen: ${process.env.METU_WEB_URL ?? ''}/resume?since=3d`;
+      for (const r of byWs.values()) {
         try {
-          await sendTelegramText(link.chatId, text, {
-            parseMode: 'Markdown',
-            disableNotification: true,
+          const ok = await deliverTelegram({
+            workspaceId: r.workspaceId,
+            title: `🌅 ${r.projectName}`,
+            body: `${r.nextStep}`,
+            urgency: 'normal',
           });
-          sent += 1;
+          if (ok) sent += 1;
         } catch (err) {
           logger.warn('telegram morning brief failed', {
-            chatId: link.chatId,
+            workspaceId: r.workspaceId,
             err: err instanceof Error ? err.message : String(err),
           });
         }
