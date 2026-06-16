@@ -1,0 +1,68 @@
+name: deploy-inngest
+
+# Self-hosted Inngest backend on Cloud Run (event queue + function runner).
+# The image is upstream `inngest/inngest`; we only pin the tag. Service config
+# (secrets, VPC connector, args, scaling) is set once and preserved across
+# deploys — this workflow just rolls the image tag forward.
+#
+# Trigger manually (workflow_dispatch). Provide a tag to pin a version.
+
+on:
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: 'inngest/inngest image tag'
+        required: false
+        default: 'latest'
+
+permissions:
+  contents: read
+  id-token: write
+
+concurrency:
+  group: deploy-inngest
+  cancel-in-progress: true
+
+env:
+  PROJECT_ID: metu-prod-495423
+  REGION: europe-west1
+  SERVICE: metu-inngest
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - id: auth
+        uses: google-github-actions/auth@v2
+        with:
+          workload_identity_provider: ${{ vars.WIF_PROVIDER }}
+          service_account: metu-github-deployer@metu-prod-495423.iam.gserviceaccount.com
+
+      - uses: google-github-actions/setup-gcloud@v2
+
+      # Deploy preserves existing secrets/env/VPC/args; only the image + core
+      # runtime flags are (re)asserted so the service is reproducible from CI.
+      - name: Deploy Inngest to Cloud Run
+        run: |
+          gcloud run deploy "$SERVICE" \
+            --image="inngest/inngest:${{ inputs.tag }}" \
+            --region="$REGION" \
+            --project="$PROJECT_ID" \
+            --command=inngest \
+            --args="start,--sdk-url=https://metu.ro/api/inngest" \
+            --port=8288 \
+            --vpc-connector=metu-connector \
+            --vpc-egress=private-ranges-only \
+            --min-instances=1 \
+            --max-instances=1 \
+            --memory=1Gi \
+            --cpu=1 \
+            --no-cpu-throttling \
+            --allow-unauthenticated \
+            --set-secrets="INNGEST_POSTGRES_URI=inngest-postgres-uri:latest,INNGEST_REDIS_URI=inngest-redis-uri:latest,INNGEST_EVENT_KEY=inngest-event-key:latest,INNGEST_SIGNING_KEY=inngest-signing-key:latest" \
+            --quiet
+
+      - name: Re-sync app functions
+        run: |
+          curl -fsS -X PUT https://metu.ro/api/inngest -o /dev/null -w "sync HTTP %{http_code}\n" || true

@@ -114,4 +114,27 @@ const nextConfig: NextConfig = {
   },
 };
 
-export default nextConfig;
+// Wrap with Sentry only when the build plugin is available AND an auth token
+// is present (source-map upload). Guarded so local/CI builds without Sentry
+// configured never fail. Source maps are uploaded + hidden from the client.
+let exported: NextConfig = nextConfig;
+if (process.env.SENTRY_AUTH_TOKEN && process.env.SENTRY_ORG && process.env.SENTRY_PROJECT) {
+  try {
+    // eslint-disable-next-line @typescript-eslint/no-require-imports
+    const { withSentryConfig } = require('@sentry/nextjs') as typeof import('@sentry/nextjs');
+    exported = withSentryConfig(nextConfig, {
+      org: process.env.SENTRY_ORG,
+      project: process.env.SENTRY_PROJECT,
+      authToken: process.env.SENTRY_AUTH_TOKEN,
+      silent: !process.env.CI,
+      widenClientFileUpload: true,
+      sourcemaps: { deleteSourcemapsAfterUpload: true },
+      disableLogger: true,
+      telemetry: false,
+    }) as NextConfig;
+  } catch {
+    // plugin not installed — ship without source-map upload
+  }
+}
+
+export default exported;

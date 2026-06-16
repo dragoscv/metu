@@ -96,3 +96,24 @@ async function maybeInitSentry(): Promise<void> {
     log.error('sentry.init.failed', {}, err);
   }
 }
+
+  /**
+   * Next.js `onRequestError` hook — captures every server-side error thrown in
+   * RSC, route handlers, and Server Actions and forwards it to Sentry. Guarded
+   * so it's a no-op when Sentry isn't installed / DSN unset.
+   */
+  export async function onRequestError(
+    ...args: Parameters<NonNullable<typeof import('@sentry/nextjs')['captureRequestError']>>
+  ): Promise<void> {
+    if (!process.env.SENTRY_DSN) return;
+    try {
+      const Sentry = (await import(
+        /* webpackIgnore: true */ /* turbopackIgnore: true */ '@sentry/nextjs'
+      ).catch(() => null)) as
+        | { captureRequestError?: (...a: unknown[]) => void }
+        | null;
+      Sentry?.captureRequestError?.(...args);
+    } catch {
+      // never let error reporting throw
+    }
+  }
