@@ -1,29 +1,31 @@
-name: deploy-worker
+name: deploy-hub
 
 on:
   push:
     branches: [main]
+    # Only redeploy when the hub or its shared deps actually change.
     paths:
-      - 'apps/worker/**'
-      - 'packages/**'
-      - '.github/workflows/deploy-worker.yml'
+      - 'apps/hub/**'
+      - 'packages/db/**'
+      - 'packages/auth/**'
+      - 'packages/logger/**'
+      - 'packages/protocol/**'
+      - '.github/workflows/deploy-hub.yml'
   workflow_dispatch:
 
 permissions:
   contents: read
   id-token: write
 
-# Cancel an in-progress deploy when a newer commit lands — saves Actions
-# minutes and avoids racing two deploys of the same service.
 concurrency:
-  group: deploy-worker-${{ github.ref }}
+  group: deploy-hub-${{ github.ref }}
   cancel-in-progress: true
 
 env:
   PROJECT_ID: metu-prod-495423
   REGION: europe-west1
-  SERVICE: metu-worker
-  IMAGE: europe-west1-docker.pkg.dev/metu-prod-495423/containers/metu-worker
+  SERVICE: metu-hub
+  IMAGE: europe-west1-docker.pkg.dev/metu-prod-495423/containers/metu-hub
 
 jobs:
   deploy:
@@ -45,10 +47,12 @@ jobs:
 
       - name: Build and push image
         run: |
-          docker build -t $IMAGE:${{ github.sha }} -t $IMAGE:latest -f apps/worker/Dockerfile .
+          docker build -t $IMAGE:${{ github.sha }} -t $IMAGE:latest -f apps/hub/Dockerfile .
           docker push $IMAGE:${{ github.sha }}
           docker push $IMAGE:latest
 
+      # Deploy with the image only; service config (VPC connector, secrets,
+      # env vars, ingress, SA) is preserved from the existing service.
       - name: Deploy to Cloud Run
         run: |
           gcloud run deploy $SERVICE \

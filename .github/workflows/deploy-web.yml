@@ -6,6 +6,10 @@ name: deploy-web
 on:
   deployment_status:
 
+concurrency:
+  group: deploy-web-smoke-${{ github.event.deployment_status.target_url }}
+  cancel-in-progress: true
+
 jobs:
   smoke:
     if: github.event.deployment_status.state == 'success'
