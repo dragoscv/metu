@@ -1,0 +1,19 @@
+{
+  "deny": [
+    ".git/**",
+    ".axiom/**",
+    ".github/**",
+    "pnpm-lock.yaml",
+    "**/*.lock",
+    "**/drizzle/meta/**",
+    ".env",
+    ".env.*",
+    "**/.env",
+    "**/.env.*",
+    "**/node_modules/**",
+    "**/.next/**",
+    "**/dist/**"
+  ],
+  "noSecrets": true,
+  "maxBytes": 262144
+}

@@ -134,3 +134,11 @@ If the work is CPU/GPU heavy or > a few seconds:
   from `'ai'`.
 - ❌ Throw raw `error.message` to the user. Catch + emit `conductor/notify`
   with a friendly message.
+
+## Land it through AXIOM
+
+Ship the function + its test + the `client.ts` event + the `route.ts` registration as
+ONE Plan via [axiom-plan-apply](../axiom-plan-apply/SKILL.md). `.axiom/profiles/metu.json`
+→ `metu.ripple` (`repo.requireCompanion`) enforces this skill's ripple: a new
+`apps/web/src/inngest/functions/*.ts` fails `axiom_check` without a
+`functions/__tests__/*.test.ts` companion (client/route count once they exist in the repo).

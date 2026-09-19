@@ -145,3 +145,11 @@ If it's reachable via Cmd+K, add it to `command-bar.tsx`.
   or `--color-{state}-*` tokens.
 - ❌ Wrapping the page in `motion.div` for entrance animation.
 - ❌ A Server Action without `auth()` + workspace check + Zod validate.
+
+## Land it through AXIOM
+
+Ship the page + toolbar + test + i18n (both locales) + nav entry as ONE Plan via
+[axiom-plan-apply](../axiom-plan-apply/SKILL.md), never as loose file writes.
+`.axiom/profiles/metu.json` → `metu.ripple` (`repo.requireCompanion`) enforces this
+skill's ripple: a new `(app)/**/page.tsx` fails `axiom_check` without its
+`__tests__/*.test.tsx`, `lib/i18n/messages/*.json` and `e2e/**/*.spec.ts` companions.

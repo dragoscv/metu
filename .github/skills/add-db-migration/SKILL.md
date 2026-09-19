@@ -110,3 +110,11 @@ feat(db): add <thing> table for <feature>
 - ❌ Skip the `IF NOT EXISTS` / exception guard. Even if it works locally,
   CI's fresh DB or future re-runs will break.
 - ❌ Change an enum's existing values. Always add new ones.
+
+## Land it through AXIOM
+
+Ship schema + generated `.sql` together as ONE Plan via
+[axiom-plan-apply](../axiom-plan-apply/SKILL.md). `.axiom/profiles/metu.json` →
+`metu.ripple` (`repo.requireCompanion`) enforces this skill's ripple: a change to
+`packages/db/src/schema/*.ts` fails `axiom_check` without a `packages/db/drizzle/*.sql`
+companion. `**/drizzle/meta/**` is protected (`repo.noOverwriteOf`) — let `db:generate` own it.

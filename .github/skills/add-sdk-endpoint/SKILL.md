@@ -142,3 +142,11 @@ Verify:
 - [ ] SDK client method added.
 - [ ] Rate limiter applied if hot.
 - [ ] Manually tested 200 / 400 / 401 / 403.
+
+## Land it through AXIOM
+
+Ship route + protocol schema + SDK client method + test as ONE Plan via
+[axiom-plan-apply](../axiom-plan-apply/SKILL.md). `.axiom/profiles/metu.json` →
+`metu.ripple` (`repo.requireCompanion`) enforces this skill's ripple: a new
+`apps/web/src/app/api/sdk/v1/**/route.ts` fails `axiom_check` without a colocated
+`__tests__/*.test.ts`, plus `packages/protocol/src/*.ts` and `packages/sdk/src/*.ts`.

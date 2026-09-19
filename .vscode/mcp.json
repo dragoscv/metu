@@ -1,0 +1,9 @@
+{
+  "servers": {
+    "axiom": {
+      "type": "stdio",
+      "command": "npx",
+      "args": ["-y", "@codai/axiom-mcp@2", "mcp", "--root", "${workspaceFolder}"]
+    }
+  }
+}

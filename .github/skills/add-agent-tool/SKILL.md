@@ -113,3 +113,11 @@ state another tool depends on.
 - [ ] Registered in the `TOOLS` object.
 - [ ] Workspace scoping enforced via `ctx.workspaceId`.
 - [ ] Manually verified through the conductor in all configured modes.
+
+## Land it through AXIOM
+
+Write `tools.ts` + its test as ONE Plan via
+[axiom-plan-apply](../axiom-plan-apply/SKILL.md), not as separate raw writes.
+`.axiom/profiles/metu.json` → `metu.ripple` (`repo.requireCompanion`) enforces this
+skill's ripple: touching `packages/core/src/agent/tools.ts` fails `axiom_check`
+without a `packages/core/src/agent/__tests__/*.test.ts` companion.

@@ -34,6 +34,7 @@ pnpm-debug.log*
 !.vscode/extensions.json
 !.vscode/tasks.json
 !.vscode/launch.json
+!.vscode/mcp.json
 .idea/
 
 # Local secrets dir (service account JSON, etc)
@@ -79,3 +80,8 @@ tail.txt
 build.log
 
 .vercel
+
+# AXIOM write-gate runtime state (journal, staging, backup, cas, reports); config is tracked
+.axiom/*
+!.axiom/profiles/
+!.axiom/gate-profile.json

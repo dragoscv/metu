@@ -1,0 +1,13 @@
+{
+  "version": 1,
+  "hooks": {
+    "preToolUse": [
+      {
+        "type": "command",
+        "exec": "axiom",
+        "args": ["gate", "--stdin"],
+        "timeoutSec": 5
+      }
+    ]
+  }
+}

@@ -1,0 +1,106 @@
+{
+  "apiVersion": "axiom.dev/v2",
+  "kind": "Profile",
+  "name": "metu",
+  "extends": "default",
+  "facts": { "allowRepo": true, "allowGuards": false },
+  "checks": [
+    {
+      "id": "repo.noOverwriteOf",
+      "predicate": "repo.noOverwriteOf",
+      "params": {
+        "globs": [
+          ".git/**",
+          ".axiom/**",
+          ".github/**",
+          "pnpm-lock.yaml",
+          "**/*.lock",
+          "**/drizzle/meta/**",
+          ".env*",
+          "**/.env*"
+        ]
+      }
+    },
+    { "id": "content.noSecrets", "predicate": "content.noSecrets", "params": {} },
+    {
+      "id": "path.deny",
+      "predicate": "path.deny",
+      "params": { "globs": ["**/node_modules/**", "**/.next/**", "**/dist/**", "**/.turbo/**"] }
+    },
+    {
+      "id": "metu.ripple",
+      "predicate": "repo.requireCompanion",
+      "params": {
+        "rules": [
+          {
+            "when": "apps/web/src/app/\\(app\\)/**/page.tsx",
+            "expect": [
+              {
+                "name": "page-test",
+                "match": "apps/web/src/app/\\(app\\)/**/__tests__/*.test.tsx"
+              },
+              { "name": "i18n-messages", "match": "apps/web/src/lib/i18n/messages/*.json" },
+              { "name": "e2e-spec", "match": "apps/web/e2e/**/*.spec.ts" }
+            ]
+          },
+          {
+            "when": "apps/web/src/app/actions/*.ts",
+            "expect": [
+              { "name": "action-guard-test", "match": "apps/web/src/lib/__tests__/*.test.ts" }
+            ]
+          },
+          {
+            "when": "packages/db/src/schema/*.ts",
+            "expect": [
+              { "name": "drizzle-sql", "match": "packages/db/drizzle/*.sql" },
+              { "name": "drizzle-journal", "match": "packages/db/drizzle/meta/_journal.json" }
+            ]
+          },
+          {
+            "when": "packages/core/src/agent/tools.ts",
+            "expect": [
+              { "name": "agent-tool-test", "match": "packages/core/src/agent/__tests__/*.test.ts" }
+            ]
+          },
+          {
+            "when": "apps/web/src/app/api/sdk/v1/**/route.ts",
+            "expect": [
+              {
+                "name": "sdk-route-test",
+                "match": "apps/web/src/app/api/sdk/v1/**/__tests__/*.test.ts"
+              },
+              { "name": "protocol-schema", "match": "packages/protocol/src/*.ts" },
+              { "name": "sdk-client", "match": "packages/sdk/src/*.ts" }
+            ]
+          },
+          {
+            "when": "apps/web/src/inngest/functions/*.ts",
+            "expect": [
+              {
+                "name": "inngest-function-test",
+                "match": "apps/web/src/inngest/functions/__tests__/*.test.ts"
+              },
+              { "name": "inngest-serve-route", "match": "apps/web/src/app/api/inngest/route.ts" },
+              { "name": "inngest-client-events", "match": "apps/web/src/inngest/client.ts" }
+            ]
+          },
+          {
+            "when": "packages/db/src/schema/integrations.ts",
+            "expect": [
+              { "name": "integration-kind-types", "match": "packages/types/src/index.ts" },
+              {
+                "name": "integration-kind-queries",
+                "match": "packages/db/src/queries/integrations.ts"
+              },
+              { "name": "integrations-doc", "match": "docs/integrations.md" }
+            ]
+          },
+          {
+            "when": "apps/web/src/app/api/webhooks/**/route.ts",
+            "expect": [{ "name": "proxy-allowlist", "match": "apps/web/src/proxy.ts" }]
+          }
+        ]
+      }
+    }
+  ]
+}

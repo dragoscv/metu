@@ -150,3 +150,12 @@ For services that push events:
 - [ ] Action tools (if any): right `kind`, `integrationId` in args.
 - [ ] UI card on `/integrations`.
 - [ ] Workspace scoping on every query.
+
+## Land it through AXIOM
+
+Ship enum + types + queries + migration + docs as ONE Plan via
+[axiom-plan-apply](../axiom-plan-apply/SKILL.md). `.axiom/profiles/metu.json` →
+`metu.ripple` (`repo.requireCompanion`) enforces this skill's ripple: touching
+`packages/db/src/schema/integrations.ts` requires `packages/types/src/index.ts`,
+`packages/db/src/queries/integrations.ts` and `docs/integrations.md`; a new
+`api/webhooks/**/route.ts` requires `apps/web/src/proxy.ts`.
