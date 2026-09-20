@@ -21,7 +21,7 @@
         ]
       }
     },
-    { "id": "content.noSecrets", "predicate": "content.noSecrets", "params": {} },
+    { "id": "content.noSecrets", "predicate": "content.noSecrets", "params": { "pii": true } },
     {
       "id": "path.deny",
       "predicate": "path.deny",
