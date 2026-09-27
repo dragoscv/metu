@@ -70,14 +70,14 @@ missing companion artifact to the Plan — never delete the rule.
 6. Run `pnpm typecheck` / `pnpm lint` as the metu instructions require. AXIOM
    guarantees the _write_ was atomic and checked, not that TypeScript is happy.
 
-CLI equivalent (from any cwd; dist path becomes `npx -y @codai/axiom-mcp` after publish):
+CLI equivalent (from any cwd; global bin from `npm i -g @codai/axiom-mcp`, the same one the
+`.github/hooks/axiom-gate.json` PreToolUse hook calls — never `npx` in a hook, it misses the 5 s budget):
 
 ```pwsh
-$cli = 'E:\gh\axiom\packages\mcp\dist\cli.js'
-node $cli compile plan.json -o bundle.json --root E:\gh\metu
-node $cli check   bundle.json --root E:\gh\metu --profile metu --json
-node $cli apply   bundle.json --root E:\gh\metu --profile metu --dry-run
-node $cli apply   bundle.json --root E:\gh\metu --profile metu --confirm sha256:<manifestDigest>
+axiom compile plan.json -o bundle.json --root E:\gh\metu
+axiom check   bundle.json --root E:\gh\metu --profile metu --json
+axiom apply   bundle.json --root E:\gh\metu --profile metu --dry-run
+axiom apply   bundle.json --root E:\gh\metu --profile metu --confirm sha256:<manifestDigest>
 ```
 
 ## On `fail` / `rolled-back`
