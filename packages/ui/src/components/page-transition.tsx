@@ -1,5 +1,5 @@
 'use client';
-import { motion } from 'framer-motion';
+import { motion } from 'motion/react';
 import { usePathname } from 'next/navigation';
 import type { ReactNode } from 'react';
 
@@ -13,7 +13,7 @@ export interface PageTransitionProps {
  * Use at the route segment level (e.g. inside an `(app)` layout) to give
  * navigation a polished feel without remounting the surrounding shell.
  *
- * Honors the user's reduced-motion preference automatically (framer-motion).
+ * Honors the user's reduced-motion preference automatically (Motion).
  */
 export function PageTransition({ children, className }: PageTransitionProps) {
   const pathname = usePathname();

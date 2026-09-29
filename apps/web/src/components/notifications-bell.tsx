@@ -1,6 +1,6 @@
 'use client';
 import { useEffect, useState, useTransition } from 'react';
-import { AnimatePresence, motion } from 'framer-motion';
+import { AnimatePresence, motion } from 'motion/react';
 import Link from 'next/link';
 import { Bell, Check, CheckCheck, X } from 'lucide-react';
 import { Card, StatusDot } from '@metu/ui';

@@ -308,9 +308,6 @@ catalogs:
     expo-server-sdk:
       specifier: ^3.10.0
       version: 3.15.0
-    framer-motion:
-      specifier: ^11.15.0
-      version: 11.18.2
     googleapis:
       specifier: ^144.0.0
       version: 144.0.0
@@ -323,6 +320,9 @@ catalogs:
     lucide-react:
       specifier: ^0.469.0
       version: 0.469.0
+    motion:
+      specifier: 13.4.4
+      version: 13.4.4
     next:
       specifier: ^16.2.9
       version: 16.2.9
@@ -408,6 +408,8 @@ overrides:
   protobufjs@>=7.0.0 <7.5.8: '>=7.5.8'
   hono@<4.12.18: '>=4.12.18'
   esbuild@<0.25.0: '>=0.25.0'
+  framer-motion: 13.4.4
+  motion-dom: 13.4.4
 
 importers:
   .:
@@ -504,9 +506,9 @@ importers:
       '@tauri-apps/plugin-updater':
         specifier: ^2.2.0
         version: 2.10.1
-      framer-motion:
+      motion:
         specifier: 'catalog:'
-        version: 11.18.2(react-dom@19.2.5(react@19.2.5))(react@19.2.5)
+        version: 13.4.4(react-dom@19.2.5(react@19.2.5))(react@19.2.5)
       react:
         specifier: 'catalog:'
         version: 19.2.5
@@ -836,15 +838,15 @@ importers:
       expo-server-sdk:
         specifier: 'catalog:'
         version: 3.15.0
-      framer-motion:
-        specifier: 'catalog:'
-        version: 11.18.2(react-dom@19.2.5(react@19.2.5))(react@19.2.5)
       inngest:
         specifier: 'catalog:'
         version: 3.54.2(@opentelemetry/core@2.8.0(@opentelemetry/api@1.9.1))(@typescript/typescript6@6.0.2)(express@5.2.1(supports-color@8.1.1))(hono@4.12.25)(next@16.2.9(@babel/core@7.29.7(supports-color@8.1.1))(@opentelemetry/api@1.9.1)(@playwright/test@1.60.0)(babel-plugin-react-compiler@1.0.0)(react-dom@19.2.5(react@19.2.5))(react@19.2.5))(supports-color@8.1.1)(zod@4.4.3)
       lucide-react:
         specifier: 'catalog:'
         version: 0.469.0(react@19.2.5)
+      motion:
+        specifier: 'catalog:'
+        version: 13.4.4(react-dom@19.2.5(react@19.2.5))(react@19.2.5)
       next:
         specifier: 'catalog:'
         version: 16.2.9(@babel/core@7.29.7(supports-color@8.1.1))(@opentelemetry/api@1.9.1)(@playwright/test@1.60.0)(babel-plugin-react-compiler@1.0.0)(react-dom@19.2.5(react@19.2.5))(react@19.2.5)
@@ -1308,12 +1310,12 @@ importers:
       clsx:
         specifier: 'catalog:'
         version: 2.1.1
-      framer-motion:
-        specifier: 'catalog:'
-        version: 11.18.2(react-dom@19.2.5(react@19.2.5))(react@19.2.5)
       lucide-react:
         specifier: 'catalog:'
         version: 0.469.0(react@19.2.5)
+      motion:
+        specifier: 'catalog:'
+        version: 13.4.4(react-dom@19.2.5(react@19.2.5))(react@19.2.5)
       tailwind-merge:
         specifier: 'catalog:'
         version: 2.6.1
@@ -9664,12 +9666,6 @@ packages:
       }
     engines: { node: '>= 0.4' }
 
-  es-module-lexer@2.1.0:
-    resolution:
-      {
-        integrity: sha512-n27zTYMjYu1aj4MjCWzSP7G9r75utsaoc8m61weK+W8JMBGGQybd43GstCXZ3WNmSFtGT9wi59qQTW6mhTR5LQ==,
-      }
-
   es-module-lexer@2.3.2:
     resolution:
       {
@@ -10554,18 +10550,15 @@ packages:
       }
     engines: { node: '>= 0.6' }
 
-  framer-motion@11.18.2:
+  framer-motion@13.4.4:
     resolution:
       {
-        integrity: sha512-5F5Och7wrvtLVElIpclDT0CBzMVg3dL22B64aZwHtsIY8RB4mXICLrkajK4G9R+ieSAGcgrLeae2SeUTg2pr6w==,
+        integrity: sha512-lbsZO95NGbulo6apz70zEt6Vxf/anoRwQI2ECEc/EQYWO5CGbITtl7plDW8P/VXgXw6e8wrbhH4a9i+ygke0Mg==,
       }
     peerDependencies:
-      '@emotion/is-prop-valid': '*'
       react: ^18.0.0 || ^19.0.0
       react-dom: ^18.0.0 || ^19.0.0
     peerDependenciesMeta:
-      '@emotion/is-prop-valid':
-        optional: true
       react:
         optional: true
       react-dom:
@@ -13122,17 +13115,31 @@ packages:
         integrity: sha512-EGWKgxALGMgzvxYF1UyGTy0HXX/2vHLkw6+NvDKW2jypWbHpjQuj4UMcqQWXHERJhVGKikolT06G3bcKe4fi7w==,
       }
 
-  motion-dom@11.18.1:
+  motion-dom@13.4.4:
     resolution:
       {
-        integrity: sha512-g76KvA001z+atjfxczdRtw/RXOM3OMSdd1f4DL77qCTF/+avrRJiawSG4yDibEQ215sr9kpinSlX2pCTJ9zbhw==,
+        integrity: sha512-z2qN3RUABSci4G7cr5aHTFhqPNCWJsEMMfRlzxqtANQsSCIbVJmHvMV288m5x7doEQBTYbRTWbKdztmquCn4Sw==,
       }
 
-  motion-utils@11.18.1:
+  motion-utils@13.3.0:
     resolution:
       {
-        integrity: sha512-49Kt+HKjtbJKLtgO/LKj9Ld+6vw9BjH5d9sc40R/kVyH8GLAXgT42M2NnuPcJNuA3s9ZfZBUcwIgpmZWGEE+hA==,
+        integrity: sha512-sgSschQp7EseHInIlR7hBbMuvet3RA0bs28KPZAXJcGKGdxHGvh1ogpYDilY3bOMtl73EqPNmp75sAKHYPU5sg==,
       }
+
+  motion@13.4.4:
+    resolution:
+      {
+        integrity: sha512-lyX5kpAum2MmigecKWrFdIj3Sjn7pHek2EUrXY0WGZbOjJ1f5NfX0g4KQAb2Bp2EqL0a6dUzse11s1n7OYr5jg==,
+      }
+    peerDependencies:
+      react: ^18.0.0 || ^19.0.0
+      react-dom: ^18.0.0 || ^19.0.0
+    peerDependenciesMeta:
+      react:
+        optional: true
+      react-dom:
+        optional: true
 
   mri@1.2.0:
     resolution:
@@ -22568,8 +22575,6 @@ snapshots:
       iterator.prototype: 1.1.5
       math-intrinsics: 1.1.0
 
-  es-module-lexer@2.1.0: {}
-
   es-module-lexer@2.3.2: {}
 
   es-object-atoms@1.1.1:
@@ -23366,10 +23371,10 @@ snapshots:
 
   forwarded@0.2.0: {}
 
-  framer-motion@11.18.2(react-dom@19.2.5(react@19.2.5))(react@19.2.5):
+  framer-motion@13.4.4(react-dom@19.2.5(react@19.2.5))(react@19.2.5):
     dependencies:
-      motion-dom: 11.18.1
-      motion-utils: 11.18.1
+      motion-dom: 13.4.4
+      motion-utils: 13.3.0
       tslib: 2.8.1
     optionalDependencies:
       react: 19.2.5
@@ -25192,11 +25197,19 @@ snapshots:
 
   module-details-from-path@1.0.4: {}
 
-  motion-dom@11.18.1:
+  motion-dom@13.4.4:
     dependencies:
-      motion-utils: 11.18.1
+      motion-utils: 13.3.0
 
-  motion-utils@11.18.1: {}
+  motion-utils@13.3.0: {}
+
+  motion@13.4.4(react-dom@19.2.5(react@19.2.5))(react@19.2.5):
+    dependencies:
+      framer-motion: 13.4.4(react-dom@19.2.5(react@19.2.5))(react@19.2.5)
+      tslib: 2.8.1
+    optionalDependencies:
+      react: 19.2.5
+      react-dom: 19.2.5(react@19.2.5)
 
   mri@1.2.0: {}
 
@@ -27296,7 +27309,7 @@ snapshots:
       browserslist: 4.28.2
       chrome-trace-event: 1.0.4
       enhanced-resolve: 5.24.0
-      es-module-lexer: 2.1.0
+      es-module-lexer: 2.3.2
       eslint-scope: 5.1.1
       events: 3.3.0
       glob-to-regexp: 0.4.1

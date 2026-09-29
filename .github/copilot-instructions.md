@@ -62,7 +62,7 @@ packages/
 - **Forms**: simple → `useActionState` + Server Action; complex → `react-hook-form` + zod.
 - **URL state**: `nuqs` (NuqsAdapter mounted at root). Never `useState` for filters/tabs/pagination.
 - **Toasts**: `sonner`.
-- **Animations**: `framer-motion` (durations 160–280ms, ease `[0.22,1,0.36,1]`).
+- **Animations**: Motion 13 via `motion/react` (durations 160–280ms, ease `[0.22,1,0.36,1]`).
 
 ## Architectural invariants
 

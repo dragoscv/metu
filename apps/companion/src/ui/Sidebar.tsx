@@ -3,8 +3,8 @@
  * declarative {@link NAV_ITEMS} list, highlights the active view, and surfaces
  * the live connection status at the bottom.
  *
- * The active indicator is a plain CSS highlight (NOT a framer-motion shared
- * `layoutId`). On React 19 + framer-motion, a shared `layoutId` across
+ * The active indicator is a plain CSS highlight (NOT a Motion shared
+ * `layoutId`). On React 19 + Motion (v11 era), a shared `layoutId` across
  * conditionally-rendered siblings reliably throws `removeChild` NotFoundError,
  * so we deliberately avoid it here.
  */

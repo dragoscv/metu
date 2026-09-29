@@ -1,6 +1,6 @@
 'use client';
 import { Badge, Button, Input, Skeleton } from '@metu/ui';
-import { AnimatePresence, motion } from 'framer-motion';
+import { AnimatePresence, motion } from 'motion/react';
 import { ExternalLink, Github, Loader2, Search, X } from 'lucide-react';
 import { useEffect, useState, useTransition } from 'react';
 import {

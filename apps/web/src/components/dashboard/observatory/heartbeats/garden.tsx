@@ -1,5 +1,5 @@
 'use client';
-import { motion } from 'framer-motion';
+import { motion } from 'motion/react';
 import type { StreamItem } from '@/lib/dashboard/types';
 import { intensityFor, VALENCE_STYLE } from '@/lib/dashboard/valence';
 import { StreamObject } from '../stream-object';

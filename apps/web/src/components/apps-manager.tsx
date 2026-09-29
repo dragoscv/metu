@@ -1,6 +1,6 @@
 'use client';
 import { useState, useTransition } from 'react';
-import { motion, AnimatePresence } from 'framer-motion';
+import { motion, AnimatePresence } from 'motion/react';
 import { Button, Card, CardTitle, Page, PageHeader, StatusDot } from '@metu/ui';
 import { SdkQuickstart } from './sdk-quickstart';
 import {

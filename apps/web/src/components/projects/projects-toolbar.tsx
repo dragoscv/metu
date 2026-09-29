@@ -1,6 +1,6 @@
 'use client';
 import { Badge, Button, Input, SegmentedControl, Select } from '@metu/ui';
-import { AnimatePresence, motion } from 'framer-motion';
+import { AnimatePresence, motion } from 'motion/react';
 import { Search, SlidersHorizontal, X } from 'lucide-react';
 import { parseAsArrayOf, parseAsString, useQueryStates } from 'nuqs';
 import { useMemo, useState } from 'react';

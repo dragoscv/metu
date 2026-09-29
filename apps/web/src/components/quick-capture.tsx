@@ -1,6 +1,6 @@
 'use client';
 import { useEffect, useRef, useState, useTransition } from 'react';
-import { AnimatePresence, motion } from 'framer-motion';
+import { AnimatePresence, motion } from 'motion/react';
 import { Mic, MicOff, Sparkles, X } from 'lucide-react';
 import { toast } from 'sonner';
 import { createCapture } from '@/app/actions/capture';
@@ -104,9 +104,11 @@ export function QuickCapture() {
       fd.append('file', blob, 'recording.webm');
       try {
         const res = await fetch('/api/voice/transcribe', { method: 'POST', body: fd });
-        const json = (await res.json().catch(() => null)) as
-          | { ok?: boolean; text?: string; error?: string }
-          | null;
+        const json = (await res.json().catch(() => null)) as {
+          ok?: boolean;
+          text?: string;
+          error?: string;
+        } | null;
         if (res.ok && json?.text) {
           setContent(json.text);
         } else if (json?.error === 'openai_credential_missing') {
@@ -134,13 +136,18 @@ export function QuickCapture() {
       continuous: boolean;
       interimResults: boolean;
       lang: string;
-      onresult: (ev: { results: ArrayLike<{ 0: { transcript: string }; isFinal: boolean }> }) => void;
+      onresult: (ev: {
+        results: ArrayLike<{ 0: { transcript: string }; isFinal: boolean }>;
+      }) => void;
       onerror: () => void;
       start: () => void;
       stop: () => void;
       abort: () => void;
     };
-    const w = window as unknown as { SpeechRecognition?: SRConstructor; webkitSpeechRecognition?: SRConstructor };
+    const w = window as unknown as {
+      SpeechRecognition?: SRConstructor;
+      webkitSpeechRecognition?: SRConstructor;
+    };
     const SR = w.SpeechRecognition ?? w.webkitSpeechRecognition;
     if (SR) {
       try {

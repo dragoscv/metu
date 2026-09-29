@@ -2,7 +2,7 @@
 import Link from 'next/link';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { useState, useTransition } from 'react';
-import { motion } from 'framer-motion';
+import { motion } from 'motion/react';
 import {
   Activity,
   Bell,

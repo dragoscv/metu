@@ -14,7 +14,7 @@
  * completes the instant the browser redirect lands on our local listener.
  */
 import { useState } from 'react';
-import { motion } from 'framer-motion';
+import { motion } from 'motion/react';
 import { invoke } from '@tauri-apps/api/core';
 import { open as openExternal } from '@tauri-apps/plugin-shell';
 import type { AuthState } from '../state/auth';

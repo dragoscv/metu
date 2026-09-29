@@ -220,7 +220,7 @@ ATMOSPHERE   Card backdrop-filter blur(24px), 1px hairline border in persona acc
 TYPOGRAPHY   Display: Geist 18/24/600. Body: Geist 14/20/400. Mono for tool calls.
 CHOREOGRAPHY 0ms card scale 0.96 → 1, 200ms orb breathes in, 500ms text streams in, 900ms settle
 INTERACTION  Click orb = mute/unmute mic. Drag header = move. Hover orb = ring pulses.
-TRANSITION   Window slides in from screen edge with `framer-motion` slide+fade
+TRANSITION   Window slides in from screen edge with `motion/react` slide+fade
 SOUND        Optional wake/ack chimes (cookie-gated)
 ACCESSIBILITY Reduced-motion: no breath, no slide. ARIA live region for streaming text.
 ```

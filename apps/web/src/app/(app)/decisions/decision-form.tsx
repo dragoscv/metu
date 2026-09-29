@@ -7,7 +7,7 @@
  * propose_decision tool can fill in alternatives if needed.
  */
 import { useActionState, useState } from 'react';
-import { motion, AnimatePresence } from 'framer-motion';
+import { motion, AnimatePresence } from 'motion/react';
 import { Plus, X, Loader2, Check } from 'lucide-react';
 import { logDecisionAction } from '@/app/actions/project';
 

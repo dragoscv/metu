@@ -12,7 +12,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { Bookmark, Brain, CheckSquare, Mic, Plus, Search, Settings, Trash2 } from 'lucide-react';
 import { useRouter } from 'next/navigation';
-import { motion, AnimatePresence } from 'framer-motion';
+import { motion, AnimatePresence } from 'motion/react';
 import { createCapture } from '@/app/actions/capture';
 import { kickConductorAction } from '@/app/actions/metu';
 

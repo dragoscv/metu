@@ -1,7 +1,7 @@
 'use client';
 import Link from 'next/link';
 import { parseAsStringLiteral, useQueryState } from 'nuqs';
-import { motion } from 'framer-motion';
+import { motion } from 'motion/react';
 import {
   CheckCircle2,
   Clock,

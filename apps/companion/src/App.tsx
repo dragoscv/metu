@@ -10,7 +10,7 @@
 import { useEffect, useState } from 'react';
 import { invoke } from '@tauri-apps/api/core';
 import { getCurrentWindow } from '@tauri-apps/api/window';
-import { AnimatePresence, motion } from 'framer-motion';
+import { AnimatePresence, motion } from 'motion/react';
 import { loadAuth, saveAuth, clearAuth, ensureFreshAuth, type AuthState } from './state/auth';
 import { Pairing } from './ui/Pairing';
 import { Connected } from './ui/Connected';

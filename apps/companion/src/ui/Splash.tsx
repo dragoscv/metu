@@ -3,7 +3,7 @@
  * the main UI. Purely cosmetic; `App` controls how long it stays by gating on
  * the auth-loading state plus a minimum dwell so it never flickers.
  */
-import { motion } from 'framer-motion';
+import { motion } from 'motion/react';
 import { ShaderOrb } from '../avatar/ShaderOrb';
 import { useAvatarSelection } from '../avatar/useAvatarSelection';
 

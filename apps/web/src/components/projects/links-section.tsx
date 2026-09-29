@@ -1,6 +1,6 @@
 'use client';
 import { Badge, Button, Input } from '@metu/ui';
-import { motion, AnimatePresence } from 'framer-motion';
+import { motion, AnimatePresence } from 'motion/react';
 import {
   ExternalLink,
   FileText,

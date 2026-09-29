@@ -2,10 +2,10 @@
 /**
  * Two cinematic buttons that call the briefing-generate server actions and
  * surface the result inline. Uses `useTransition` for the optimistic state
- * and framer-motion for the "writing…" → "written" reveal.
+ * and Motion for the "writing…" → "written" reveal.
  */
 import { useState, useTransition } from 'react';
-import { motion, AnimatePresence } from 'framer-motion';
+import { motion, AnimatePresence } from 'motion/react';
 import { Sparkles, Loader2, RefreshCw } from 'lucide-react';
 import { regenerateWorkspaceBriefingAction } from '@/app/actions/resume';
 

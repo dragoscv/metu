@@ -107,9 +107,9 @@ in the URL via `nuqs`. The provider (`NuqsAdapter`) is mounted at the root.
 - The `(app)` layout wraps every page in `PageTransition` (keyed by
   `pathname`). Do not duplicate it.
 - Entrance animations on individual items are owned by the `Card` component
-  (already animated) and `framer-motion`'s `AnimatePresence` for transient UI
+  (already animated) and Motion's (`motion/react`) `AnimatePresence` for transient UI
   (toasts, drawers, secret cards).
-- Always honor reduced-motion: framer-motion does this automatically; if you
+- Always honor reduced-motion: Motion does this automatically; if you
   use CSS transitions, gate them with
   `@media (prefers-reduced-motion: no-preference)`.
 - Keep durations between **160–280ms** with the project easing

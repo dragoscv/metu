@@ -5,7 +5,7 @@
  */
 import { useCallback, useEffect, useMemo, useState, useTransition } from 'react';
 import { parseAsString, parseAsStringLiteral, useQueryStates } from 'nuqs';
-import { AnimatePresence, motion } from 'framer-motion';
+import { AnimatePresence, motion } from 'motion/react';
 import {
   ArrowDown,
   ArrowUpRight,

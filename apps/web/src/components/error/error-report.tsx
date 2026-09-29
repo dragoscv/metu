@@ -6,7 +6,7 @@
  * straight into chat.
  */
 import { useMemo, useState } from 'react';
-import { motion } from 'framer-motion';
+import { motion } from 'motion/react';
 import { AlertTriangle, Check, ChevronDown, ChevronUp, Copy, Home, RotateCcw } from 'lucide-react';
 import { Badge, Button, Card } from '@metu/ui';
 

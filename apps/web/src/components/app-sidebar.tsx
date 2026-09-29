@@ -1,7 +1,7 @@
 'use client';
 import Link from 'next/link';
 import { usePathname, useRouter, useSearchParams } from 'next/navigation';
-import { AnimatePresence, motion } from 'framer-motion';
+import { AnimatePresence, motion } from 'motion/react';
 import { ArrowLeft, ChevronRight, ChevronsLeft, ChevronsRight, Plus, X } from 'lucide-react';
 import { useEffect, useState, useTransition } from 'react';
 import { Button, cn } from '@metu/ui';

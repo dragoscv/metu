@@ -72,13 +72,13 @@ on `Badge`/`StatusDot`). **Never** hardcode `bg-emerald-500/10` etc.
 
 ## Motion
 
-- Library: `framer-motion`. Default duration `160–280ms`, easing
+- Library: Motion (`import { motion } from "motion/react"`). Default duration `160–280ms`, easing
   `[0.22, 1, 0.36, 1]`.
 - The `(app)` layout already runs a `PageTransition` keyed by `pathname`.
   Don't wrap pages in another `motion.div` for entry animation.
 - For lists, stagger via `AnimatePresence` + `layout`. Keep the impulse
   small — this app is not a marketing page.
-- Honor `prefers-reduced-motion`. framer-motion does it automatically;
+- Honor `prefers-reduced-motion`. Motion does it automatically;
   guard CSS transitions with `@media (prefers-reduced-motion: no-preference)`.
 - `layoutId="sidebar-active"` is the shared pill across sidebar leaves and
   collapsed parents. Don't reuse this layoutId elsewhere.

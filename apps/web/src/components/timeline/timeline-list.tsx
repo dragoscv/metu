@@ -1,7 +1,7 @@
 'use client';
 import { Button, EmptyState } from '@metu/ui';
 import { format, formatDistanceToNow, isToday, isYesterday } from 'date-fns';
-import { AnimatePresence, motion } from 'framer-motion';
+import { AnimatePresence, motion } from 'motion/react';
 import { ChevronRight, ExternalLink, Loader2 } from 'lucide-react';
 import Link from 'next/link';
 import { parseAsString, useQueryStates } from 'nuqs';

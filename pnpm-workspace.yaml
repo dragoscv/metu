@@ -33,6 +33,9 @@ overrides:
   'protobufjs@>=7.0.0 <7.5.8': '>=7.5.8'
   'hono@<4.12.18': '>=4.12.18'
   'esbuild@<0.25.0': '>=0.25.0'
+  # Keep Motion's internal packages on the quarantine-clear 13.4.4 line (see catalog `motion`).
+  'framer-motion': 13.4.4
+  'motion-dom': 13.4.4
 
 catalog:
   # Core
@@ -90,7 +93,9 @@ catalog:
   clsx: ^2.1.1
   'tailwind-merge': ^2.6.0
   'lucide-react': ^0.469.0
-  'framer-motion': ^11.15.0
+  # 13.4.5/13.4.6 were published <24 h before this bump (minimumReleaseAge).
+  # Pinned with the overrides below; relax to ^13.4.x after 2026-09-30T13:00Z.
+  motion: 13.4.4
   'sonner': ^1.7.1
   'cmdk': ^1.0.4
   'nuqs': ^2.2.3

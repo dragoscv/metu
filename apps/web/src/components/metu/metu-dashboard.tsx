@@ -1,6 +1,6 @@
 'use client';
 import { useEffect, useState, useTransition } from 'react';
-import { motion } from 'framer-motion';
+import { motion } from 'motion/react';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import {
@@ -538,8 +538,7 @@ export function MetuDashboard({
                 // the button stays correct across refreshes.
                 const serverState = r.indexStatus ?? 'idle';
                 const local = reindexing[key];
-                const state =
-                  local && local !== 'done' && local !== 'failed' ? local : serverState;
+                const state = local && local !== 'done' && local !== 'failed' ? local : serverState;
                 const busy = state === 'queued' || state === 'running';
                 return (
                   <li

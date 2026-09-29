@@ -1,6 +1,6 @@
 'use client';
 import { Badge } from '@metu/ui';
-import { motion } from 'framer-motion';
+import { motion } from 'motion/react';
 import { AlertTriangle, CheckCircle2, Clock } from 'lucide-react';
 import Link from 'next/link';
 import { Sparkline, type SparklinePoint } from './sparkline';

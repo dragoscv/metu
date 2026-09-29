@@ -1,6 +1,6 @@
 'use client';
 import { Badge, MomentumBar } from '@metu/ui';
-import { motion } from 'framer-motion';
+import { motion } from 'motion/react';
 import { CheckSquare, Github, Globe, Hash, Layers, Link2, Target } from 'lucide-react';
 import Link from 'next/link';
 import type { ComponentType } from 'react';

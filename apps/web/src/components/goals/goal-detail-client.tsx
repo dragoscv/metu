@@ -1,6 +1,6 @@
 'use client';
 import { Button, Input } from '@metu/ui';
-import { motion } from 'framer-motion';
+import { motion } from 'motion/react';
 import { Loader2, Trash2 } from 'lucide-react';
 import { useState, useTransition } from 'react';
 import {

@@ -6,7 +6,7 @@
  * with the JS ring so a user can paste a full report into a bug thread.
  */
 import { useEffect, useMemo, useState } from 'react';
-import { motion } from 'framer-motion';
+import { motion } from 'motion/react';
 import { buildDiagnostics, subscribe, type DebugLine, type LogLevel } from '../state/debug';
 
 const LEVEL_COLOR: Record<LogLevel, string> = {

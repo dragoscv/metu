@@ -6,7 +6,7 @@
  * generates a fresh contextual question that hasn't been asked yet.
  */
 import { useCallback, useEffect, useRef, useState, useTransition } from 'react';
-import { AnimatePresence, motion } from 'framer-motion';
+import { AnimatePresence, motion } from 'motion/react';
 import {
   Badge,
   Button,

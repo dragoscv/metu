@@ -1,6 +1,6 @@
 'use client';
 import { Badge, Button, EmptyState, Input, Select } from '@metu/ui';
-import { motion } from 'framer-motion';
+import { motion } from 'motion/react';
 import { Loader2, Plus, Target as TargetIcon } from 'lucide-react';
 import Link from 'next/link';
 import { useState, useTransition } from 'react';

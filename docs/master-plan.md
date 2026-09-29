@@ -97,7 +97,7 @@ UX:
 
 - `/dashboard/conductor` — the persistent thread, always available.
 - Side-rail of side chats grouped by project.
-- View Transitions on switch; framer-motion on message stream.
+- View Transitions on switch; Motion (`motion/react`) on message stream.
 - Slash commands (`/recall`, `/decision`, `/focus`, `/notify`, `/act`).
 - **Promote** a side chat → project thread; convert messages → captures/decisions/tasks.
 
@@ -213,7 +213,7 @@ Net effect: notai becomes a memory-aware editor; mmo becomes a memory-aware game
 - **Persistent Conductor strip** at the bottom of every page (Linear-style) — collapsible, shows last assistant message + a quick reply.
 - **Command palette** (cmdk) — universal entry to recall, capture, switch project, run tool.
 - **View Transitions API** for route morphs.
-- **framer-motion** for: focus reveal, message stream, tool-call expand/collapse, device pulse.
+- **Motion** (`motion/react`) for: focus reveal, message stream, tool-call expand/collapse, device pulse.
 - **Sonner** toasts for notifications.
 - **Tailwind v4 `@theme`** — single token system across web + companion + mobile.
 

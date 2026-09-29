@@ -1,6 +1,6 @@
 'use client';
 import { useState } from 'react';
-import { AnimatePresence, motion } from 'framer-motion';
+import { AnimatePresence, motion } from 'motion/react';
 import { Check, Palette } from 'lucide-react';
 import { THEMES, useTheme } from './theme-provider';
 

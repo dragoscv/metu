@@ -1,6 +1,6 @@
 'use client';
 import { useEffect, useRef, useState, useTransition } from 'react';
-import { AnimatePresence, motion } from 'framer-motion';
+import { AnimatePresence, motion } from 'motion/react';
 import { useRouter } from 'next/navigation';
 import { Button, Card } from '@metu/ui';
 import {

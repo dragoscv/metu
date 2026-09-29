@@ -1,7 +1,7 @@
 'use client';
 import { useState, useTransition } from 'react';
 import { Mic, Send, StopCircle } from 'lucide-react';
-import { motion } from 'framer-motion';
+import { motion } from 'motion/react';
 import { toast } from 'sonner';
 import { Button, Textarea } from '@metu/ui';
 import { createCapture } from '@/app/actions/capture';

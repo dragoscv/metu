@@ -5,7 +5,7 @@
  * lands you back where you were.
  */
 import { useEffect, useState } from 'react';
-import { AnimatePresence, motion } from 'framer-motion';
+import { AnimatePresence, motion } from 'motion/react';
 import type { AuthState } from '../state/auth';
 import type { HubStatus } from '../state/useHubConnection';
 import type { AvatarState } from '../avatar/types';

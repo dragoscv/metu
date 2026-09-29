@@ -1,7 +1,7 @@
 'use client';
 import { Badge, EmptyState, StatusDot } from '@metu/ui';
 import { formatDistanceToNow } from 'date-fns';
-import { AnimatePresence, motion } from 'framer-motion';
+import { AnimatePresence, motion } from 'motion/react';
 import {
   Code2,
   ExternalLink,

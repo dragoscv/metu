@@ -1,6 +1,6 @@
 'use client';
 import { Badge } from '@metu/ui';
-import { motion } from 'framer-motion';
+import { motion } from 'motion/react';
 import { CheckCircle2, Circle, ExternalLink, Github, Loader2 } from 'lucide-react';
 import Link from 'next/link';
 import { useTransition } from 'react';

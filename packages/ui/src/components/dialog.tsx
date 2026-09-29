@@ -7,7 +7,7 @@
  * - Backdrop (click to dismiss when `dismissOnBackdrop`)
  * - Escape to close
  * - Focus trap inside the dialog
- * - prefers-reduced-motion respected via framer-motion's reducedMotion
+ * - prefers-reduced-motion respected via Motion's reducedMotion
  *
  * Pattern:
  * ```tsx
@@ -20,7 +20,7 @@
  * </Dialog>
  * ```
  */
-import { AnimatePresence, motion } from 'framer-motion';
+import { AnimatePresence, motion } from 'motion/react';
 import { useEffect, useId, useRef } from 'react';
 import { createPortal } from 'react-dom';
 import { cn } from '../lib/cn';
