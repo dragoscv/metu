@@ -2,8 +2,8 @@
 # Hub runs via tsx (same as dev) to avoid ESM/CJS emit pitfalls with the
 # workspace's extensionless imports + top-level await. tsx resolves TS
 # sources and workspace packages natively.
-FROM node:22-alpine AS base
-RUN corepack enable && corepack prepare pnpm@9.15.0 --activate
+FROM node:24-alpine AS base
+RUN corepack enable && corepack prepare pnpm@12.8.0 --activate
 WORKDIR /app
 
 FROM base AS deps
@@ -12,7 +12,7 @@ COPY packages packages
 COPY apps/hub apps/hub
 RUN pnpm install --frozen-lockfile
 
-FROM node:22-alpine AS runner
+FROM node:24-alpine AS runner
 WORKDIR /app
 ENV NODE_ENV=production
 ENV HUB_PORT=8080

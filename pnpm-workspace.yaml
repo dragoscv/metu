@@ -2,10 +2,42 @@ packages:
   - 'apps/*'
   - 'packages/*'
 
+# pnpm 12 settings (moved from package.json#pnpm, which pnpm 11+ ignores).
+# 24 h supply-chain quarantine for NEW resolutions; lockfile entries are trusted.
+minimumReleaseAge: 1440
+# Lifecycle scripts run only for packages listed in allowBuilds; anything new
+# fails the install loudly (ERR_PNPM_IGNORED_BUILDS) instead of running code.
+strictDepBuilds: true
+allowBuilds:
+  esbuild: true # validates/optimises the platform binary (tsx, vite, drizzle-kit)
+  sharp: true # native image binding used by next/image
+  '@sentry/cli': true # downloads the sentry-cli binary used for source-map upload
+  unrs-resolver: false # ships prebuilt binaries; postinstall is optional
+
+# CVE floors (moved verbatim from package.json#pnpm.overrides).
+overrides:
+  'tar@<7.5.7': '>=7.5.7'
+  'postcss@<8.5.10': '>=8.5.10'
+  '@xmldom/xmldom@<0.8.12': '>=0.8.12'
+  'protobufjs@>=8.0.0 <8.0.2': '>=8.0.2'
+  'ip-address@<=10.1.0': '>=10.1.1'
+  'qs@>=6.11.1 <=6.15.1': '>=6.15.2'
+  'uuid@>=7.0.0 <11.1.1': '^11.1.1'
+  'shell-quote@<1.8.4': '>=1.8.4'
+  '@grpc/grpc-js@>=1.14.0 <1.14.4': '>=1.14.4'
+  'brace-expansion@>=5.0.0 <5.0.6': '>=5.0.6'
+  'ws@>=8.0.0 <8.20.1': '>=8.20.1'
+  '@opentelemetry/auto-instrumentations-node@<0.75.0': '>=0.75.0'
+  '@opentelemetry/sdk-node@<0.217.0': '>=0.217.0'
+  '@opentelemetry/exporter-prometheus@<0.217.0': '>=0.217.0'
+  'protobufjs@>=7.0.0 <7.5.8': '>=7.5.8'
+  'hono@<4.12.18': '>=4.12.18'
+  'esbuild@<0.25.0': '>=0.25.0'
+
 catalog:
   # Core
   typescript: ^5.9.2
-  '@types/node': ^22.10.5
+  '@types/node': ^24.19.0
   turbo: ^2.9.14
   rimraf: ^6.0.1
   prettier: ^3.5.0
