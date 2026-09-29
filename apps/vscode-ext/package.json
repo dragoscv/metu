@@ -228,6 +228,7 @@
   "devDependencies": {
     "@types/vscode": "^1.90.0",
     "@types/node": "catalog:",
-    "typescript": "catalog:"
+    "typescript": "catalog:",
+    "@typescript/native": "catalog:"
   }
 }

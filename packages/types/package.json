@@ -11,6 +11,7 @@
   },
   "devDependencies": {
     "@metu/config": "workspace:*",
-    "typescript": "catalog:"
+    "typescript": "catalog:",
+    "@typescript/native": "catalog:"
   }
 }

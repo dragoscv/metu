@@ -43,6 +43,7 @@
   "devDependencies": {
     "turbo": "catalog:",
     "typescript": "catalog:",
+    "@typescript/native": "catalog:",
     "prettier": "catalog:",
     "rimraf": "catalog:",
     "@types/node": "catalog:",

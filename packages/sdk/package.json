@@ -46,6 +46,7 @@
     "@metu/config": "workspace:*",
     "rimraf": "catalog:",
     "typescript": "catalog:",
+    "@typescript/native": "catalog:",
     "vitest": "catalog:"
   }
 }

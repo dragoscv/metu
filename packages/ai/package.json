@@ -29,6 +29,7 @@
   "devDependencies": {
     "@metu/config": "workspace:*",
     "typescript": "catalog:",
+    "@typescript/native": "catalog:",
     "@types/node": "catalog:",
     "vitest": "catalog:"
   }

@@ -33,6 +33,7 @@
     "dotenv": "^17.4.2",
     "drizzle-kit": "catalog:",
     "tsx": "catalog:",
-    "typescript": "catalog:"
+    "typescript": "catalog:",
+    "@typescript/native": "catalog:"
   }
 }

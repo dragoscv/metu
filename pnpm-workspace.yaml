@@ -36,7 +36,13 @@ overrides:
 
 catalog:
   # Core
-  typescript: ^5.9.2
+  # TypeScript 6/7 side-by-side (TS 7.0 release notes, "Running Side-by-Side with TypeScript 6.0"):
+  #   `typescript` = 6.0 compat package: the only one exposing the compiler API that
+  #   typescript-eslint, Next and tsup import. `@typescript/native` = TS 7 (Go) and
+  #   provides the `tsc` binary every typecheck script runs. Collapse to one
+  #   `typescript: ^7.x` once typescript-eslint supports TS >= 7.1.
+  typescript: npm:@typescript/typescript6@^6.0.2
+  '@typescript/native': npm:typescript@^7.0.2
   '@types/node': ^24.19.0
   turbo: ^2.9.14
   rimraf: ^6.0.1

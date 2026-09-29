@@ -23,6 +23,7 @@
     "next": "catalog:",
     "react": "catalog:",
     "typescript": "catalog:",
+    "@typescript/native": "catalog:",
     "vitest": "catalog:"
   },
   "peerDependencies": {

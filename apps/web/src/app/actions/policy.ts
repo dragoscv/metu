@@ -24,7 +24,7 @@ export async function updateProviderPolicyAction(input: UpdateProviderPolicyEntr
     .where(eq(workspace.id, session.user.workspaceId))
     .limit(1);
 
-  const policy = ((row?.providerPolicy ?? {}) as Record<string, unknown>) ?? {};
+  const policy = (row?.providerPolicy ?? {}) as Record<string, unknown>;
   const next = { ...policy };
 
   if (parsed.data.provider === null) {
