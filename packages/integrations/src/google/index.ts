@@ -1,7 +1,7 @@
 /** Google APIs — Gmail + Calendar read-only ingestion. */
-import { google } from 'googleapis';
+import { google, type Auth } from 'googleapis';
 
-export function authedClient(accessToken: string, refreshToken?: string | null) {
+export function authedClient(accessToken: string, refreshToken?: string | null): Auth.OAuth2Client {
   const oauth2 = new google.auth.OAuth2(
     process.env.GOOGLE_CLIENT_ID,
     process.env.GOOGLE_CLIENT_SECRET,

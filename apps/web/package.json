@@ -47,6 +47,7 @@
     "react-dom": "catalog:",
     "recharts": "^3.8.1",
     "sonner": "catalog:",
+    "stripe": "catalog:",
     "telegraf": "catalog:",
     "web-push": "catalog:",
     "zod": "catalog:"
