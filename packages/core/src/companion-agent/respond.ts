@@ -12,7 +12,7 @@
  * handled at the SDK route layer; keeping this synchronous makes it
  * trivially testable.
  */
-import { generateText, streamText, stepCountIs, type ModelMessage } from 'ai';
+import { generateText, streamText, isStepCount, type ModelMessage } from 'ai';
 import { getModel } from '@metu/ai';
 import { TOOLS, type ToolName } from '../agent/tools';
 import { buildAiTools } from '../agent/ai-tools';
@@ -151,15 +151,15 @@ export async function respondLocal(input: CompanionTurnInput): Promise<RespondLo
   const toolCallNames: string[] = [];
   const result = await generateText({
     model: model as Parameters<typeof generateText>[0]['model'],
-    system,
+    instructions: system,
     messages,
     tools,
     maxOutputTokens: 700,
-    // CRITICAL: AI SDK v5 defaults to ONE step — the model calls a tool
+    // CRITICAL: AI SDK defaults to ONE step — the model calls a tool
     // and generation ENDS with empty text (the user sees tool badges and
     // silence). Allow tool → result → answer loops up to 4 steps.
-    stopWhen: stepCountIs(5),
-    onStepFinish: (step) => {
+    stopWhen: isStepCount(5),
+    onStepEnd: (step) => {
       for (const c of step.toolCalls ?? []) {
         if (c.toolName) toolCallNames.push(c.toolName);
       }
@@ -200,15 +200,15 @@ export async function* streamLocal(input: CompanionTurnInput): AsyncGenerator<Lo
   const toolCallNames: string[] = [];
   const result = streamText({
     model: modelInfo.model as Parameters<typeof streamText>[0]['model'],
-    system,
+    instructions: system,
     messages,
     tools,
     maxOutputTokens: 700,
     // Same multi-step fix as respondLocal: without stopWhen the stream
     // ends right after the first tool call — "list_projects, list_tasks"
     // badges and then SILENCE was exactly this.
-    stopWhen: stepCountIs(5),
-    onStepFinish: (step) => {
+    stopWhen: isStepCount(5),
+    onStepEnd: (step) => {
       for (const c of step.toolCalls ?? []) {
         if (c.toolName) toolCallNames.push(c.toolName);
       }
@@ -217,10 +217,10 @@ export async function* streamLocal(input: CompanionTurnInput): AsyncGenerator<Lo
 
   let assembled = '';
   try {
-    // fullStream (not textStream): we want TOOL lifecycle parts too, so
+    // stream (not textStream): we want TOOL lifecycle parts too, so
     // the client can render live "⚒ recall…" activity like an IDE agent
     // instead of dead air while tools run.
-    for await (const part of result.fullStream) {
+    for await (const part of result.stream) {
       if (part.type === 'text-delta') {
         assembled += part.text;
         yield { type: 'delta', text: part.text };
@@ -245,7 +245,7 @@ export async function* streamLocal(input: CompanionTurnInput): AsyncGenerator<Lo
     try {
       const retry = await generateText({
         model: modelInfo.model as Parameters<typeof generateText>[0]['model'],
-        system,
+        instructions: system,
         messages,
         maxOutputTokens: 700,
       });

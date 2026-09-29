@@ -37,7 +37,7 @@ async function composeIntro(
     const { model } = await getModel({ workspaceId, intent: 'chat' });
     const { text } = await generateText({
       model: model as Parameters<typeof generateText>[0]['model'],
-      system:
+      instructions:
         'You are METU, a personal AI operating system. Write a 2-3 sentence, warm but concise morning briefing intro summarizing what matters and the single most important next step. No greeting fluff, no markdown.',
       prompt: `Workspace "${workspaceName}" — yesterday's facts:\n${facts}`,
       maxOutputTokens: 200,

@@ -50,7 +50,7 @@ export async function generateStructured<T>(
   try {
     const { object } = await generateObject({
       model: input.model,
-      system: input.system,
+      instructions: input.system,
       schema: input.schema,
       schemaName: input.schemaName,
       schemaDescription: input.schemaDescription,
@@ -96,7 +96,7 @@ export async function generateStructured<T>(
 
   const { text } = await generateText({
     model: input.model,
-    system: fallbackSystem,
+    instructions: fallbackSystem,
     prompt: fallbackPrompt,
     temperature: 0,
   });

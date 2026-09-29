@@ -26,7 +26,7 @@ vi.mock('ai', () => ({
     return { text: 'ok' };
   }),
   streamText: vi.fn(),
-  stepCountIs: vi.fn(() => () => false),
+  isStepCount: vi.fn(() => () => false),
   tool: (def: unknown) => def,
 }));
 

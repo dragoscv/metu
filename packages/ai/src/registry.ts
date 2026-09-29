@@ -293,7 +293,7 @@ function instantiate(
     }
     case 'openai': {
       const client = createOpenAI({ apiKey: cred.apiKey });
-      if (intent === 'embed') return client.textEmbedding(modelId);
+      if (intent === 'embed') return client.embedding(modelId);
       return client(modelId);
     }
     case 'azure_openai': {
@@ -302,13 +302,15 @@ function instantiate(
         apiKey: cred.apiKey,
         baseURL: cred.endpoint,
       });
-      if (intent === 'embed') return client.textEmbedding(modelId);
-      return client(modelId);
+      if (intent === 'embed') return client.embedding(modelId);
+      // AI SDK 7 made `azure(id)` the Responses API; keep Chat Completions,
+      // which is what every Azure deployment here was configured against.
+      return client.chat(modelId);
     }
     case 'google':
     case 'vertex': {
       const client = createGoogleGenerativeAI({ apiKey: cred.apiKey });
-      if (intent === 'embed') return client.textEmbedding(modelId);
+      if (intent === 'embed') return client.embedding(modelId);
       return client(modelId);
     }
     case 'copilot': {
@@ -326,7 +328,7 @@ function instantiate(
         baseURL,
         fetch: copilotFetch(ghToken) as typeof fetch,
       });
-      if (intent === 'embed') return client.textEmbedding(modelId);
+      if (intent === 'embed') return client.embedding(modelId);
       // Copilot only speaks Chat Completions, not the new Responses API.
       return client.chat(modelId);
     }
@@ -349,7 +351,7 @@ function instantiate(
           ...(cfg?.headers ?? {}),
         },
       });
-      if (intent === 'embed') return client.textEmbedding(modelId);
+      if (intent === 'embed') return client.embedding(modelId);
       // codai speaks OpenAI Chat Completions, not the Responses API.
       return client.chat(modelId);
     }
@@ -371,7 +373,7 @@ function instantiate(
         baseURL: baseURL.replace(/\/+$/, ''),
         ...(headers ? { headers } : {}),
       });
-      if (intent === 'embed') return client.textEmbedding(modelId);
+      if (intent === 'embed') return client.embedding(modelId);
       // OpenAI-compatible gateways speak Chat Completions, not the Responses API.
       return client.chat(modelId);
     }

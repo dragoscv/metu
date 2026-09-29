@@ -88,7 +88,7 @@ export async function restoreProjectContext(workspaceId: string, projectId: stri
   });
   const { text } = await generateText({
     model: model as Parameters<typeof generateText>[0]['model'],
-    system: CONTINUITY_RESTORE_SYSTEM,
+    instructions: CONTINUITY_RESTORE_SYSTEM,
     prompt: ctx,
   });
 

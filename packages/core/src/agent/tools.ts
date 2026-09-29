@@ -3542,7 +3542,7 @@ Be specific, concrete, and warm. Do not list bullets. Do not output JSON.`);
 
     const { text } = await generateText({
       model: model as Parameters<typeof generateText>[0]['model'],
-      system,
+      instructions: system,
       prompt: userPrompt,
     });
 
@@ -3610,7 +3610,7 @@ const summarizeDayTool: ToolDefinition<typeof summarizeDayArgs> = {
     });
     const { text } = await generateText({
       model: model as Parameters<typeof generateText>[0]['model'],
-      system:
+      instructions:
         "You write one-paragraph narrative summaries of a day, in the user's voice. Be factual, concrete, ≤ 3 sentences. Do not list bullets.",
       prompt: JSON.stringify({ date: dayStr, events }, null, 2),
     });
@@ -3712,7 +3712,7 @@ const identifyPeopleTool: ToolDefinition<typeof identifyPeopleArgs> = {
       model: model as Parameters<typeof generateObject>[0]['model'],
       schema: personSchema,
       schemaName: 'IdentifiedPeople',
-      system:
+      instructions:
         'Cluster the candidate tokens into canonical people. Pick the most-likely-real name as canonical, list other strings as aliases. Drop tokens that are clearly NOT people (places, products, common phrases). Sum mention counts of merged aliases. Confidence: 1.0 = clearly a real person, 0.5 = could be, < 0.3 = drop.',
       prompt: JSON.stringify({ candidates }, null, 2),
     });

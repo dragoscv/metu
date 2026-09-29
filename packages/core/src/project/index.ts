@@ -116,7 +116,7 @@ export async function generateProjectPulse(workspaceId: string, projectId: strin
 
   const { text } = await generateText({
     model: model as Parameters<typeof generateText>[0]['model'],
-    system: PROJECT_PULSE_SYSTEM,
+    instructions: PROJECT_PULSE_SYSTEM,
     prompt: ctx,
   });
 

@@ -255,7 +255,7 @@ Rules:
 
   const { object, usage } = await generateObject({
     model: model as Parameters<typeof generateObject>[0]['model'],
-    system,
+    instructions: system,
     schema: conductorPlanSchema,
     schemaName: 'ConductorPlan',
     schemaDescription:

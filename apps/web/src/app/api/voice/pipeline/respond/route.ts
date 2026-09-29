@@ -72,7 +72,7 @@ export async function POST(req: NextRequest) {
 
   const result = streamText({
     model: model as Parameters<typeof streamText>[0]['model'],
-    system: persona.systemPrompt,
+    instructions: persona.systemPrompt,
     messages,
     // Pipeline mode is text-only; cap output so TTS stays snappy.
     maxOutputTokens: 600,

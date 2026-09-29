@@ -92,7 +92,7 @@ export async function generateReviewNarrativeAction(input: {
     const { model, provider, modelId } = await getModel({ workspaceId: wsId, intent: 'fast' });
     const { text } = await generateText({
       model: model as Parameters<typeof generateText>[0]['model'],
-      system: [
+      instructions: [
         'You write a concise founder-facing week-in-review. Three short paragraphs:',
         '1) What happened (volume + where attention went).',
         '2) What mattered (decisions, completions, momentum signals).',

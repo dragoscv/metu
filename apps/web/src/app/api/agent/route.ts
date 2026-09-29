@@ -1,4 +1,4 @@
-import { streamText, tool } from 'ai';
+import { createUIMessageStreamResponse, streamText, tool, toUIMessageStream } from 'ai';
 import { z } from 'zod';
 import { memory, projectIntel } from '@metu/core';
 import { getModel } from '@metu/ai';
@@ -18,7 +18,7 @@ export async function POST(req: Request) {
   const result = streamText({
     model: model as never,
     messages: messages as never,
-    system:
+    instructions:
       'You are metu — the user’s second brain. Use the recall tool first if you need context. Be concise. Surface decisions and tradeoffs explicitly.',
     tools: {
       recall: tool({
@@ -42,5 +42,5 @@ export async function POST(req: Request) {
     stopWhen: ({ steps }) => steps.length >= 6,
   });
 
-  return result.toUIMessageStreamResponse();
+  return createUIMessageStreamResponse({ stream: toUIMessageStream({ stream: result.stream }) });
 }

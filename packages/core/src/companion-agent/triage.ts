@@ -191,7 +191,7 @@ export async function triageTurn(input: CompanionTurnInput): Promise<TriageDecis
       const r = await generateObject({
         model: model as Parameters<typeof generateObject>[0]['model'],
         schema: triageSchema,
-        system: TRIAGE_SYSTEM,
+        instructions: TRIAGE_SYSTEM,
         prompt: `Persona: ${input.personaSlug}\nSurface: ${input.surface}\nUtterance: ${input.utterance}`,
         maxOutputTokens: 80,
       });
@@ -203,7 +203,7 @@ export async function triageTurn(input: CompanionTurnInput): Promise<TriageDecis
       // far better than dumping EVERY greeting onto the Conductor.
       const { text } = await generateText({
         model: model as Parameters<typeof generateText>[0]['model'],
-        system: TRIAGE_SYSTEM + '\n\nReply with EXACTLY one word: "local" or "escalate".',
+        instructions: TRIAGE_SYSTEM + '\n\nReply with EXACTLY one word: "local" or "escalate".',
         prompt: `Persona: ${input.personaSlug}\nSurface: ${input.surface}\nUtterance: ${input.utterance}`,
         maxOutputTokens: 20,
       });

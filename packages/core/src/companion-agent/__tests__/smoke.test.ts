@@ -31,16 +31,16 @@ vi.mock('@metu/ai', () => ({
 }));
 
 vi.mock('ai', () => ({
-  stepCountIs: vi.fn(() => () => false),
-  generateText: vi.fn(async (args: { system?: string; tools?: Record<string, unknown> }) => {
+  isStepCount: vi.fn(() => () => false),
+  generateText: vi.fn(async (args: { instructions?: string; tools?: Record<string, unknown> }) => {
     captured.callCount++;
-    captured.systemPrompt = args.system;
+    captured.systemPrompt = args.instructions;
     captured.toolKeys = Object.keys(args.tools ?? {});
     return { text: 'Sure — quick answer here.' };
   }),
-  streamText: vi.fn((args: { system?: string; tools?: Record<string, unknown> }) => {
+  streamText: vi.fn((args: { instructions?: string; tools?: Record<string, unknown> }) => {
     captured.callCount++;
-    captured.systemPrompt = args.system;
+    captured.systemPrompt = args.instructions;
     captured.toolKeys = Object.keys(args.tools ?? {});
     return {
       textStream: (async function* () {
@@ -87,6 +87,8 @@ describe('runCompanionTurn smoke', () => {
       },
     );
 
+    expect(result.kind).toBe('local');
+    if (result.kind !== 'local') throw new Error('expected local lane');
     expect(result.text).toContain('answer');
     expect(escalateCalls).toEqual([]);
     expect(captured.callCount).toBeGreaterThan(0);

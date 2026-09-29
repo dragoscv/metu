@@ -114,7 +114,7 @@ export async function composeProactiveMessage(input: ComposeInput): Promise<Comp
     const { object } = await generateObject({
       model: model as Parameters<typeof generateObject>[0]['model'],
       schema: DecisionSchema,
-      system: [
+      instructions: [
         'You are METU, a proactive personal AI operating system.',
         'Decide whether anything in the workspace signals is genuinely worth',
         'interrupting the user with a proactive message RIGHT NOW. Be conservative —',

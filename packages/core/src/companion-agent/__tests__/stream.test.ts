@@ -19,7 +19,7 @@ vi.mock('ai', () => ({
   streamText: (...args: unknown[]) => mockedStreamText(...args),
   generateObject: (...args: unknown[]) => mockedGenerateObject(...args),
   tool: (def: unknown) => def,
-  stepCountIs: vi.fn(() => true),
+  isStepCount: vi.fn(() => true),
 }));
 
 import { streamCompanionTurn, type CompanionStreamEvent } from '../run';
@@ -68,8 +68,8 @@ describe('streamCompanionTurn', () => {
   it('local path: emits triage → delta(s) → final and never calls onEscalate', async () => {
     const chunks = ['Hi', ' there', '!'];
     mockedStreamText.mockReturnValue({
-      // streamLocal consumes fullStream (text + tool lifecycle parts).
-      fullStream: (async function* () {
+      // streamLocal consumes `stream` (text + tool lifecycle parts).
+      stream: (async function* () {
         for (const c of chunks) yield { type: 'text-delta', text: c };
       })(),
       // streamLocal awaits these promises after the stream drains.

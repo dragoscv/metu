@@ -93,7 +93,7 @@ export const memoryConsolidation = inngest.createFunction(
         const { model } = await getModel({ workspaceId: wsId, intent: 'fast' });
         const { text } = await generateText({
           model: model as Parameters<typeof generateText>[0]['model'],
-          system: SYSTEM,
+          instructions: SYSTEM,
           prompt: body,
           maxOutputTokens: 500,
         });

@@ -14,7 +14,7 @@
  */
 import { z } from 'zod';
 import { type NextRequest } from 'next/server';
-import { streamText } from 'ai';
+import { createTextStreamResponse, streamText, toTextStream } from 'ai';
 import { getModel } from '@metu/ai';
 import { forbidden, hasScope, resolveSession, unauthorized } from '@/lib/bearer';
 import { rateLimit } from '@/lib/ratelimit';
@@ -57,15 +57,15 @@ export async function POST(req: NextRequest) {
 
   const result = streamText({
     model: model as Parameters<typeof streamText>[0]['model'],
-    system: IDENTITY + langDirective + chipsDirective,
+    instructions: IDENTITY + langDirective + chipsDirective,
     messages: [
       {
         role: 'user',
         content: [
           { type: 'text', text: parsed.data.question },
           {
-            type: 'image',
-            image: parsed.data.imageBase64,
+            type: 'file',
+            data: parsed.data.imageBase64,
             mediaType: 'image/png',
           },
         ],
@@ -74,5 +74,5 @@ export async function POST(req: NextRequest) {
     maxOutputTokens: 450,
   });
 
-  return result.toTextStreamResponse();
+  return createTextStreamResponse({ stream: toTextStream({ stream: result.stream }) });
 }

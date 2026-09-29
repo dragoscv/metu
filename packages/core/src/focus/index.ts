@@ -149,7 +149,7 @@ export async function computeFocus(input: ComputeFocusInput): Promise<ComputeFoc
   try {
     const result = await generateObject({
       model: model as Parameters<typeof generateObject>[0]['model'],
-      system: FOCUS_ENGINE_SYSTEM,
+      instructions: FOCUS_ENGINE_SYSTEM,
       schema: focusOutputSchema,
       schemaName: 'FocusOutput',
       schemaDescription:
