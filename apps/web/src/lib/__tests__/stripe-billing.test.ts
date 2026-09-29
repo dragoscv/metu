@@ -14,7 +14,13 @@ const ENV = {
   STRIPE_PRICE_ENTERPRISE: 'price_enterprise_xxx',
 } as unknown as NodeJS.ProcessEnv;
 
-function makeSub(overrides: Partial<Stripe.Subscription> = {}): Stripe.Subscription {
+// Pre-basil webhook payloads still carry subscription-level period bounds even
+// though the SDK type (stripe >= 18) moved them onto SubscriptionItem.
+type LegacySubFields = { current_period_start?: number; current_period_end?: number };
+
+function makeSub(
+  overrides: Partial<Stripe.Subscription> & LegacySubFields = {},
+): Stripe.Subscription {
   return {
     id: 'sub_test_123',
     customer: 'cus_test_123',

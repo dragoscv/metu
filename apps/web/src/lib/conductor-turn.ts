@@ -8,7 +8,7 @@
  */
 import 'server-only';
 import { and, asc, eq } from 'drizzle-orm';
-import { generateText, stepCountIs, type ModelMessage } from 'ai';
+import { generateText, isStepCount, type ModelMessage } from 'ai';
 import { getDb } from '@metu/db';
 import { conversation, message } from '@metu/db/schema';
 import { getModel, buildConductorSystem } from '@metu/ai';
@@ -55,9 +55,7 @@ export interface ConductorTurnResult {
  * Run one Conductor turn and return the reply text. Persists both the user
  * message and the assistant reply to the Conductor thread.
  */
-export async function runConductorTurn(
-  input: ConductorTurnInput,
-): Promise<ConductorTurnResult> {
+export async function runConductorTurn(input: ConductorTurnInput): Promise<ConductorTurnResult> {
   const db = getDb();
   const conversationId = await getOrCreateConductorConversation(input.workspaceId);
 
@@ -101,12 +99,12 @@ export async function runConductorTurn(
   try {
     const result = await generateText({
       model: model as Parameters<typeof generateText>[0]['model'],
-      system: buildConductorSystem(
+      instructions: buildConductorSystem(
         `You are replying to the user over ${input.channel ?? 'Telegram'}. Keep replies concise and mobile-friendly (a few short paragraphs max, no markdown tables). Use tools to answer from real workspace data AND to take actions the user asks for (create/update projects, tasks, goals, notes, etc.). If a tool needs approval it will say so — tell the user you've queued it for approval. Never claim you did something you didn't actually do via a tool.`,
       ),
       messages: modelMessages,
       tools,
-      stopWhen: stepCountIs(agentic ? 12 : 6),
+      stopWhen: isStepCount(agentic ? 12 : 6),
       maxOutputTokens: agentic ? 1200 : 700,
     });
     text = result.text.trim();

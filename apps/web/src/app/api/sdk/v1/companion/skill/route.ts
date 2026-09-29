@@ -12,7 +12,13 @@
  */
 import { z } from 'zod';
 import { type NextRequest } from 'next/server';
-import { generateObject, generateText, streamText } from 'ai';
+import {
+  createTextStreamResponse,
+  generateObject,
+  generateText,
+  streamText,
+  toTextStream,
+} from 'ai';
 import { getModel } from '@metu/ai';
 import { getDb } from '@metu/db';
 import { memoryChunk, project, task, workspaceRecentDigest } from '@metu/db/schema';
@@ -181,7 +187,7 @@ export async function POST(req: NextRequest) {
       const { object } = await generateObject({
         model: model as Parameters<typeof generateObject>[0]['model'],
         schema: actPlanSchema,
-        system: ACT_SYSTEM,
+        instructions: ACT_SYSTEM,
         prompt: actPrompt,
         maxOutputTokens: 300,
       });
@@ -193,7 +199,7 @@ export async function POST(req: NextRequest) {
       try {
         const { text } = await generateText({
           model: model as Parameters<typeof generateText>[0]['model'],
-          system:
+          instructions:
             ACT_SYSTEM +
             '\n\nRespond with ONLY a JSON object, no prose, matching: {"feasible":boolean,"reason"?:string,"steps"?:[{"action":"invoke"|"set_value","role":string,"name":string,"value"?:string}],"prompt"?:string}',
           prompt: actPrompt,
@@ -326,12 +332,12 @@ export async function POST(req: NextRequest) {
 Use at most 2 blocks per reply; plain prose is still the default.`;
   const result = streamText({
     model: model as Parameters<typeof streamText>[0]['model'],
-    system: IDENTITY + skill.system + langDirective + chipsDirective + blocksDirective,
+    instructions: IDENTITY + skill.system + langDirective + chipsDirective + blocksDirective,
     prompt:
       [parsed.data.context, workspaceContext].filter(Boolean).join('\n\n') ||
       '(no context available)',
     maxOutputTokens: skill.maxOutputTokens + 60,
   });
 
-  return result.toTextStreamResponse();
+  return createTextStreamResponse({ stream: toTextStream({ stream: result.stream }) });
 }

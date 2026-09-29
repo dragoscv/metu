@@ -10,7 +10,13 @@
  */
 import { type NextRequest } from 'next/server';
 import { and, asc, eq } from 'drizzle-orm';
-import { stepCountIs, streamText, type ModelMessage } from 'ai';
+import {
+  createTextStreamResponse,
+  isStepCount,
+  streamText,
+  toTextStream,
+  type ModelMessage,
+} from 'ai';
 import { auth } from '@metu/auth';
 import { getDb } from '@metu/db';
 import { conversation, message } from '@metu/db/schema';
@@ -106,15 +112,15 @@ export async function POST(req: NextRequest) {
   // 6. stream
   const result = streamText({
     model: model as Parameters<typeof streamText>[0]['model'],
-    system: buildConductorSystem(
+    instructions: buildConductorSystem(
       convo.kind === 'conductor'
         ? 'You are speaking inside the persistent Conductor thread.'
         : `You are speaking in a side chat titled "${convo.title}".`,
     ),
     messages: modelMessages,
     tools,
-    stopWhen: stepCountIs(8),
-    onFinish: async ({ text, usage, finishReason }) => {
+    stopWhen: isStepCount(8),
+    onEnd: async ({ text, usage, finishReason }) => {
       try {
         const costUsd = estimateCostUsd(provider, modelId, usage);
         await db.insert(message).values({
@@ -139,5 +145,5 @@ export async function POST(req: NextRequest) {
     },
   });
 
-  return result.toTextStreamResponse();
+  return createTextStreamResponse({ stream: toTextStream({ stream: result.stream }) });
 }
