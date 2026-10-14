@@ -16,5 +16,9 @@
   ],
   "noSecrets": true,
   "pii": true,
-  "maxBytes": 262144
+  "maxBytes": 262144,
+  "shadow": true,
+  "commands": {
+    "pack": "house"
+  }
 }
