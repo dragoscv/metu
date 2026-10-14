@@ -4,9 +4,10 @@
     "preToolUse": [
       {
         "type": "command",
-        "exec": "axiom",
-        "args": ["gate", "--stdin"],
-        "timeoutSec": 5
+        "command": "axiom gate --stdin --format auto",
+        "bash": "axiom gate --stdin --format auto",
+        "powershell": "axiom.cmd gate --stdin --format auto; exit $LASTEXITCODE",
+        "timeoutSec": 15
       }
     ]
   }
