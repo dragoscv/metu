@@ -1,0 +1,5 @@
+# Markdown trackers: pre-commit `prettier --write` reflowed their tables; an aborted commit left the
+# reflow staged in the shared clone and git-autosync could not fast-forward (2026-10-17).
+docs/master-plan.md
+docs/companion-*-plan.md
+docs/companion-agent-v2-plan.md
