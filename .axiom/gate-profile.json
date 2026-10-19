@@ -17,7 +17,6 @@
   "noSecrets": true,
   "pii": true,
   "maxBytes": 262144,
-  "shadow": true,
   "commands": {
     "pack": "house"
   },
@@ -30,5 +29,10 @@
   "git": {
     "cleanTreeFor": ["deploy"],
     "untracked": true
-  }
+  },
+  "mode": "warn",
+  "override": true,
+  "outside": "allow",
+  "hard": ["house.forcePush", "house.resetHard", "house.cleanForce", "house.worktreeRemoveForce"],
+  "record": true
 }
