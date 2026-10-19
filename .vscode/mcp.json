@@ -2,8 +2,8 @@
   "servers": {
     "axiom": {
       "type": "stdio",
-      "command": "npx",
-      "args": ["-y", "@codai/axiom-mcp@2", "mcp", "--root", "${workspaceFolder}"]
+      "command": "axiom",
+      "args": ["mcp", "--root", "${workspaceFolder}", "--tools", "full"]
     }
   }
 }

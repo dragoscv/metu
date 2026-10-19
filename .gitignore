@@ -85,3 +85,4 @@ build.log
 .axiom/*
 !.axiom/profiles/
 !.axiom/gate-profile.json
+!.axiom/axiom.json
