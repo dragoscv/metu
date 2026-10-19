@@ -5,8 +5,10 @@ description: Write a multi-file change to metu through the AXIOM transactional w
 
 # Plan → check → apply with AXIOM
 
-AXIOM (`@codai/axiom-mcp`, registered in `.vscode/mcp.json` as server `axiom`)
-is the **only** sanctioned way to land a multi-file change in this repo when it
+AXIOM 3.x (`@codai/axiom-mcp`, registered in `.vscode/mcp.json` as server `axiom`:
+the global `axiom` bin with `mcp --tools full`, because `axiom_plan_compile` and
+`axiom_axm_parse` are not in the 6-tool `core` default) is the **only** sanctioned
+way to land a multi-file change in this repo when it
 is available. It turns "write eleven files and hope" into one atomic, checked,
 journaled transaction:
 
@@ -20,11 +22,13 @@ Plan (JSON or .axm)
 
 **Rule: never do raw multi-file writes when AXIOM is available.** One
 `create_file`/`apply_patch` for a single-file typo is fine; a page + toolbar +
-test + i18n + nav is a Plan. The PreToolUse gate (`.axiom/gate-profile.json`)
+test + i18n + nav is a Plan. The PreToolUse gate (`gate` section of
+`.axiom/axiom.json`; `.axiom/gate-profile.json` is the 2.x copy, ignored while
+`axiom.json` exists)
 additionally denies raw writes to `.env*`, lockfiles, `.github/**`, `.axiom/**`,
 `drizzle/**/meta/**` and anything containing a secret pattern.
 
-## What the `metu` profile enforces (`.axiom/profiles/metu.json`)
+## What the `metu` profile enforces (`.axiom/profiles/metu.json`, mirrored in the `checks` section of `.axiom/axiom.json`)
 
 | check id             | predicate               | what it does                                                                                        |
 | -------------------- | ----------------------- | --------------------------------------------------------------------------------------------------- |
@@ -53,12 +57,13 @@ missing companion artifact to the Plan — never delete the rule.
 
 ## The loop, tool by tool
 
-1. **Write the Plan.** JSON (`apiVersion: axiom.dev/v2, kind: Plan`) or `.axm`.
+1. **Write the Plan.** JSON (`apiVersion: axiom.codai.ro/v3, kind: Plan`; 2.x
+  plans with `axiom.dev/v2` still compile to their old digest) or `.axm`.
    Every file the skill's checklist names is an `artifact`. `op` defaults to
    `create`; use `"op": "overwrite"` for existing files (and carry the FULL new
    content — AXIOM writes whole files, it does not patch). Set `"profile": "metu"`.
 2. `axiom_plan_compile { plan }` → returns `manifestDigest` and the bundle.
-   (`.axm` input: `axiom_axm_parse` first, or pass the file to `axiom compile`.)
+  (`.axm` input: `axiom_axm_parse` first, or pass the file to `axiom plan compile`.)
 3. `axiom_check { bundle, profile: "metu" }` → `verdict: "pass"` or `"fail"` with
    `findings[]`. Read every finding id; fix the Plan, recompile (digest changes).
 4. `axiom_apply_dry_run { bundle }` → `status: "applied"`, `mode: "dry-run"`,
@@ -74,11 +79,13 @@ CLI equivalent (from any cwd; global bin from `npm i -g @codai/axiom-mcp`, the s
 `.github/hooks/axiom-gate.json` PreToolUse hook calls — never `npx` in a hook, it misses the 5 s budget):
 
 ```pwsh
-axiom compile plan.json -o bundle.json --root E:\gh\metu
-axiom check   bundle.json --root E:\gh\metu --profile metu --json
-axiom apply   bundle.json --root E:\gh\metu --profile metu --dry-run
-axiom apply   bundle.json --root E:\gh\metu --profile metu --confirm sha256:<manifestDigest>
+axiom plan compile plan.json -o bundle.json --root E:\gh\metu
+axiom plan check   bundle.json --root E:\gh\metu --profile metu --json
+axiom plan apply   bundle.json --root E:\gh\metu --profile metu --dry-run
+axiom plan apply   bundle.json --root E:\gh\metu --profile metu --confirm sha256:<manifestDigest>
 ```
+
+(The 2.x verbs `axiom compile|check|apply|rollback` are aliases until 4.0.)
 
 ## On `fail` / `rolled-back`
 
@@ -88,7 +95,7 @@ axiom apply   bundle.json --root E:\gh\metu --profile metu --confirm sha256:<man
 | apply `status: "failed"`, `error.code: "ERR_CHECKS_FAILED"` | checks re-ran at apply time and failed                          | same as above — the tree is untouched.                                                                                                                                                                                              |
 | `ERR_DIGEST_MISMATCH`                                       | `confirmDigest` ≠ compiled digest                               | you edited the plan after compiling; recompile and pass the new digest.                                                                                                                                                             |
 | `ERR_PRECONDITION` / `ERR_EXISTS`                           | a target changed or appeared since compile                      | re-read the file, re-plan with the current pre-image (`op: overwrite`), recompile. Another agent probably wrote it — do not force.                                                                                                  |
-| `status: "rolled-back"`                                     | commit failed mid-way; every file restored from `.axiom/backup` | inspect `error`, fix the cause (disk, permissions, locked file), re-apply. The journal in `.axiom/journal/<digest>.json` proves the pre-image was restored; `axiom rollback <digest> --root E:\gh\metu` re-runs it if you doubt it. |
+| `status: "rolled-back"`                                     | commit failed mid-way; every file restored from `.axiom/backup` | inspect `error`, fix the cause (disk, permissions, locked file), re-apply. The journal in `.axiom/journal/<digest>.json` proves the pre-image was restored; `axiom journal rollback <digest> --root E:\gh\metu` re-runs it if you doubt it. |
 | `ERR_LOCKED`                                                | `.axiom/lock` held by another apply                             | wait; never delete the lock unless the PID is dead.                                                                                                                                                                                 |
 
 ## Worked example — add-app-page
@@ -101,7 +108,7 @@ Plan carries the full file content.
 
 ```json
 {
-  "apiVersion": "axiom.dev/v2",
+  "apiVersion": "axiom.codai.ro/v3",
   "kind": "Plan",
   "name": "metu-add-app-page-axiom-smoke",
   "intent": "add-app-page: new authenticated route /axiom-smoke with toolbar, list, i18n keys, sidebar nav entry and tests",
@@ -186,6 +193,9 @@ counts; a _new_ page still needs its own test). Verified 2026-09-18 — see
 
 ### The same Plan in `.axm`
 
+The `.axm` header stays `axiom "2"` (grammar version); AXIOM 3.x compiles it to
+`apiVersion: axiom.codai.ro/v3`.
+
 ```axm
 axiom "2"
 
@@ -264,4 +274,4 @@ so a file that must end in `\n` needs a blank line before `TSX`/`TS`/`JSON`.
 - [ ] `axiom_apply_dry_run` diff reviewed.
 - [ ] `axiom_apply` with the `confirmDigest` from the compile you reviewed.
 - [ ] `pnpm typecheck` + `pnpm lint` green afterwards.
-- [ ] Never edited `.axiom/profiles/metu.json` or `.axiom/gate-profile.json` to silence a finding.
+- [ ] Never edited `.axiom/axiom.json`, `.axiom/profiles/metu.json` or `.axiom/gate-profile.json` to silence a finding.
