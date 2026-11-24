@@ -1,0 +1,38 @@
+# Canonical Prettier ignore list — BUILD OUTPUT ONLY.
+#
+# This file is the source of truth, not a drop-in: Prettier resolves a pattern
+# relative to the IGNORE FILE'S OWN DIRECTORY, so a file under packages/config/
+# cannot be referenced from a repo root with `--ignore-path`. Copy this list
+# into the repo-root `.prettierignore` instead, above any repo-specific,
+# byte-pinned exceptions.
+#
+# Why it exists even though Prettier 3 ignores `.gitignore`d files by default:
+#  1. `--ignore-path <file>` REPLACES the default set (`.gitignore` +
+#     `.prettierignore`), so a repo that passes one explicitly loses the other.
+#     That was codai's `format` script until 2026-11-24.
+#  2. A repo whose `.gitignore` does not list build output silently formats
+#     generated files and fails its own check on them.
+#
+# Measured 2026-11-24: codai `prettier --check .` = 34.5 s wall / 796 MB peak.
+# brivio has 382 build-output files on disk but 0 visible to Prettier, so there
+# this list is defence-in-depth rather than a fix.
+#
+# What is NOT here on purpose: `.prettierrc`-pinned content exceptions. Those
+# are repo-specific (a tracked file a formatter must not touch) and belong in
+# the repo's own `.prettierignore`, below this block.
+
+# JS/TS build output
+coverage/
+dist/
+build/
+out/
+.next/
+.turbo/
+*.tsbuildinfo
+
+# Caches
+.vite/
+.cache/
+
+# Rust
+target/

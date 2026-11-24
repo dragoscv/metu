@@ -3,3 +3,20 @@
 docs/master-plan.md
 docs/companion-*-plan.md
 docs/companion-agent-v2-plan.md
+
+# ── Build output ────────────────────────────────────────────────────────────
+# Mirrors packages/config/prettier/prettierignore.base. Prettier 3 ignores
+# `.gitignore`d files by default, but `--ignore-path <file>` REPLACES that
+# default set — so a repo-root ignore file must list build output itself.
+# Keeping it here also survives a change to .gitignore.
+coverage/
+dist/
+build/
+out/
+.next/
+.turbo/
+*.tsbuildinfo
+.vite/
+target/
+
+# ── Repo-specific ───────────────────────────────────────────────────────────

@@ -7,6 +7,7 @@
     "tsconfig.next.json",
     "tsconfig.node.json",
     "tsconfig.react-native.json",
-    "eslint.base.mjs"
+    "eslint.base.mjs",
+    "prettier/prettierignore.base"
   ]
 }

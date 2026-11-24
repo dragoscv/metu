@@ -22,6 +22,10 @@ coverage/
 playwright-report/
 test-results/
 
+# Tool caches (eslint --cache / prettier --cache)
+.eslintcache
+.prettiercache
+
 # Logs
 *.log
 npm-debug.log*

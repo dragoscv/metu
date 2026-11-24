@@ -14,6 +14,12 @@ allowBuilds:
   '@sentry/cli': true # downloads the sentry-cli binary used for source-map upload
   unrs-resolver: false # ships prebuilt binaries; postinstall is optional
 
+# pnpm >= 10 re-verifies the dependency tree before EVERY script run and, on a
+# mismatch, silently installs. Here that verification is paid by every
+# `pnpm exec`/gate invocation (measured 2026-11-24). The lockfile is written
+# only through the reviewed commit path, so the check buys nothing locally.
+verifyDepsBeforeRun: false
+
 # CVE floors (moved verbatim from package.json#pnpm.overrides).
 overrides:
   'tar@<7.5.7': '>=7.5.7'
