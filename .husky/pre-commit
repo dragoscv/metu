@@ -1,5 +1,9 @@
 node scripts/commit-lock-acquire.mjs
 # Fast, changed-files-only checks. The heavier full typecheck + tests run on
 # pre-push so commits stay snappy and CI rarely fails on lint/types.
-pnpm exec lint-staged
+# Only the files THIS commit actually changes are formatted (index blob vs merge base), so a file
+# something else staged without touching it here is never rewritten or re-staged.
+# Replaces `pnpm exec lint-staged`, which formatted whatever the index happened to hold.
+node scripts/ci/precommit-format-staged.mjs --runner "pnpm exec prettier --write --cache"
+node scripts/ci/precommit-format-staged.mjs --ext ".rs" --runner "pnpm exec rustfmt --edition 2021"
 node scripts/check-actionlint.mjs

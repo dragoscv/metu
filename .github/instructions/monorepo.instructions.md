@@ -50,7 +50,7 @@ description: Repo-wide conventions for the metu pnpm/turborepo monorepo (Node 22
 
 - Feature branches off `main`: `feat/short-slug` or `fix/short-slug`.
 - One concern per PR; keep diffs < 400 LOC when possible.
-- Husky `pre-commit` runs lint-staged + `turbo run lint typecheck`. Never
+- Husky `pre-commit` runs the change-aware formatter (`scripts/ci/precommit-format-staged.mjs`) + `turbo run lint typecheck`. Never
   `git commit --no-verify` to skip these.
 
 ## Scripts you will actually run

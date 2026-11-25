@@ -131,5 +131,5 @@ already-running dev server (`http://localhost:24890`) — Playwright is availabl
 - Branches: `feat/short-slug`, `fix/short-slug`. Conventional Commits enforced
   by commitlint (scopes match package/app names: `web`, `hub`, `worker`,
   `companion`, `db`, `core`, `ai`, `ui`, `protocol`, `sdk`, `auth`, `mobile`, …).
-- Husky pre-commit runs lint-staged + `turbo run lint typecheck`.
+- Husky pre-commit runs the change-aware formatter (`scripts/ci/precommit-format-staged.mjs`) + `turbo run lint typecheck`.
 - One concern per PR. Keep diffs < 400 lines when possible.
