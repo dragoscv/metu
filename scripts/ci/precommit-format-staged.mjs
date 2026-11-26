@@ -1,18 +1,19 @@
 #!/usr/bin/env node
-// Prettier on ONLY the files THIS COMMIT changes.
+// Prettier on ONLY the files THIS COMMIT changes — metu.
 //
-// Replaces the old `.husky/pre-commit` step 1, which ran `prettier --write` over every staged
-// file that differed from HEAD. In a worktree whose HEAD trails upstream that set is not "my
-// changes" -- it is every file main moved on since the worktree's base. Measured 2026-11-23:
-// 83 stale files were reformatted and re-staged by a one-line commit, and the apps|packages
-// gate then saw a ~90-file diff and skipped the heavy checks.
+// Replaces the old `.husky/pre-commit` step that ran `pnpm exec lint-staged`. lint-staged
+// formats every path the INDEX holds -- whatever is staged in this clone -- so a commit made
+// in a worktree whose HEAD trails upstream reformats and re-stages files this commit never
+// touched. "Changed by this commit" is instead a property of the INDEX against the UPSTREAM
+// ref (`@{u}`, else `origin/main`, else HEAD): a path counts only when its index blob differs
+// from the blob at that ref. A path that does not exist upstream is new here and counts too.
 //
-// "Changed by this commit" is decided by the INDEX, not the working tree: a path whose index
-// blob differs from the blob at the UPSTREAM ref (`@{u}`, else `origin/main`, else HEAD). A
-// path that does not exist upstream is new here and counts as changed.
+// The formattable set is the union of the prettier globs in metu's deleted `.lintstagedrc.json`
+// (`*.{ts,tsx,js,jsx,mjs,cjs}` and `*.{json,md,yml,yaml}`); the Rust glob it also carried
+// (`apps/companion/src-tauri/**/*.rs`) is driven from the hook with `--ext ".rs"`.
 //
 // Usage: node scripts/ci/precommit-format-staged.mjs [--base <ref>] [--dry-run] [--json] [--all]
-//        [--runner "<cmd>"]   run this instead of prettier (`eslint --fix`, `rustfmt --edition 2024`)
+//        [--runner "<cmd>"]   run this instead of prettier (`eslint --fix`, `rustfmt --edition 2021`)
 //        [--ext ".rs,.toml"]  restrict the selection to these extensions (default: the formattable set)
 
 import { spawnSync } from 'node:child_process';
@@ -20,8 +21,8 @@ import { existsSync } from 'node:fs';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
-/** Extensions the repo formats (mirrors the old `.husky/pre-commit` step-1 grep). */
-export const FORMATTABLE = /\.(?:ts|tsx|js|jsx|mjs|cjs|json|md|mdx|css|scss|yml|yaml)$/u;
+/** Extensions metu formats: the union of the prettier globs in the deleted `.lintstagedrc.json`. */
+export const FORMATTABLE = /\.(?:ts|tsx|js|jsx|mjs|cjs|json|md|yml|yaml)$/u;
 
 /** Windows CreateProcess caps a command line at ~32 KB; the old hook batched by 60. */
 export const BATCH_SIZE = 60;
